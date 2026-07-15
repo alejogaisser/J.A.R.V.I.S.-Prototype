@@ -1,0 +1,7 @@
+{
+    "vision_model": "gemini-3.5-flash",
+    "vision_fallback_model": "gemini-3.1-flash-lite",
+    "gemini_api_key": "",
+    "os_system": "windows",
+    "camera_index": 0
+}

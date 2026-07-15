@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "tools": {
+    "system_status": "free",
+    "send_message": "confirm_always",
+    "dev_agent": "confirm_always"
+  }
+}
