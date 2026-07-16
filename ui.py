@@ -1723,6 +1723,13 @@ class MainWindow(QMainWindow):
                     str(desktop / "J.A.R.V.I.S por voz.lnk"), target,
                     f'"{script}" --mode wake', str(script.parent), icon_loc,
                 )
+                # The primary shortcut must keep the background wake detector
+                # alive. Older installs created this shortcut in direct mode,
+                # which made "Hey Jarvis" impossible until it was replaced.
+                self._create_lnk_windows(
+                    str(desktop / "J.A.R.V.I.S.lnk"), target,
+                    f'"{script}" --mode wake', str(script.parent), icon_loc,
+                )
 
             # ── macOS — proper .app bundle (no Terminal window) ───────────────
             elif _os == "Darwin":

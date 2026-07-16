@@ -36,6 +36,12 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertIn("confidence >= MIN_WAKE_CONFIDENCE", source)
         self.assertIn("windows_session_available()", source)
 
+    def test_primary_desktop_shortcut_starts_wake_mode(self):
+        source = Path("ui.py").read_text(encoding="utf-8")
+        primary = source.index('str(desktop / "J.A.R.V.I.S.lnk")')
+        nearby = source[primary:primary + 220]
+        self.assertIn("--mode wake", nearby)
+
 
 if __name__ == "__main__":
     unittest.main()
