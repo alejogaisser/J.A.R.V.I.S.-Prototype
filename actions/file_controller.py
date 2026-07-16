@@ -294,6 +294,8 @@ def read_file(path: str, name: str = "", max_chars: int = 4000) -> str:
             return f"Access denied: {target}"
         if not target.exists():
             return f"File not found: {target.name}"
+        if target.is_dir():
+            return inspect_folder(str(target), max_chars=max_chars)
         if not target.is_file():
             return f"Not a file: {target.name}"
 
@@ -304,6 +306,64 @@ def read_file(path: str, name: str = "", max_chars: int = 4000) -> str:
 
     except Exception as e:
         return f"Could not read file: {e}"
+
+
+_CODE_SUFFIXES = {
+    ".ino", ".pde", ".h", ".hpp", ".hh", ".c", ".cpp", ".cc", ".cxx",
+    ".py", ".js", ".ts", ".java", ".cs", ".go", ".rs", ".sh", ".html",
+    ".css", ".json", ".yaml", ".yml", ".toml", ".txt", ".md",
+}
+
+
+def inspect_folder(path: str, max_files: int = 30, max_chars: int = 12000) -> str:
+    """Return a bounded project tree plus readable source contents.
+
+    This lets the model inspect an Arduino sketch or other small code project when
+    the user supplies its folder rather than the exact source-file path.
+    """
+    try:
+        root = _resolve_path(path)
+        if not _is_safe_path(root):
+            return f"Access denied: {root}"
+        if not root.exists():
+            return f"Path not found: {root}"
+        if not root.is_dir():
+            return read_file(str(root), max_chars=max_chars)
+
+        files = []
+        for item in _safe_walk_files(root, max_dirs=500):
+            if item.is_file():
+                files.append(item)
+                if len(files) >= max_files:
+                    break
+
+        if not files:
+            return f"Directory is empty or has no accessible files: {root}"
+
+        tree = [str(item.relative_to(root)) for item in files]
+        sections = [f"Project folder: {root}", "Files:", *[f"- {entry}" for entry in tree]]
+        remaining = max_chars - len("\n".join(sections))
+        readable = [item for item in files if item.suffix.casefold() in _CODE_SUFFIXES]
+
+        for item in readable:
+            if remaining <= 100:
+                break
+            try:
+                content = item.read_text(encoding="utf-8", errors="ignore")
+            except OSError as exc:
+                content = f"[Could not read: {exc}]"
+            header = f"\n--- {item.relative_to(root)} ---\n"
+            excerpt = content[:max(0, remaining - len(header))]
+            sections.append(header + excerpt)
+            remaining -= len(header) + len(excerpt)
+
+        if len(files) >= max_files:
+            sections.append(f"\n[Limited to the first {max_files} accessible files]")
+        if readable and remaining <= 100:
+            sections.append(f"\n[Source contents truncated at {max_chars} characters]")
+        return "\n".join(sections)
+    except Exception as e:
+        return f"Could not inspect folder: {e}"
 
 
 def open_file(path: str, name: str = "") -> str:
@@ -564,6 +624,9 @@ def file_controller(
         "edit": "write",
         "edit_file": "write",
         "open_file": "open",
+        "browse": "inspect",
+        "inspect_folder": "inspect",
+        "read_folder": "inspect",
     }.get(action, action)
     path   = params.get("path", "desktop")
     name   = (
@@ -600,7 +663,19 @@ def file_controller(
             return rename_file(path, name=name, new_name=params.get("new_name", ""))
 
         elif action == "read":
-            return read_file(path, name=name)
+            return read_file(
+                path,
+                name=name,
+                max_chars=min(max(int(params.get("max_chars", 4000)), 1000), 50000),
+            )
+
+        elif action == "inspect":
+            target = str(_resolve_path(path) / name) if name else path
+            return inspect_folder(
+                target,
+                max_files=min(max(int(params.get("max_files", 30)), 1), 100),
+                max_chars=min(max(int(params.get("max_chars", 12000)), 1000), 50000),
+            )
 
         elif action == "open":
             return open_file(path, name=name)

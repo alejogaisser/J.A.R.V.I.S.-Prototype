@@ -324,11 +324,11 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "file_controller",
-        "description": "Manages files and folders: list, create, delete, move, copy, rename, read, write, find, disk usage.",
+        "description": "Manages files and folders. Use inspect on a project folder to discover nested files and read source code, including Arduino .ino sketches.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action":      {"type": "STRING", "description": "list | create_file | create_folder | delete | move | copy | rename | read | open | write | find | largest | disk_usage | organize_desktop | info | clear_jarvis_temp. Use create_folder for any request to make a directory."},
+                "action":      {"type": "STRING", "description": "list | inspect | create_file | create_folder | delete | move | copy | rename | read | open | write | find | largest | disk_usage | organize_desktop | info | clear_jarvis_temp. Use inspect for a folder containing a code project; read also inspects when path points to a folder."},
                 "path":        {"type": "STRING", "description": "File/folder path or shortcut: desktop, downloads, documents, home"},
                 "destination": {"type": "STRING", "description": "Destination path for move/copy"},
                 "new_name":    {"type": "STRING", "description": "New name for rename"},
@@ -338,6 +338,8 @@ TOOL_DECLARATIONS = [
                 "file_name":   {"type": "STRING", "description": "File name; accepted as an alias of name"},
                 "extension":   {"type": "STRING", "description": "File extension to search (e.g. .pdf)"},
                 "count":       {"type": "INTEGER", "description": "Number of results for largest"},
+                "max_files":   {"type": "INTEGER", "description": "Maximum files returned by inspect (default 30, maximum 100)"},
+                "max_chars":   {"type": "INTEGER", "description": "Maximum source characters returned by inspect/read"},
                 "simulate":    {"type": "BOOLEAN", "description": "Return a preview without changing files"},
             },
             "required": ["action"]

@@ -259,6 +259,26 @@ class AudioVisionRegressionTests(unittest.TestCase):
 
 
 class FileAndDesktopRegressionTests(unittest.TestCase):
+    def test_inspect_folder_discovers_and_reads_nested_arduino_sketch(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "actions.file_controller._is_protected_path", return_value=False
+        ):
+            project = Path(directory) / "Robot" / "src"
+            project.mkdir(parents=True)
+            (project / "Robot.ino").write_text("void setup() {}", encoding="utf-8")
+            result = file_controller({"action": "inspect", "path": str(Path(directory) / "Robot")})
+            self.assertIn("src\\Robot.ino", result)
+            self.assertIn("void setup() {}", result)
+
+    def test_read_folder_inspects_project_instead_of_rejecting_it(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "actions.file_controller._is_protected_path", return_value=False
+        ):
+            (Path(directory) / "Blink.ino").write_text("void loop() {}", encoding="utf-8")
+            self.assertIn("void loop() {}", read_file(directory))
+
     def test_create_folder_accepts_common_model_aliases(self):
         import tempfile
         with tempfile.TemporaryDirectory() as directory, patch(
