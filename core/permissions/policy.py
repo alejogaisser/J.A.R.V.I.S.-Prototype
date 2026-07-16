@@ -5,7 +5,10 @@ from core.tools.definitions import ConfirmationPolicy, RiskLevel, ToolDefinition
 from .models import ExecutionContext, PermissionDecision, PermissionLevel
 
 
-_READ_FILE_ACTIONS = {"list", "read", "open", "find", "largest", "disk_usage", "info"}
+_READ_FILE_ACTIONS = {
+    "list", "read", "inspect", "browse", "inspect_folder", "read_folder",
+    "open", "find", "largest", "disk_usage", "info",
+}
 _REVERSIBLE_FILE_ACTIONS = {
     "create_file", "create_folder", "copy",
     "create", "new_file", "new_folder", "mkdir", "make_directory",

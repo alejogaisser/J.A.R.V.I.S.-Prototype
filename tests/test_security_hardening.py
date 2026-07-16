@@ -20,7 +20,9 @@ from dashboard.server import _decrypt_cbc, _derive_keys
 
 class ToolPolicyTests(unittest.TestCase):
     def test_read_only_file_action_does_not_prompt(self):
-        self.assertIsNone(confirmation_request("file_controller", {"action": "read"}))
+        for action in ("read", "inspect", "browse", "inspect_folder", "read_folder"):
+            with self.subTest(action=action):
+                self.assertIsNone(confirmation_request("file_controller", {"action": action}))
 
     def test_destructive_and_external_actions_prompt(self):
         cases = [
@@ -271,6 +273,12 @@ class FileAndDesktopRegressionTests(unittest.TestCase):
             self.assertIn("src\\Robot.ino", result)
             self.assertIn("void setup() {}", result)
 
+    def test_nested_shortcut_path_resolves_below_known_folder(self):
+        from actions.file_controller import _resolve_path
+        with patch("actions.file_controller._get_documents", return_value=Path("C:/Users/Test/Documents")):
+            resolved = _resolve_path("documents/Arduino/Robot/Robot.ino")
+        self.assertEqual(resolved, Path("C:/Users/Test/Documents/Arduino/Robot/Robot.ino"))
+
     def test_read_folder_inspects_project_instead_of_rejecting_it(self):
         import tempfile
         with tempfile.TemporaryDirectory() as directory, patch(
@@ -313,7 +321,10 @@ class FileAndDesktopRegressionTests(unittest.TestCase):
 
     def test_spoken_confirmation_is_short(self):
         source = Path("main.py").read_text(encoding="utf-8")
-        self.assertIn('question = "Confirm action? Yes or no."', source)
+        self.assertIn('question = "Confirm action?"', source)
+        self.assertNotIn('question = "Confirm action? Yes or no."', source)
+        self.assertIn("[VOICE_CONFIRMATION_REQUIRED] Say exactly", source)
+        self.assertNotIn("The application will execute the action automatically", source)
 
     def test_visual_mouse_prefers_uia_before_image_grounding(self):
         source = Path("actions/computer_control.py").read_text(encoding="utf-8")
@@ -337,7 +348,7 @@ class FileAndDesktopRegressionTests(unittest.TestCase):
         main_source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn('"name": "permission_manager"', main_source)
         self.assertIn("immutable minimum", main_source)
-        self.assertIn('question = "Confirm action? Yes or no."', main_source)
+        self.assertIn('question = "Confirm action?"', main_source)
 
 
 class DashboardCryptoTests(unittest.TestCase):

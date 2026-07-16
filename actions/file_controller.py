@@ -100,10 +100,18 @@ def _resolve_path(raw: str) -> Path:
         "videos":    _get_videos(),
         "home":      Path.home(),
     }
-    lower = raw.strip().lower()
+    cleaned = str(raw).strip().strip('"').strip("'")
+    lower = cleaned.lower()
     if lower in shortcuts:
         return shortcuts[lower]
-    return Path(raw).expanduser()
+    # Models commonly return shortcut paths such as "documents/Arduino/Blink".
+    # Resolve the shortcut prefix too, otherwise pathlib treats it as relative to
+    # JARVIS' installation directory and nested folders appear to be missing.
+    normalized = cleaned.replace("\\", "/")
+    prefix, separator, remainder = normalized.partition("/")
+    if separator and prefix.casefold() in shortcuts:
+        return shortcuts[prefix.casefold()] / Path(remainder)
+    return Path(cleaned).expanduser()
 
 def _format_size(b: int) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:

@@ -43,6 +43,9 @@ class PermissionPolicyTests(unittest.TestCase):
         files = tool("file_controller", risk=RiskLevel.SENSITIVE)
         policy = PermissionPolicy()
         self.assertTrue(policy.evaluate(files, {"action": "read"}).allowed)
+        for action in ("inspect", "browse", "inspect_folder", "read_folder"):
+            with self.subTest(action=action):
+                self.assertTrue(policy.evaluate(files, {"action": action}).allowed)
         self.assertTrue(policy.evaluate(files, {"action": "create_folder"}).allowed)
         self.assertTrue(policy.evaluate(files, {"action": "create_file"}).allowed)
         self.assertTrue(policy.evaluate(files, {"action": "copy"}).allowed)

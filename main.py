@@ -1136,19 +1136,14 @@ class JarvisLive:
             if not approved:
                 self._pending_confirmation_fc = fc
                 self.ui.write_log(f"SECURITY DETAIL: {detail.replace(chr(10), ' | ')}")
-                question = "Confirm action? Yes or no."
+                question = "Confirm action?"
                 self.ui.write_log(f"SECURITY: Awaiting spoken approval for {name}.")
                 if self.ui.microphone_enabled:
                     self.ui.set_state("LISTENING")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
                     response={
-                        "result": (
-                            "[VOICE_CONFIRMATION_REQUIRED] Ask the user aloud exactly: "
-                            f"'{question}' Then wait. The application will execute the "
-                            "action automatically after an explicit approval; do not call "
-                            "this or any other tool while waiting."
-                        )
+                        "result": f'[VOICE_CONFIRMATION_REQUIRED] Say exactly "{question}" Then wait.'
                     }
                 )
             if name == "computer_settings":
