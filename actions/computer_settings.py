@@ -325,6 +325,26 @@ def minimize_window():
     if _OS == "Darwin": pyautogui.hotkey("command", "m")
     else:               pyautogui.hotkey("win", "down")
 
+
+def _native_window_action(action: str, title: str = "") -> str:
+    """Target a Windows window directly instead of hoping the right app has focus."""
+    if _OS != "Windows":
+        raise RuntimeError("Native targeted window actions are Windows-only")
+    import pygetwindow as gw
+    candidates = gw.getWindowsWithTitle(title) if title else [gw.getActiveWindow()]
+    window = next((item for item in candidates if item and item.title), None)
+    if window is None:
+        raise RuntimeError(f"Window not found: {title or 'active window'}")
+    if action == "minimize":
+        window.minimize()
+    elif action == "maximize":
+        window.maximize()
+    elif action in {"close", "close_window", "close_app"}:
+        window.close()
+    else:
+        raise RuntimeError(f"Unsupported window action: {action}")
+    return f"{action.capitalize()}d window: {window.title}"
+
 def maximize_window():
     if _OS == "Darwin":
         subprocess.run(["osascript", "-e",
@@ -626,23 +646,29 @@ def toggle_wifi():
 
 def restart_computer():
     if _OS == "Windows":
-        subprocess.run(["shutdown", "/r", "/t", "10"], capture_output=True, **_WIN_HIDE)
+        result = subprocess.run(["shutdown", "/r", "/t", "10"], capture_output=True, text=True, **_WIN_HIDE)
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
+        result = subprocess.run(["osascript", "-e",
             'tell application "System Events" to restart'],
             capture_output=True)
     else:
-        subprocess.run(["systemctl", "reboot"], capture_output=True)
+        result = subprocess.run(["systemctl", "reboot"], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout or "restart command failed").strip())
+    return "Restart scheduled in 10 seconds."
 
 def shutdown_computer():
     if _OS == "Windows":
-        subprocess.run(["shutdown", "/s", "/t", "10"], capture_output=True)
+        result = subprocess.run(["shutdown", "/s", "/t", "10"], capture_output=True, text=True, **_WIN_HIDE)
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
+        result = subprocess.run(["osascript", "-e",
             'tell application "System Events" to shut down'],
             capture_output=True)
     else:
-        subprocess.run(["systemctl", "poweroff"], capture_output=True)
+        result = subprocess.run(["systemctl", "poweroff"], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout or "shutdown command failed").strip())
+    return "Shutdown scheduled in 10 seconds."
 
 ACTION_MAP: dict[str, callable] = {
     "volume_up":           volume_up,
@@ -826,6 +852,28 @@ def computer_settings(
         press_key(key)
         return f"Pressed: {key}"
 
+    if action in ("hotkey", "key_combination", "shortcut"):
+        raw_keys = value or params.get("keys", "")
+        keys = [part.strip().lower() for part in str(raw_keys).replace(",", "+").split("+") if part.strip()]
+        if not keys:
+            return "No key combination provided."
+        target_title = str(params.get("target_title", "")).strip()
+        if target_title and _OS == "Windows":
+            import pygetwindow as gw
+            windows = gw.getWindowsWithTitle(target_title)
+            if not windows:
+                return f"Window not found: {target_title}"
+            windows[0].activate()
+            time.sleep(0.15)
+        pyautogui.hotkey(*keys)
+        return f"Pressed combination: {'+'.join(keys)}"
+
+    if action in {"minimize", "maximize", "close", "close_window", "close_app"} and _OS == "Windows":
+        try:
+            return _native_window_action(action, str(params.get("target_title", "")).strip())
+        except Exception as e:
+            return f"Window action failed ({action}): {e}"
+
     if action in ("reload_n", "refresh_n", "reload_page_n"):
         try:
             reload_page_n(int(value or 1))
@@ -846,8 +894,8 @@ def computer_settings(
         return f"Unknown action: '{raw_action}'."
 
     try:
-        func()
-        return f"Done: {action}."
+        outcome = func()
+        return str(outcome or f"Done: {action}.")
     except Exception as e:
         print(f"[Settings] Action failed ({action}): {e}")
         return f"Action failed ({action}): {e}"

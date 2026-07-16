@@ -5,10 +5,14 @@ from core.tools.definitions import ConfirmationPolicy, RiskLevel, ToolDefinition
 from .models import ExecutionContext, PermissionDecision, PermissionLevel
 
 
-_READ_FILE_ACTIONS = {"list", "read", "find", "largest", "disk_usage", "info"}
+_READ_FILE_ACTIONS = {"list", "read", "open", "find", "largest", "disk_usage", "info"}
+_REVERSIBLE_FILE_ACTIONS = {
+    "create_file", "create_folder", "copy",
+    "create", "new_file", "new_folder", "mkdir", "make_directory",
+}
 _ALWAYS_FILE_ACTIONS = {"delete", "clear_jarvis_temp"}
 _CHANGE_FILE_ACTIONS = {
-    "create_file", "create_folder", "copy", "move", "rename", "write", "organize_desktop"
+    "move", "rename", "write", "organize_desktop"
 }
 _FREE_TOOLS = {
     "browser_control", "close_camera", "flight_finder", "open_app", "reminder",
@@ -58,6 +62,8 @@ class PermissionPolicy:
         if tool.name == "file_controller":
             if operation in _READ_FILE_ACTIONS:
                 return PermissionLevel.FREE
+            if operation in _REVERSIBLE_FILE_ACTIONS:
+                return PermissionLevel.FREE
             if operation in _ALWAYS_FILE_ACTIONS:
                 return PermissionLevel.CONFIRM_ALWAYS
             if operation in _CHANGE_FILE_ACTIONS:
@@ -69,6 +75,12 @@ class PermissionPolicy:
             if operation in {"create", "write", "append"}:
                 return PermissionLevel.CONFIRM_ONCE
             return PermissionLevel.CONFIRM_ALWAYS
+        if tool.name == "permission_manager":
+            return (
+                PermissionLevel.FREE
+                if operation in {"status", "get", "query"}
+                else PermissionLevel.CONFIRM_ALWAYS
+            )
         if tool.confirmation == ConfirmationPolicy.ALWAYS:
             return PermissionLevel.CONFIRM_ALWAYS
         if tool.confirmation == ConfirmationPolicy.DEPENDS_ON_ARGUMENTS:
@@ -84,10 +96,31 @@ class PermissionPolicy:
             from memory.script_memory import is_registered_script
             if is_registered_script(arguments.get("routine_name", "")):
                 minimum = PermissionLevel.FREE
-        level = max(minimum, self.preferences.get(tool.name, PermissionLevel.FREE))
+        configured = self.preferences.get(
+            f"{tool.name}:{operation}",
+            self.preferences.get(tool.name, PermissionLevel.FREE),
+        )
+        level = max(minimum, configured)
         if context.source != "local" and level < PermissionLevel.CONFIRM_ONCE:
             level = PermissionLevel.CONFIRM_ONCE
         return level
+
+    def describe(self, tool: ToolDefinition, arguments: dict) -> dict:
+        operation = self.operation(tool.name, arguments)
+        minimum = self.minimum(tool, operation)
+        configured = self.preferences.get(
+            f"{tool.name}:{operation}",
+            self.preferences.get(tool.name, PermissionLevel.FREE),
+        )
+        effective = max(minimum, configured)
+        return {
+            "tool": tool.name,
+            "action": operation,
+            "configured": configured.label,
+            "minimum": minimum.label,
+            "effective": effective.label,
+            "editable": effective != PermissionLevel.BLOCKED or minimum != PermissionLevel.BLOCKED,
+        }
 
     def evaluate(self, tool: ToolDefinition, arguments: dict, context: ExecutionContext | None = None) -> PermissionDecision:
         context = context or ExecutionContext()

@@ -330,6 +330,9 @@ def _focus_window(title: str) -> str:
     return f"focus_window: unknown OS '{os_name}'"
 
 def _screen_find(description: str) -> tuple[int, int] | None:
+    native = _uia_find(description)
+    if native is not None:
+        return native
     api_key = _get_api_key()
     if not api_key:
         print("[ComputerControl] ⚠️ No API key for screen_find")
@@ -383,6 +386,35 @@ def _screen_find(description: str) -> tuple[int, int] | None:
         print(f"[ComputerControl] ⚠️ screen_find failed: {e}")
 
     return None
+
+
+def _uia_find(description: str) -> tuple[int, int] | None:
+    """Prefer Windows accessibility geometry over approximate image coordinates."""
+    if platform.system() != "Windows" or not description.strip():
+        return None
+    try:
+        from pywinauto import Desktop
+        wanted = {token for token in re.findall(r"[\w.-]+", description.casefold()) if len(token) > 1}
+        if not wanted:
+            return None
+        best = None
+        best_score = 0.0
+        for window in Desktop(backend="uia").windows(visible_only=True):
+            for element in [window, *window.descendants()]:
+                try:
+                    label = " ".join(filter(None, [element.window_text(), element.element_info.name])).casefold()
+                    tokens = set(re.findall(r"[\w.-]+", label))
+                    score = len(wanted & tokens) / len(wanted)
+                    rect = element.rectangle()
+                    if score > best_score and rect.width() > 2 and rect.height() > 2:
+                        best_score = score
+                        best = (rect.left + rect.width() // 2, rect.top + rect.height() // 2)
+                except Exception:
+                    continue
+        return best if best_score >= 0.5 else None
+    except Exception as exc:
+        print(f"[ComputerControl] UI Automation lookup failed: {exc}")
+        return None
 
 def computer_control(
     parameters: dict,

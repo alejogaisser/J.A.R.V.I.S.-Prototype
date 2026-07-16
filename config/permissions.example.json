@@ -1,8 +1,15 @@
 {
-  "version": 1,
+  "version": 2,
   "tools": {
     "system_status": "free",
     "send_message": "confirm_always",
     "dev_agent": "confirm_always"
+  },
+  "operations": {
+    "file_controller": {
+      "create_folder": "free",
+      "write": "confirm_once",
+      "delete": "confirm_always"
+    }
   }
 }

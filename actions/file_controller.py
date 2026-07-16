@@ -1,6 +1,7 @@
 import os
 import shutil
 import platform
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -8,6 +9,11 @@ try:
     import send2trash
     _SEND2TRASH = True
 except ImportError:
+    class _MissingSend2Trash:
+        @staticmethod
+        def send2trash(_value):
+            raise RuntimeError("send2trash is not installed")
+    send2trash = _MissingSend2Trash()
     _SEND2TRASH = False
 
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
@@ -16,14 +22,41 @@ _SAFE_ROOTS: list[Path] = [
     Path.home(),
 ]
 
+_PROTECTED_DIR_NAMES = {
+    "appdata", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker",
+    ".git", ".codex", ".config", "credentials", "certs", "secrets",
+}
+_PROTECTED_FILE_NAMES = {
+    ".env", "api_keys.json", "google_oauth_client.json",
+    "microsoft_oauth_client.json", "permissions.json", "long_term.json",
+    "credentials.json", "secrets.json", "id_rsa", "id_ed25519",
+}
+_PROTECTED_SUFFIXES = {".pem", ".key", ".pfx", ".p12", ".kdbx"}
+
+
+def _is_protected_path(target: Path) -> bool:
+    """Immutable deny-list, independent from editable permission preferences."""
+    try:
+        resolved = target.resolve()
+        relative = resolved.relative_to(Path.home().resolve())
+    except (OSError, ValueError):
+        return True
+    if {part.casefold() for part in relative.parts} & _PROTECTED_DIR_NAMES:
+        return True
+    return (
+        resolved.name.casefold() in _PROTECTED_FILE_NAMES
+        or resolved.suffix.casefold() in _PROTECTED_SUFFIXES
+    )
+
 def _is_safe_path(target: Path) -> bool:
     """Verilen path _SAFE_ROOTS içinde mi? Değilse işlemi reddet."""
     try:
         resolved = target.resolve()
-        return any(
+        inside_allowed_root = any(
             resolved == root.resolve() or resolved.is_relative_to(root.resolve())
             for root in _SAFE_ROOTS
         )
+        return inside_allowed_root and not _is_protected_path(resolved)
     except Exception:
         return False
 
@@ -103,6 +136,8 @@ def list_files(path: str = "desktop", show_hidden: bool = False) -> str:
 
         items = []
         for item in sorted(target.iterdir()):
+            if not _is_safe_path(item):
+                continue
             if not show_hidden and item.name.startswith("."):
                 continue
             if item.is_dir():
@@ -271,6 +306,26 @@ def read_file(path: str, name: str = "", max_chars: int = 4000) -> str:
         return f"Could not read file: {e}"
 
 
+def open_file(path: str, name: str = "") -> str:
+    """Open a user file with its default application."""
+    try:
+        base = _resolve_path(path)
+        target = (base / name) if name else base
+        if not _is_safe_path(target):
+            return f"Access denied: {target}"
+        if not target.exists():
+            return f"File not found: {target.name}"
+        if _OS == "Windows":
+            os.startfile(str(target))
+        elif _OS == "Darwin":
+            subprocess.run(["open", str(target)], check=True)
+        else:
+            subprocess.run(["xdg-open", str(target)], check=True)
+        return f"Opened: {target.name}"
+    except Exception as e:
+        return f"Could not open file: {e}"
+
+
 def write_file(path: str, name: str = "", content: str = "",
                append: bool = False) -> str:
     try:
@@ -288,6 +343,20 @@ def write_file(path: str, name: str = "", content: str = "",
         return f"Could not write file: {e}"
 
 
+def _safe_walk_files(root: Path, max_dirs: int = 500):
+    visited = 0
+    for current, directories, filenames in os.walk(root):
+        current_path = Path(current)
+        directories[:] = [d for d in directories if _is_safe_path(current_path / d)]
+        visited += len(directories)
+        if visited > max_dirs:
+            directories[:] = []
+        for filename in filenames:
+            item = current_path / filename
+            if _is_safe_path(item):
+                yield item
+
+
 def find_files(name: str = "", extension: str = "",
                path: str = "home", max_results: int = 20) -> str:
     try:
@@ -301,7 +370,7 @@ def find_files(name: str = "", extension: str = "",
         dir_count  = 0
         max_dirs   = 500  # performans + güvenlik limiti
 
-        for item in search_path.rglob("*"):
+        for item in _safe_walk_files(search_path, max_dirs=max_dirs):
             if item.is_dir():
                 dir_count += 1
                 if dir_count > max_dirs:
@@ -338,7 +407,7 @@ def get_largest_files(path: str = "downloads", count: int = 10) -> str:
             return f"Path not found: {path}"
 
         files = []
-        for item in search_path.rglob("*"):
+        for item in _safe_walk_files(search_path):
             if item.is_file():
                 try:
                     files.append((item.stat().st_size, item))
@@ -482,9 +551,28 @@ def file_controller(
     session_memory=None,
 ) -> str:
     params = parameters or {}
-    action = params.get("action", "").lower().strip()
+    action = params.get("action", "").lower().strip().replace("-", "_").replace(" ", "_")
+    action = {
+        "mkdir": "create_folder",
+        "new_folder": "create_folder",
+        "make_folder": "create_folder",
+        "make_directory": "create_folder",
+        "create_directory": "create_folder",
+        "new_directory": "create_folder",
+        "new_file": "create_file",
+        "make_file": "create_file",
+        "edit": "write",
+        "edit_file": "write",
+        "open_file": "open",
+    }.get(action, action)
     path   = params.get("path", "desktop")
-    name   = params.get("name", "")
+    name   = (
+        params.get("name")
+        or params.get("folder_name")
+        or params.get("file_name")
+        or (params.get("new_name") if action in {"create_folder", "create_file"} else "")
+        or ""
+    )
 
     if player:
         player.write_log(f"[file] {action} {name or path}")
@@ -513,6 +601,9 @@ def file_controller(
 
         elif action == "read":
             return read_file(path, name=name)
+
+        elif action == "open":
+            return open_file(path, name=name)
 
         elif action == "write":
             return write_file(

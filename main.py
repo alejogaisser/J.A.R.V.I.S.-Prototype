@@ -31,7 +31,9 @@ from google import genai
 from google.genai import types
 from ui import JarvisUI
 from core.security import VoiceConfirmationGate, confirmation_request, safe_tool_args
-from core.permissions import ExecutionContext, PermissionPolicy, PermissionStore, build_preview
+from core.permissions import (
+    ExecutionContext, PermissionLevel, PermissionPolicy, PermissionStore, build_preview,
+)
 from core.tools import ToolExecutor
 from core.tools.builtins import SPECIAL_TOOLS, build_builtin_registry
 from memory.memory_manager import (
@@ -45,7 +47,7 @@ from memory.script_memory import format_scripts_for_prompt
 def _load_action_dependencies() -> None:
     """Load optional/heavy action modules after the UI is already visible."""
     global file_processor, flight_finder, open_app, weather_action
-    global send_message, reminder, computer_settings, analyze_visual
+    global send_message, reminder, computer_settings, analyze_visual, screen_process_action
     global youtube_video, desktop_control, browser_control, file_controller
     global code_helper, dev_agent, web_search_action, computer_control
     global game_updater, SystemMonitor, get_system_status, ProactiveEngine
@@ -58,7 +60,7 @@ def _load_action_dependencies() -> None:
     from actions.send_message import send_message
     from actions.reminder import reminder
     from actions.computer_settings import computer_settings
-    from actions.screen_processor import analyze_visual
+    from actions.screen_processor import analyze_visual, screen_process as screen_process_action
     from actions.youtube_video import youtube_video
     from actions.desktop import desktop_control
     from actions.browser_control import browser_control
@@ -284,7 +286,9 @@ TOOL_DECLARATIONS = [
             "properties": {
                 "action":      {"type": "STRING", "description": "The action to perform"},
                 "description": {"type": "STRING", "description": "Natural language description of what to do"},
-                "value":       {"type": "STRING", "description": "Optional value: volume level, text to type, etc."}
+                "value":       {"type": "STRING", "description": "Optional value: volume level, text to type, or keys such as ctrl+shift+s"},
+                "keys":        {"type": "STRING", "description": "Keyboard combination for action=hotkey"},
+                "target_title": {"type": "STRING", "description": "Optional window title to target for minimize, maximize, close, or hotkey"}
             },
             "required": []
         }
@@ -324,12 +328,14 @@ TOOL_DECLARATIONS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action":      {"type": "STRING", "description": "list | create_file | create_folder | delete | move | copy | rename | read | write | find | largest | disk_usage | organize_desktop | info | clear_jarvis_temp"},
+                "action":      {"type": "STRING", "description": "list | create_file | create_folder | delete | move | copy | rename | read | open | write | find | largest | disk_usage | organize_desktop | info | clear_jarvis_temp. Use create_folder for any request to make a directory."},
                 "path":        {"type": "STRING", "description": "File/folder path or shortcut: desktop, downloads, documents, home"},
                 "destination": {"type": "STRING", "description": "Destination path for move/copy"},
                 "new_name":    {"type": "STRING", "description": "New name for rename"},
                 "content":     {"type": "STRING", "description": "Content for create_file/write"},
-                "name":        {"type": "STRING", "description": "File name to search for"},
+                "name":        {"type": "STRING", "description": "File or folder name for create, read, open, write, rename, delete, or search"},
+                "folder_name": {"type": "STRING", "description": "Folder name; accepted as an alias of name for create_folder"},
+                "file_name":   {"type": "STRING", "description": "File name; accepted as an alias of name"},
                 "extension":   {"type": "STRING", "description": "File extension to search (e.g. .pdf)"},
                 "count":       {"type": "INTEGER", "description": "Number of results for largest"},
                 "simulate":    {"type": "BOOLEAN", "description": "Return a preview without changing files"},
@@ -659,6 +665,24 @@ TOOL_DECLARATIONS = [
             "max_chars": {"type": "INTEGER"}
         }, "required": ["action"]}
     },
+    {
+        "name": "permission_manager",
+        "description": (
+            "Reports or changes the confirmation state of a specific JARVIS tool/action. "
+            "Use when the user asks whether an action needs confirmation, or explicitly "
+            "asks to change it. Hard security minimums can never be weakened."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "status | set"},
+                "tool_name": {"type": "STRING", "description": "Tool such as file_controller"},
+                "operation": {"type": "STRING", "description": "Specific action such as create_folder or delete"},
+                "level": {"type": "STRING", "description": "free | confirm_once | confirm_always | blocked"},
+            },
+            "required": ["action", "tool_name"],
+        },
+    },
 ]
 
 # --- Plugin system ---
@@ -739,7 +763,8 @@ class JarvisLive:
             "obsidian_connector": lambda args: obsidian_connector(parameters=args, player=self.ui),
         }
         self.tool_registry = build_builtin_registry(TOOL_DECLARATIONS, handlers)
-        self.permission_policy = PermissionPolicy(PermissionStore().load())
+        self.permission_store = PermissionStore()
+        self.permission_policy = PermissionPolicy(self.permission_store.load())
         self.tool_executor = ToolExecutor(self.tool_registry)
 
     def _run_file_processor(self, args: dict):
@@ -747,6 +772,41 @@ class JarvisLive:
         if not args.get("file_path") and self.ui.current_file:
             args["file_path"] = self.ui.current_file
         return file_processor(parameters=args, player=self.ui, speak=self.speak)
+
+    def _manage_permission(self, args: dict) -> str:
+        action = str(args.get("action", "status")).lower().strip()
+        tool_name = str(args.get("tool_name", "")).strip()
+        operation = str(args.get("operation", "default")).lower().strip().replace(" ", "_")
+        try:
+            definition = self.tool_registry.get(tool_name)
+        except KeyError:
+            return f"Unknown tool: {tool_name}"
+        probe = {"action": operation}
+        if action in {"status", "get", "query"}:
+            info = self.permission_policy.describe(definition, probe)
+            return (
+                f"{tool_name}/{operation}: effective={info['effective']}, "
+                f"configured={info['configured']}, immutable minimum={info['minimum']}."
+            )
+        if action not in {"set", "change", "update"}:
+            return "Permission action must be status or set."
+        if operation == "default":
+            return "Specify the exact operation whose permission should change."
+        try:
+            requested = PermissionLevel.parse(args.get("level", ""))
+        except (KeyError, ValueError):
+            return "Level must be free, confirm_once, confirm_always, or blocked."
+        minimum = self.permission_policy.minimum(definition, operation)
+        if requested < minimum:
+            return (
+                f"Denied: {tool_name}/{operation} has immutable minimum "
+                f"{minimum.label}; it cannot be reduced to {requested.label}."
+            )
+        preferences = self.permission_store.load()
+        preferences[f"{tool_name}:{operation}"] = requested
+        self.permission_store.save(preferences)
+        self.permission_policy = PermissionPolicy(self.permission_store.load())
+        return f"Permission updated: {tool_name}/{operation} is now {requested.label}."
 
     def _make_remote_key(self):
         """Called from Qt main thread when user presses Remote Control."""
@@ -848,15 +908,29 @@ class JarvisLive:
             self.ui.set_state("LISTENING")
 
     def interrupt(self) -> None:
-        """Thread-safe ESC handler: stop local playback and reopen listening."""
+        """Thread-safe ESC handler: cancel the model turn and local playback."""
         self._interrupted = True
         self._interrupted_at = time.monotonic()
         self.set_speaking(False)
         self.ui.write_log("SYS: Interrupted — listening...")
         if self._loop:
             self._loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self._flush_playback("ESC"))
+                lambda: asyncio.create_task(self._interrupt_model_turn())
             )
+
+    async def _interrupt_model_turn(self) -> None:
+        """Send explicit user activity so Gemini stops generating, then stay silent."""
+        await self._flush_playback("ESC")
+        if not self.session:
+            return
+        try:
+            await self.session.send_realtime_input(
+                text="[USER_INTERRUPT] Stop the current response now. Do not reply to this marker."
+            )
+        except Exception as exc:
+            # Local playback is already stopped; retain a useful diagnostic if the
+            # active Live API version cannot accept manual activity signals.
+            self.ui.write_log(f"AUDIO: Model cancellation signal failed: {exc}")
 
     def _reset_output_stream(self) -> None:
         """Drop bytes already buffered by the audio device without killing the task."""
@@ -934,9 +1008,9 @@ class JarvisLive:
                 predicate=self.permission_policy.is_advertised
             )}],
             realtime_input_config=types.RealtimeInputConfig(
-                # Ambient noise or JARVIS' own speakers must never cancel a reply.
-                # Escape remains the explicit interruption mechanism.
-                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
+                # Microphone frames are suppressed during playback, so ambient sound
+                # cannot barge in. Explicit ESC text activity still cancels the turn.
+                activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     disabled=False,
                     start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
@@ -958,6 +1032,24 @@ class JarvisLive:
     async def _execute_tool(self, fc, preapproved: bool = False) -> types.FunctionResponse:
         name = fc.name
         args = dict(fc.args or {})
+
+        if name in {"file_processor", "code_helper", "dev_agent", "desktop_control", "computer_control"}:
+            from actions.file_controller import _is_protected_path
+            for field in ("path", "file_path", "output_path", "destination"):
+                raw_path = args.get(field)
+                if not raw_path or str(raw_path).lower() in {
+                    "desktop", "documents", "downloads", "pictures", "music", "videos", "home"
+                }:
+                    continue
+                if _is_protected_path(Path(str(raw_path)).expanduser()):
+                    return types.FunctionResponse(
+                        id=fc.id,
+                        name=name,
+                        response={
+                            "result": "Access denied: protected system, credential, or private path.",
+                            "error": "protected_path",
+                        },
+                    )
 
         print(f"[JARVIS] 🔧 {name}  {safe_tool_args(args)}")
         self.ui.set_state("THINKING")
@@ -1041,8 +1133,8 @@ class JarvisLive:
             )
             if not approved:
                 self._pending_confirmation_fc = fc
-                spoken_detail = detail.replace("\n", ". ")
-                question = f"{title} {spoken_detail} Say yes or no."
+                self.ui.write_log(f"SECURITY DETAIL: {detail.replace(chr(10), ' | ')}")
+                question = "Confirm action? Yes or no."
                 self.ui.write_log(f"SECURITY: Awaiting spoken approval for {name}.")
                 if self.ui.microphone_enabled:
                     self.ui.set_state("LISTENING")
@@ -1119,9 +1211,21 @@ class JarvisLive:
                     angle = args.get("angle", "screen").lower()
                     user_text = args.get("text", "What do you see?")
                     try:
-                        result = await loop.run_in_executor(
-                            None, lambda: analyze_visual(user_text, angle)
-                        )
+                        if angle == "camera":
+                            started = await loop.run_in_executor(
+                                None,
+                                lambda: screen_process_action(
+                                    {"text": user_text, "angle": angle}, player=self.ui
+                                ),
+                            )
+                            result = (
+                                "Live camera analysis started and will remain active until closed."
+                                if started else "Could not start live camera analysis."
+                            )
+                        else:
+                            result = await loop.run_in_executor(
+                                None, lambda: analyze_visual(user_text, angle)
+                            )
                     finally:
                         self._vision_busy = False
 
@@ -1144,6 +1248,9 @@ class JarvisLive:
             elif name == "close_camera":
                 self.ui.stop_camera_stream()
                 result = "Camera closed."
+
+            elif name == "permission_manager":
+                result = self._manage_permission(args)
 
             elif name == "computer_settings":
                 r = await loop.run_in_executor(None, lambda: computer_settings(parameters=args, response=None, player=self.ui))

@@ -30,6 +30,7 @@ def load_config() -> dict:
         "phrases": ["hey jarvis"],
         "model_path": "models/vosk-model-small-en-us-0.15",
         "min_wake_rms": 180,
+        "min_confidence": 0.82,
     }
     if not CONFIG_FILE.exists():
         return defaults
@@ -63,6 +64,10 @@ def configure(args: argparse.Namespace) -> int:
         if args.sensitivity < 0:
             raise ValueError("Sensitivity must be zero or greater")
         config["min_wake_rms"] = args.sensitivity
+    if args.confidence is not None:
+        if not 0 <= args.confidence <= 1:
+            raise ValueError("Confidence must be between 0 and 1")
+        config["min_confidence"] = args.confidence
     if args.enable:
         config["enabled"] = True
     if args.disable:
@@ -102,6 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--phrases", help="Comma-separated wake phrases")
     parser.add_argument("--model", help="Vosk model path, relative to the project or absolute")
     parser.add_argument("--sensitivity", type=int, help="Minimum RMS voice level")
+    parser.add_argument("--confidence", type=float, help="Minimum Vosk phrase confidence (0-1)")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--enable", action="store_true")
     group.add_argument("--disable", action="store_true")

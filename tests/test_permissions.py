@@ -43,9 +43,21 @@ class PermissionPolicyTests(unittest.TestCase):
         files = tool("file_controller", risk=RiskLevel.SENSITIVE)
         policy = PermissionPolicy()
         self.assertTrue(policy.evaluate(files, {"action": "read"}).allowed)
+        self.assertTrue(policy.evaluate(files, {"action": "create_folder"}).allowed)
+        self.assertTrue(policy.evaluate(files, {"action": "create_file"}).allowed)
+        self.assertTrue(policy.evaluate(files, {"action": "copy"}).allowed)
         self.assertEqual(policy.evaluate(files, {"action": "write"}).policy, "confirm_once")
         self.assertEqual(policy.evaluate(files, {"action": "delete"}).policy, "confirm_always")
         self.assertEqual(policy.evaluate(files, {"action": "clear_jarvis_temp"}).policy, "confirm_always")
+
+    def test_operation_preference_applies_without_weakening_minimum(self):
+        files = tool("file_controller", risk=RiskLevel.SENSITIVE)
+        policy = PermissionPolicy({
+            "file_controller:create_folder": PermissionLevel.BLOCKED,
+            "file_controller:delete": PermissionLevel.FREE,
+        })
+        self.assertEqual(policy.evaluate(files, {"action": "create_folder"}).policy, "blocked")
+        self.assertEqual(policy.evaluate(files, {"action": "delete"}).policy, "confirm_always")
 
     def test_direct_ui_actions_and_jarvis_exit_are_free(self):
         policy = PermissionPolicy()
@@ -118,6 +130,20 @@ class PermissionStoreTests(unittest.TestCase):
             store = PermissionStore(path)
             store.save({"dev_agent": PermissionLevel.BLOCKED})
             self.assertEqual(store.load()["dev_agent"], PermissionLevel.BLOCKED)
+
+    def test_operation_preferences_round_trip(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "permissions.json"
+            store = PermissionStore(path)
+            store.save({"file_controller:create_folder": PermissionLevel.FREE})
+            self.assertEqual(
+                store.load()["file_controller:create_folder"], PermissionLevel.FREE
+            )
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["version"], 2)
+            self.assertEqual(
+                payload["operations"]["file_controller"]["create_folder"], "free"
+            )
 
     def test_invalid_configuration_returns_safe_defaults(self):
         with TemporaryDirectory() as directory:

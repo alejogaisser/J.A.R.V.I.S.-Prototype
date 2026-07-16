@@ -44,6 +44,12 @@ def confirmation_request(tool_name: str, args: dict) -> tuple[str, str] | None:
         target = str(args.get("path") or "unspecified note")[:240]
         return "Approve Obsidian note change?", f"Action: {action}\nNote: {target}"
 
+    if tool_name == "permission_manager" and action in {"set", "change", "update"}:
+        target = str(args.get("tool_name") or "unknown tool")[:80]
+        operation = str(args.get("operation") or "default")[:80]
+        level = str(args.get("level") or "unknown")[:40]
+        return "Confirm permission change?", f"{target}/{operation} -> {level}"
+
     if tool_name == "computer_settings" and any(
         keyword in action
         for keyword in ("shutdown", "shut_down", "restart", "reboot", "toggle_wifi")

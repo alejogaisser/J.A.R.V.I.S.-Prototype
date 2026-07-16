@@ -9,7 +9,8 @@ from .registry import ToolRegistry
 
 
 SPECIAL_TOOLS = {
-    "save_memory", "screen_process", "visual_mouse", "close_camera", "shutdown_jarvis"
+    "save_memory", "screen_process", "visual_mouse", "close_camera", "shutdown_jarvis",
+    "permission_manager",
 }
 
 RISK = {
@@ -29,6 +30,7 @@ RISK = {
     "memory_forget": RiskLevel.SENSITIVE,
     "memory_restore": RiskLevel.LOCAL_CHANGE,
     "obsidian_connector": RiskLevel.SENSITIVE,
+    "permission_manager": RiskLevel.SENSITIVE,
 }
 
 CONFIRMATION = {
@@ -42,6 +44,7 @@ CONFIRMATION = {
 CONFIRMATION["memory_forget"] = ConfirmationPolicy.ALWAYS
 CONFIRMATION["memory_update"] = ConfirmationPolicy.DEPENDS_ON_ARGUMENTS
 CONFIRMATION["memory_restore"] = ConfirmationPolicy.DEPENDS_ON_ARGUMENTS
+CONFIRMATION["permission_manager"] = ConfirmationPolicy.DEPENDS_ON_ARGUMENTS
 
 DEFAULT_RESULTS = {
     "open_app": "Opened application.",

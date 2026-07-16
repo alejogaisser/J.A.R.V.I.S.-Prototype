@@ -25,7 +25,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QBrush, QColor, QDragEnterEvent, QDropEvent, QFont, QFontDatabase,
-    QKeySequence, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
+    QIcon, QKeySequence, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
     QRadialGradient, QShortcut,
 )
 from PyQt6.QtWidgets import (
@@ -1295,6 +1295,9 @@ class MainWindow(QMainWindow):
     def __init__(self, face_path: str):
         super().__init__()
         self._face_path = face_path
+        icon_path = CONFIG_DIR / "jarvis.ico"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         self.setWindowTitle("J.A.R.V.I.S — MARK XLVIII")
         self.setMinimumSize(_MIN_W, _MIN_H)
         self.resize(_DEFAULT_W, _DEFAULT_H)
@@ -1416,6 +1419,8 @@ class MainWindow(QMainWindow):
         self._cam_stream_sig.connect(self._on_cam_stream)
         self._cam_frame_sig.connect(self._on_cam_frame)
         self._cam_stop = threading.Event()
+        self._camera_frame_callback = None
+        self._last_camera_ai_frame = 0.0
 
         # Camera preview overlay (child of central widget, positioned in resizeEvent)
         self._cam_preview = _CameraPreview(self.centralWidget())
@@ -1510,7 +1515,15 @@ class MainWindow(QMainWindow):
                 ret, frame = cap.read()
                 if ret and frame is not None:
                     _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 65])
-                    self._cam_frame_sig.emit(buf.tobytes())
+                    data = buf.tobytes()
+                    self._cam_frame_sig.emit(data)
+                    now = time.monotonic()
+                    if self._camera_frame_callback and now - self._last_camera_ai_frame >= 1.0:
+                        self._last_camera_ai_frame = now
+                        try:
+                            self._camera_frame_callback(data)
+                        except Exception as exc:
+                            print(f"[Camera] AI frame callback failed: {exc}")
             cap.release()
         except Exception as e:
             print(f"[Camera] Stream error: {e}")
@@ -1519,6 +1532,10 @@ class MainWindow(QMainWindow):
 
     def stop_camera_stream(self) -> None:
         self._cam_stop.set()
+        self._camera_frame_callback = None
+
+    def set_camera_frame_callback(self, callback) -> None:
+        self._camera_frame_callback = callback
 
     # ------------------------------------------------------------------
     # Icon generation — arc-reactor style, rendered with Pillow
@@ -2408,6 +2425,10 @@ class MainWindow(QMainWindow):
         txt = self._input.text().strip()
         if not txt: return
         self._input.clear()
+        # Enter submits the command and returns keyboard control to the window.
+        # Do not change Toggle-to-Speak: typing and microphone state are separate.
+        self._input.clearFocus()
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
         self._log.append_log(f"You: {txt}")
         if self.on_text_command:
             threading.Thread(target=self.on_text_command, args=(txt,), daemon=True).start()
@@ -2461,7 +2482,17 @@ class _RootShim:
 
 class JarvisUI:
     def __init__(self, face_path: str, size=None):
+        if platform.system() == "Windows":
+            try:
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                    "AlejoGaisser.JARVIS.MarkXLVIII"
+                )
+            except (AttributeError, OSError):
+                pass
         self._app = QApplication.instance() or QApplication(sys.argv)
+        icon_path = CONFIG_DIR / "jarvis.ico"
+        if icon_path.exists():
+            self._app.setWindowIcon(QIcon(str(icon_path)))
         self._app.setStyle("Fusion")
 
         self._win = MainWindow(face_path)
@@ -2606,6 +2637,9 @@ class JarvisUI:
     def stop_camera_stream(self) -> None:
         """Thread-safe: stop the live camera feed."""
         self._win.stop_camera_stream()
+
+    def set_camera_frame_callback(self, callback) -> None:
+        self._win.set_camera_frame_callback(callback)
 
     def start_speaking(self):
         self.set_state("SPEAKING")

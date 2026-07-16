@@ -369,6 +369,19 @@ class _VisionSession:
                 print(f"[Vision] ⚠️  Send error: {e}")
                 raise  # propagate to TaskGroup → triggers session reconnect
 
+    def stream_frame(self, image_bytes: bytes) -> None:
+        """Thread-safe one-FPS live feed extending the current camera context."""
+        if not self._loop or not self._session or not image_bytes:
+            return
+
+        async def _send() -> None:
+            if self._session:
+                await self._session.send_realtime_input(
+                    video=gtypes.Blob(data=image_bytes, mime_type="image/jpeg")
+                )
+
+        asyncio.run_coroutine_threadsafe(_send(), self._loop)
+
     async def _recv_loop(self) -> None:
         transcript: list[str] = []
         try:
@@ -393,14 +406,8 @@ class _VisionSession:
                             print(f"[Vision] 💬 {full}")
                     transcript = []
                     # Auto-close camera ~2s after JARVIS finishes speaking
-                    if self._player and hasattr(self._player, "stop_camera_stream"):
-                        async def _deferred_close():
-                            await asyncio.sleep(2.0)
-                            try:
-                                self._player.stop_camera_stream()
-                            except Exception:
-                                pass
-                        asyncio.create_task(_deferred_close())
+                    # The stream is privacy-visible in the HUD and stays open until
+                    # close_camera (or its X button) explicitly stops it.
 
         except Exception as e:
             print(f"[Vision] ⚠️  Recv error: {e}")
@@ -469,6 +476,8 @@ def screen_process(
             print(f"[Vision] 📷 Camera: {len(image_bytes):,} bytes")
             if player and hasattr(player, "start_camera_stream"):
                 try:
+                    if hasattr(player, "set_camera_frame_callback"):
+                        player.set_camera_frame_callback(_session.stream_frame)
                     player.start_camera_stream()
                 except Exception as _e:
                     print(f"[Vision] ⚠️  Camera stream failed: {_e}")

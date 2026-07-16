@@ -53,6 +53,14 @@ def _write_notify_script(task_name: str, message: str, os_name: str) -> Path:
 message = {msg_literal}
 notified = False
 
+# A reminder must actively tell the user what it is about, even when the main
+# JARVIS process is closed. Windows SAPI works offline and does not expose data.
+try:
+    import win32com.client
+    win32com.client.Dispatch("SAPI.SpVoice").Speak("Jarvis reminder. " + message)
+except Exception:
+    pass
+
 try:
     from plyer import notification
     notification.notify(title="J.A.R.V.I.S Reminder", message=message, timeout=15)

@@ -4,6 +4,7 @@ import ctypes
 import json
 import math
 import os
+import platform
 import queue
 import subprocess
 import sys
@@ -33,6 +34,7 @@ MODEL_PATH = (
 SAMPLE_RATE = 16_000
 BLOCK_SIZE = 4_000
 MIN_WAKE_RMS = 180
+MIN_WAKE_CONFIDENCE = 0.82
 WAKE_AUDIO_WINDOW = 1.5
 
 WAKE_PHRASES = ("hey jarvis",)
@@ -46,7 +48,7 @@ _instance_mutex = None
 
 def apply_wake_config() -> None:
     """Load user-selectable phrases, model and voice threshold."""
-    global MODEL_PATH, MIN_WAKE_RMS, WAKE_PHRASES
+    global MODEL_PATH, MIN_WAKE_RMS, MIN_WAKE_CONFIDENCE, WAKE_PHRASES
     config = load_config()
     phrases = config.get("phrases", ["hey jarvis"])
     if not isinstance(phrases, list) or not all(isinstance(p, str) for p in phrases):
@@ -57,6 +59,7 @@ def apply_wake_config() -> None:
     model_path = Path(str(config.get("model_path", MODEL_PATH)))
     MODEL_PATH = model_path if model_path.is_absolute() else BASE_DIR / model_path
     MIN_WAKE_RMS = int(config.get("min_wake_rms", MIN_WAKE_RMS))
+    MIN_WAKE_CONFIDENCE = float(config.get("min_confidence", MIN_WAKE_CONFIDENCE))
     WAKE_PHRASES = normalized
 
 
@@ -377,6 +380,31 @@ def contains_wake_phrase(text: str) -> bool:
     return normalized in WAKE_PHRASES
 
 
+def result_confidence(payload: str) -> float:
+    """Average confidence for the exact recognized phrase; zero if unavailable."""
+    try:
+        words = json.loads(payload).get("result", [])
+        scores = [float(word.get("conf", 0.0)) for word in words if "conf" in word]
+        return sum(scores) / len(scores) if scores else 0.0
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return 0.0
+
+
+def windows_session_available() -> bool:
+    """Do not wake while Windows is locked (common when a laptop lid is closed)."""
+    if platform.system() != "Windows":
+        return True
+    try:
+        import ctypes
+        desktop = ctypes.windll.user32.OpenInputDesktop(0, False, 0x0100)
+        if not desktop:
+            return False
+        ctypes.windll.user32.CloseDesktop(desktop)
+        return True
+    except Exception:
+        return False
+
+
 def audio_rms(audio_data: bytes) -> float:
     """Calcula el nivel RMS de un bloque PCM int16 sin dependencias extra."""
     if len(audio_data) < 2:
@@ -408,6 +436,7 @@ def listen_for_wake_word(model: Model) -> bool:
         SAMPLE_RATE,
         json.dumps(list(dict.fromkeys([*WAKE_PHRASES, "jarvis", "[unk]"]))),
     )
+    recognizer.SetWords(True)
 
     clear_audio_queue()
     recent_voice_until = 0.0
@@ -441,10 +470,12 @@ def listen_for_wake_word(model: Model) -> bool:
                 recent_voice_until = time.monotonic() + WAKE_AUDIO_WINDOW
 
             if recognizer.AcceptWaveform(audio_data):
+                raw_result = recognizer.Result()
                 text = extract_text(
-                    recognizer.Result(),
+                    raw_result,
                     field="text",
                 )
+                confidence = result_confidence(raw_result)
 
                 if text:
                     print(f"[WakeWord] Escuchado: {text}")
@@ -455,6 +486,8 @@ def listen_for_wake_word(model: Model) -> bool:
                 if (
                     time.monotonic() <= recent_voice_until
                     and contains_wake_phrase(text)
+                    and confidence >= MIN_WAKE_CONFIDENCE
+                    and windows_session_available()
                 ):
                     clear_audio_queue()
                     return True

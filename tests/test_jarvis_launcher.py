@@ -15,6 +15,7 @@ class LauncherConfigTests(unittest.TestCase):
                 config = jarvis_launcher.load_config()
         self.assertTrue(config["enabled"])
         self.assertEqual(config["phrases"], ["hey jarvis"])
+        self.assertGreaterEqual(config["min_confidence"], 0.8)
 
     def test_stored_config_overrides_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -28,6 +29,12 @@ class LauncherConfigTests(unittest.TestCase):
     def test_direct_is_the_safe_default(self):
         args = jarvis_launcher.build_parser().parse_args([])
         self.assertEqual(args.mode, "direct")
+
+    def test_wake_phrase_requires_recognition_confidence(self):
+        source = Path("wake_word.py").read_text(encoding="utf-8")
+        self.assertIn("def result_confidence", source)
+        self.assertIn("confidence >= MIN_WAKE_CONFIDENCE", source)
+        self.assertIn("windows_session_available()", source)
 
 
 if __name__ == "__main__":

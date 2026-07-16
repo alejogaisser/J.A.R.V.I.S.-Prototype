@@ -6,12 +6,14 @@ import hmac
 import ast
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from core.security import VoiceConfirmationGate, confirmation_request, safe_tool_args
 from actions.computer_control import _scale_image_point
+from actions.file_controller import create_file, file_controller, open_file, read_file, write_file
 from core.model_fallback import generate_with_model_fallback, is_transient_api_error
 from dashboard.server import _decrypt_cbc, _derive_keys
 
@@ -126,6 +128,33 @@ class VoiceConfirmationTests(unittest.TestCase):
 
 
 class AudioVisionRegressionTests(unittest.TestCase):
+    def test_enter_releases_command_focus_without_changing_toggle(self):
+        source = Path("ui.py").read_text(encoding="utf-8")
+        self.assertIn("self._input.clearFocus()", source)
+        send_body = source[source.index("    def _send(self):"):source.index("    def _apply_state", source.index("    def _send(self):"))]
+        self.assertNotIn("_toggle_talk", send_body)
+
+    def test_windows_window_uses_jarvis_taskbar_identity_and_icon(self):
+        source = Path("ui.py").read_text(encoding="utf-8")
+        self.assertIn("SetCurrentProcessExplicitAppUserModelID", source)
+        self.assertIn('CONFIG_DIR / "jarvis.ico"', source)
+        self.assertIn("self.setWindowIcon(QIcon(str(icon_path)))", source)
+
+    def test_escape_signals_model_and_flushes_local_playback(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        self.assertIn("_interrupt_model_turn", source)
+        self.assertIn("[USER_INTERRUPT]", source)
+        self.assertIn("types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS", source)
+
+    def test_camera_frames_continue_until_explicit_close(self):
+        vision = Path("actions/screen_processor.py").read_text(encoding="utf-8")
+        ui = Path("ui.py").read_text(encoding="utf-8")
+        self.assertIn("def stream_frame", vision)
+        self.assertIn("set_camera_frame_callback(_session.stream_frame)", vision)
+        self.assertIn("screen_process_action", Path("main.py").read_text(encoding="utf-8"))
+        self.assertNotIn("async def _deferred_close", vision)
+        self.assertIn("now - self._last_camera_ai_frame >= 1.0", ui)
+
     def test_shutdown_waits_for_farewell_playback(self):
         source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn("[SHUTDOWN_SCHEDULED]", source)
@@ -168,10 +197,10 @@ class AudioVisionRegressionTests(unittest.TestCase):
 
     def test_only_escape_interrupts_model_playback(self):
         source = Path("main.py").read_text(encoding="utf-8")
-        self.assertIn("types.ActivityHandling.NO_INTERRUPTION", source)
+        self.assertIn("types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS", source)
         self.assertIn("and not jarvis_speaking", source)
         self.assertIn('self._flush_playback("ESC")', source)
-        self.assertNotIn("types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS", source)
+        self.assertNotIn("types.ActivityHandling.NO_INTERRUPTION", source)
 
     def test_realtime_audio_prefers_fresh_mic_frames(self):
         source = Path("main.py").read_text(encoding="utf-8")
@@ -227,6 +256,68 @@ class AudioVisionRegressionTests(unittest.TestCase):
         self.assertNotIn("_pending_vision", main_source)
         self.assertIn('_DEFAULT_VISION_MODEL = "gemini-3.5-flash"', vision_source)
         self.assertIn('_DEFAULT_VISION_FALLBACK_MODEL = "gemini-3.1-flash-lite"', vision_source)
+
+
+class FileAndDesktopRegressionTests(unittest.TestCase):
+    def test_create_folder_accepts_common_model_aliases(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "actions.file_controller._is_protected_path", return_value=False
+        ):
+            result = file_controller({
+                "action": "mkdir", "path": directory, "folder_name": "Nueva carpeta"
+            })
+            self.assertIn("Folder created", result)
+            self.assertTrue((Path(directory) / "Nueva carpeta").is_dir())
+
+    def test_file_create_write_read_and_open_pipeline(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "actions.file_controller._is_protected_path", return_value=False
+        ):
+            path = Path(directory)
+            self.assertIn("File created", create_file(str(path), "qa.txt", "one"))
+            self.assertIn("Written to", write_file(str(path), "qa.txt", "two"))
+            self.assertEqual(read_file(str(path), "qa.txt"), "two")
+            with patch("actions.file_controller.os.startfile") as startfile:
+                self.assertIn("Opened", open_file(str(path), "qa.txt"))
+                startfile.assert_called_once()
+
+    def test_power_actions_require_central_confirmation_but_accept_preapproval(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        settings = Path("actions/computer_settings.py").read_text(encoding="utf-8")
+        self.assertIn('args["confirmed"] = "yes"', source)
+        self.assertIn('if confirmed not in ("yes", "true", "1", "confirm")', settings)
+        self.assertIn("result.returncode != 0", settings)
+
+    def test_spoken_confirmation_is_short(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        self.assertIn('question = "Confirm action? Yes or no."', source)
+
+    def test_visual_mouse_prefers_uia_before_image_grounding(self):
+        source = Path("actions/computer_control.py").read_text(encoding="utf-8")
+        self.assertIn("native = _uia_find(description)", source)
+        self.assertIn('Desktop(backend="uia")', source)
+
+    def test_sensitive_paths_are_immutably_denied(self):
+        from actions.file_controller import _is_safe_path
+        home = Path.home()
+        for path in (
+            home / "AppData" / "Local" / "secret.txt",
+            home / ".ssh" / "id_rsa",
+            home / "Documents" / ".env",
+            home / "Documents" / "api_keys.json",
+            home / "Documents" / "certificate.pfx",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_is_safe_path(path))
+
+    def test_permission_manager_is_declared_and_protected(self):
+        main_source = Path("main.py").read_text(encoding="utf-8")
+        self.assertIn('"name": "permission_manager"', main_source)
+        self.assertIn("immutable minimum", main_source)
+        self.assertIn('question = "Confirm action? Yes or no."', main_source)
 
 
 class DashboardCryptoTests(unittest.TestCase):
