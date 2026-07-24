@@ -214,4 +214,11 @@ python -m compileall -q .
 
 Proyecto original **Mark XLVIII** creado por [FatihMakes](https://www.youtube.com/@FatihMakes).
 
-El proyecto original se distribuye para uso personal y no comercial bajo [Creative Commons BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). Conservá la atribución y verificá las condiciones de la licencia antes de redistribuir modificaciones.
+Las modificaciones originales de Mark LI se publican, en la medida en que sus
+derechos correspondan al mantenedor, bajo
+[Creative Commons BY-NC 4.0](LICENSE.md). Conservá la atribución y verificá las
+condiciones del proyecto original antes de redistribuir modificaciones.
+
+Los modelos de wake word y demás componentes externos mantienen licencias
+propias. Consultá [los avisos de terceros](THIRD_PARTY_NOTICES.md) y la
+[política de seguridad](SECURITY.md) antes de publicar un fork.

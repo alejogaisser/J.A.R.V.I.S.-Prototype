@@ -45,6 +45,7 @@ memory/scripts.json
 .vscode/
 .idea/
 .codex-backups/
+/AGENTS.md
 
 Thumbs.db
 Desktop.ini

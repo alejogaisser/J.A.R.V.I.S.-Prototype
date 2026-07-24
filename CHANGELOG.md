@@ -1,5 +1,13 @@
 # Historial de versiones
 
+## Publicación segura — 2026-07-23
+
+- se incorporaron la licencia del proyecto, los avisos de terceros y la
+  política de seguridad;
+- se excluyeron del versionado las instrucciones locales de desarrollo;
+- se preparó la eliminación de rutas personales de todos los commits y tags
+  públicos sin alterar el código de las versiones.
+
 ## 2.0.0 — Mark LI — 2026-07-23
 
 Mark LI consolida la evolución actual de JARVIS como una actualización mayor:
