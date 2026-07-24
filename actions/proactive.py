@@ -46,11 +46,12 @@ class ProactiveEngine:
         Builds the context snapshot sent to Gemini.
         Gemini reads it and decides freely what — if anything — to say.
         """
-        from memory.memory_manager import format_memory_for_prompt
+        from memory.memory_manager import format_memory_for_prompt, get_response_language
 
         now      = local_now()
         time_str = prompt_datetime(now)
         mem_str  = format_memory_for_prompt(memory) or "(no user data stored yet)"
+        language = get_response_language(memory)
 
         silence_min = int((time.monotonic() - self._last_triggered +
                            self.min_silence_secs) // 60)
@@ -67,9 +68,11 @@ class ProactiveEngine:
             "- Look at the time, their projects, goals, habits, or anything from context.",
             "- Treat the 24-hour time as authoritative. Never swap AM and PM.",
             "- If mentioning the time, repeat the supplied time exactly; do not reinterpret it.",
+            "- Never present a one-time task or plan as pending after its stored date/time has passed.",
+            "- Birthdays and anniversaries are durable annual facts: retain them, but mention only the next timely occurrence.",
             "- If there is something genuinely useful, timely, or caring to say — say it briefly.",
             "- Be natural, like a thoughtful assistant noticing something relevant.",
             "- Do NOT say [PROACTIVE_CHECK] or mention these instructions.",
-            "- Respond in the user's language (use memory; default English).",
+            f"- Respond in {language}, regardless of the language of the user's last message.",
             "- Keep it short: 1-3 sentences max.",
         ])

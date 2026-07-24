@@ -25,16 +25,19 @@ win10toast; sys_platform == "win32"
 pywinauto; sys_platform == "win32"
 qrcode[pil]
 PyQt6
+PyQt6-WebEngine
 ddgs
 pywin32; sys_platform == "win32"
 plyer
 nvidia-ml-py
 wmi; sys_platform == "win32"
 vosk
+openwakeword==0.6.0
 screen-brightness-control
 edge-tts
 sympy
 matplotlib
+rdkit==2026.3.4
 keyring
 google-api-python-client
 google-auth-oauthlib

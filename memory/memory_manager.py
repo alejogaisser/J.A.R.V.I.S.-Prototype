@@ -41,6 +41,20 @@ def _key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(value).lower()).strip("_") or "note"
 
 
+def _contexts(values: Any) -> list[str]:
+    """Normalize only explicitly supplied topic facets for graph navigation."""
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    normalized: list[str] = []
+    for value in values:
+        context = _key(str(value))
+        if context and context != "note" and context not in normalized:
+            normalized.append(context)
+        if len(normalized) == 8:
+            break
+    return normalized
+
+
 def _empty_store() -> dict[str, Any]:
     return {"schema_version": SCHEMA_VERSION, "records": [], "history": []}
 
@@ -142,13 +156,36 @@ def load_memory() -> dict[str, dict[str, dict[str, str]]]:
     return result
 
 
+def get_response_language(memory: dict | None = None) -> str:
+    """Return the explicitly stored response language, defaulting to English."""
+    memory = memory if memory is not None else load_memory()
+    identity = memory.get("identity", {})
+    entry = identity.get("language", {})
+    value = entry.get("value", "") if isinstance(entry, dict) else entry
+    return str(value).strip() or "English"
+
+
+def format_language_instruction(memory: dict | None = None) -> str:
+    """Build the final system-level language rule for a conversation session."""
+    language = get_response_language(memory)
+    return (
+        "[RESPONSE LANGUAGE - HIGHEST PRIORITY]\n"
+        f"Always respond in {language}, regardless of the language used by the user.\n"
+        "Change response language only when the user explicitly asks you to speak, "
+        "reply, or continue in another language. When they do, save that language "
+        "as identity/language and use it immediately. Never infer a preference change "
+        "from the language of an ordinary message."
+    )
+
+
 def create_memory(category: str, key: str, value: Any, *, expires_at: str | None = None,
                   source: str = "user_statement", source_context: str = "conversation",
                   confidence: float = 1.0, sensitivity: str = "normal", confirmed: bool = True,
-                  replace: bool = False) -> dict[str, Any]:
+                  replace: bool = False, contexts: list[str] | None = None) -> dict[str, Any]:
     category = category if category in VALID_CATEGORIES else "notes"
     key = _key(key)
     value = str(value).strip()[:MAX_VALUE_LENGTH]
+    explicit_contexts = _contexts(contexts)
     if not value:
         raise ValueError("Memory value cannot be empty")
     _parse_time(expires_at)
@@ -158,6 +195,12 @@ def create_memory(category: str, key: str, value: Any, *, expires_at: str | None
     conflicts = [r for r in _active_records(store) if r["category"] == category and r["key"] == key]
     same = next((r for r in conflicts if r["value"] == value), None)
     if same:
+        if explicit_contexts:
+            merged = list(dict.fromkeys([*same.get("contexts", []), *explicit_contexts]))[:8]
+            if merged != same.get("contexts", []):
+                same["contexts"] = merged
+                same["updated_at"] = _now()
+                _save_store(store)
         return {"result": "unchanged", "record": same}
     if conflicts and not replace:
         return {"result": "conflict", "existing": conflicts[0], "proposed_value": value}
@@ -167,14 +210,15 @@ def create_memory(category: str, key: str, value: Any, *, expires_at: str | None
         old = record["value"]
         record.update(value=value, updated_at=now, expires_at=expires_at, source=source,
                       source_context=source_context, confidence=max(0.0, min(1.0, float(confidence))),
-                      sensitivity=sensitivity, confirmed=bool(confirmed))
+                      sensitivity=sensitivity, confirmed=bool(confirmed), contexts=explicit_contexts)
         store["history"].append({"event": "updated", "record_id": record["id"], "at": now, "old_value": old})
         result = "updated"
     else:
         record = {"id": f"mem_{uuid.uuid4().hex}", "category": category, "key": key, "value": value,
                   "created_at": now, "updated_at": now, "expires_at": expires_at, "source": source,
                   "source_context": source_context, "confidence": max(0.0, min(1.0, float(confidence))),
-                  "status": "active", "sensitivity": sensitivity, "confirmed": bool(confirmed)}
+                  "status": "active", "sensitivity": sensitivity, "confirmed": bool(confirmed),
+                  "contexts": explicit_contexts}
         store["records"].append(record)
         store["history"].append({"event": "created", "record_id": record["id"], "at": now})
         result = "created"
@@ -206,7 +250,7 @@ def search_memories(query: str = "", category: str | None = None) -> list[dict[s
 
 
 def update_memory_by_id(record_id: str, **changes: Any) -> dict[str, Any]:
-    allowed = {"value", "expires_at", "sensitivity", "confirmed"}
+    allowed = {"value", "expires_at", "sensitivity", "confirmed", "contexts"}
     unknown = set(changes) - allowed
     if unknown:
         raise ValueError(f"Unsupported fields: {', '.join(sorted(unknown))}")
@@ -218,6 +262,8 @@ def update_memory_by_id(record_id: str, **changes: Any) -> dict[str, Any]:
         _parse_time(changes["expires_at"])
     if "value" in changes:
         changes["value"] = str(changes["value"]).strip()[:MAX_VALUE_LENGTH]
+    if "contexts" in changes:
+        changes["contexts"] = _contexts(changes["contexts"])
     old = {key: record.get(key) for key in changes}
     record.update(changes, updated_at=_now())
     store["history"].append({"event": "updated", "record_id": record_id, "at": _now(), "previous": old})

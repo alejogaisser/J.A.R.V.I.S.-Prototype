@@ -28,8 +28,14 @@ logs/
 
 JarvisProjects/
 jarvis_screenshot.png
+jarvis_temp_screenshot.png
 jarvis_debug_*.png
 youtube_summary_*.txt
+tmp/
+
+# Local test/user workspaces; never publish their contents.
+Drive/
+OS/
 
 .jarvis_profiles/
 memory/long_term.json
@@ -45,3 +51,10 @@ Desktop.ini
 .DS_Store
 
 models/
+!models/
+models/*
+!models/openwakeword/
+models/openwakeword/*
+!models/openwakeword/embedding_model.onnx
+!models/openwakeword/hey_jarvis_v0.1.onnx
+!models/openwakeword/melspectrogram.onnx

@@ -35,6 +35,7 @@ except ImportError:
 from google import genai
 from google.genai import types as gtypes
 from core.model_fallback import generate_with_model_fallback, is_transient_api_error
+from utils.camera import configure_capture, profile_from_config
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -210,6 +211,9 @@ def _capture_camera() -> tuple[bytes, str]:
     if not cap.isOpened():
         raise RuntimeError(f"Camera index {index} could not be opened.")
 
+    profile = profile_from_config(_load_config())
+    configure_capture(cap, cv2, profile)
+
     for _ in range(10):
         cap.read()
 
@@ -224,10 +228,12 @@ def _capture_camera() -> tuple[bytes, str]:
         img = PIL.Image.fromarray(rgb)
         img.thumbnail((_IMG_MAX_W, _IMG_MAX_H), PIL.Image.BILINEAR)
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=_JPEG_Q)
+        img.save(buf, format="JPEG", quality=profile.jpeg_quality)
         return buf.getvalue(), "image/jpeg"
 
-    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, _JPEG_Q])
+    _, buf = cv2.imencode(
+        ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, profile.jpeg_quality]
+    )
     return buf.tobytes(), "image/jpeg"
 
 

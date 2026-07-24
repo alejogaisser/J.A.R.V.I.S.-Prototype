@@ -16,12 +16,14 @@ if _platform.system() == "Windows":
 # ─────────────────────────────────────────────────────────────────────────────
 
 import asyncio
+import os
 import re
 import threading
 import time
 import json
 import sys
 import traceback
+import faulthandler
 from datetime import datetime
 from core.clock import local_now, prompt_datetime
 from pathlib import Path
@@ -30,28 +32,57 @@ import sounddevice as sd
 from google import genai
 from google.genai import types
 from ui import JarvisUI
+
+
+def _configure_console_encoding() -> None:
+    """Keep diagnostic output from crashing audio tasks on legacy consoles."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
+_configure_console_encoding()
+
+_CRASH_LOG_DIR = Path(__file__).resolve().parent / "logs"
+_CRASH_LOG_DIR.mkdir(exist_ok=True)
+_CRASH_LOG_HANDLE = (_CRASH_LOG_DIR / "jarvis_crash.log").open(
+    "a", encoding="utf-8", buffering=1
+)
+faulthandler.enable(_CRASH_LOG_HANDLE, all_threads=True)
+from core.diagnostics import CrashReporter
 from core.security import VoiceConfirmationGate, confirmation_request, safe_tool_args
+from core.live_session import AudioInactivityWatchdog, LiveSessionState
+from core.runtime_state import update_runtime_state
 from core.permissions import (
     ExecutionContext, PermissionLevel, PermissionPolicy, PermissionStore, build_preview,
 )
-from core.tools import ToolExecutor
+from core.tools import ToolExecutor, normalize_tool_output
 from core.tools.builtins import SPECIAL_TOOLS, build_builtin_registry
 from memory.memory_manager import (
     load_memory, create_memory, list_memories, search_memories,
     update_memory_by_id, forget_memory, restore_memory, format_memory_for_prompt,
+    format_language_instruction, get_response_language,
 )
 from memory.script_memory import format_scripts_for_prompt
+
+
+_CRASH_REPORTER = CrashReporter(_CRASH_LOG_DIR / "jarvis_crash.log")
+_CRASH_REPORTER.install()
 
 
 
 def _load_action_dependencies() -> None:
     """Load optional/heavy action modules after the UI is already visible."""
     global file_processor, flight_finder, open_app, weather_action
-    global send_message, reminder, computer_settings, analyze_visual, screen_process_action
+    global send_message, reminder, computer_settings, analyze_visual
     global youtube_video, desktop_control, browser_control, file_controller
     global code_helper, dev_agent, web_search_action, computer_control
     global game_updater, SystemMonitor, get_system_status, ProactiveEngine
-    global math_engine, account_connector, obsidian_connector
+    global math_engine, study_engine, account_connector, obsidian_connector, open_geo
 
     from actions.file_processor import file_processor
     from actions.flight_finder import flight_finder
@@ -60,7 +91,7 @@ def _load_action_dependencies() -> None:
     from actions.send_message import send_message
     from actions.reminder import reminder
     from actions.computer_settings import computer_settings
-    from actions.screen_processor import analyze_visual, screen_process as screen_process_action
+    from actions.screen_processor import analyze_visual
     from actions.youtube_video import youtube_video
     from actions.desktop import desktop_control
     from actions.browser_control import browser_control
@@ -73,8 +104,10 @@ def _load_action_dependencies() -> None:
     from actions.system_monitor import SystemMonitor, get_system_status
     from actions.proactive import ProactiveEngine
     from actions.math_engine import math_engine
+    from actions.study_engine import study_engine
     from actions.account_connector import account_connector
     from actions.obsidian_connector import obsidian_connector
+    from actions.open_geo import open_geo
 
 
 def get_base_dir():
@@ -249,6 +282,65 @@ TOOL_DECLARATIONS = [
             "kamerayı kapat, kapat, creepy, etc."
         ),
         "parameters": {"type": "OBJECT", "properties": {}, "required": []}
+    },
+    {
+        "name": "camera_control",
+        "description": (
+            "Controls the live camera workspace. Switch to hand mode only when explicitly "
+            "requested. Hand mode only moves visible content; zoom is always voice-controlled."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "mode": {"type": "STRING", "description": "normal | hand"},
+                "zoom": {"type": "NUMBER", "description": "Camera zoom from 1.0 to 4.0"},
+                "pan_x": {"type": "NUMBER", "description": "Horizontal focus from -1 (left) to 1 (right)"},
+                "pan_y": {"type": "NUMBER", "description": "Vertical focus from -1 (up) to 1 (down)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "pet_mode",
+        "description": (
+            "Moves the JARVIS application into its desktop Pet Mode while keeping the same "
+            "voice session alive. Call immediately when the user asks to activate Pet Mode, "
+            "switch to the pet, minimize JARVIS to the pet, 'pasá a modo pet', or equivalent. "
+            "Do not use generic window minimization for this request."
+        ),
+        "parameters": {"type": "OBJECT", "properties": {}, "required": []}
+    },
+    {
+        "name": "interface_control",
+        "description": (
+            "Controls JARVIS's own application interface through the same internal actions as its buttons. "
+            "Use for every voice request to open, close, toggle, or navigate JARVIS UI: Pet Mode or main app, "
+            "Core, Chat, Files, Camera, Memory, Geo, Context, System telemetry, results, fullscreen, listening mode, "
+            "live map, holographic globe, or interrupt. Examples: 'pasa a pet mode', 'volvé a la app', "
+            "'abrí tu mapa', 'mostrá el chat', 'cerrá la cámara'. Opening Camera only displays the live stream; "
+            "use screen_process separately only when the user asks JARVIS to inspect or analyze what it sees."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "description": "open | close | toggle | status | set"
+                },
+                "target": {
+                    "type": "STRING",
+                    "description": (
+                        "status | pet | app | core | chat | files | camera | study | memory | geo | context | system | "
+                        "live_map | fullscreen | listening | content | interrupt"
+                    )
+                },
+                "mode": {
+                    "type": "STRING",
+                    "description": "Optional: live | holographic for live_map; always | toggle for listening"
+                },
+            },
+            "required": ["action", "target"]
+        }
     },
     {
         "name": "visual_mouse",
@@ -555,8 +647,12 @@ TOOL_DECLARATIONS = [
             "Never store an inference or sensitive/private data silently. "
             "Do NOT call for: weather, reminders, searches, or one-time commands. "
             "Do NOT announce that you are saving — just call it silently. "
-            "If a conflict is returned, ask whether to replace the old memory. "
-            "Values must be in English regardless of the conversation language."
+            "If the user explicitly changes a known fact, set replace_existing=true. "
+            "Otherwise, if a conflict is returned, ask whether to replace the old memory. "
+            "Values must be in English regardless of the conversation language. "
+            "A dated task, promise, appointment, or one-time plan MUST use category='temporary' "
+            "and expires_at set to its relevant local date/time. Recurring facts such as birthdays "
+            "and anniversaries MUST remain durable without expires_at."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -574,7 +670,12 @@ TOOL_DECLARATIONS = [
                 },
                 "key":   {"type": "STRING", "description": "Short snake_case key (e.g. name, favorite_food, sister_name)"},
                 "value": {"type": "STRING", "description": "Concise value in English (e.g. Fatih, pizza, older sister)"},
-                "expires_at": {"type": "STRING", "description": "Optional ISO-8601 expiry with timezone for temporary memories"},
+                "contexts": {
+                    "type": "ARRAY", "items": {"type": "STRING"},
+                    "description": "Optional short topic nuclei explicitly stated by the user. Never infer or invent an unstated context."
+                },
+                "expires_at": {"type": "STRING", "description": "Required ISO-8601 local expiry for dated one-time commitments; omit for durable or annually recurring facts"},
+                "replace_existing": {"type": "BOOLEAN", "description": "True only when the user explicitly changes or corrects this fact"},
             },
             "required": ["category", "key", "value"]
         }
@@ -617,6 +718,30 @@ TOOL_DECLARATIONS = [
         }, "required": ["memory_id"]}
     },
     {
+        "name": "memory_graph",
+        "description": "Open or refresh the interactive local knowledge graph combining Obsidian notes, links, tags, and redacted JARVIS memory.",
+        "parameters": {"type": "OBJECT", "properties": {
+            "action": {"type": "STRING", "description": "open|refresh"}
+        }, "required": []}
+    },
+    {
+        "name": "geo_map",
+        "description": (
+            "Open the holographic live map or use zero-key open services to focus a real place, "
+            "calculate a route, or inspect current weather. Distinguishes cities from provinces/states "
+            "and countries, and accepts regional qualifiers. No billing account or API key is required."
+        ),
+        "parameters": {"type": "OBJECT", "properties": {
+            "action": {"type": "STRING", "description": "open|status|focus|route|weather"},
+            "query": {"type": "STRING", "description": "Place to focus"},
+            "place_type": {"type": "STRING", "description": "Optional city|province|country disambiguation"},
+            "country_code": {"type": "STRING", "description": "Optional ISO country code, e.g. AR"},
+            "location": {"type": "STRING", "description": "Weather location"},
+            "origin": {"type": "STRING"}, "destination": {"type": "STRING"},
+            "travel_mode": {"type": "STRING", "description": "DRIVE (current zero-key routing mode)"}
+        }, "required": ["action"]}
+    },
+    {
         "name": "math_engine",
         "description": (
             "Local exact and numeric mathematics. Use for simplification, equations, "
@@ -637,18 +762,54 @@ TOOL_DECLARATIONS = [
         }, "required": ["action"]}
     },
     {
+        "name": "study_engine",
+        "description": (
+            "Creates and displays verified artifacts in JARVIS Study. Prefer this for exercises, functions, "
+            "calculus, matrices, 2D/3D models, free-body diagrams, molecules, interactive anatomy/organ "
+            "schematics, chemistry, physics, medicine, or a structured "
+            "science explanation. If the main app is visible Study opens automatically; in Pet Mode or while "
+            "minimized the result is stored without opening the app. For a photographed exercise, first use "
+            "screen_process once to transcribe it, then call Study with the structured expression/data."
+        ),
+        "parameters": {"type": "OBJECT", "properties": {
+            "action": {"type": "STRING", "description": "status|open|present|simplify|solve|derivative|integral|limit|numeric|matrix|gauss|plot2d|plot3d|free_body|molecule|anatomy|geogebra|wolfram"},
+            "subject": {"type": "STRING"}, "title": {"type": "STRING"},
+            "problem": {"type": "STRING"}, "query": {"type": "STRING"},
+            "result": {"type": "STRING"}, "steps": {"type": "ARRAY", "items": {"type": "STRING"}},
+            "note": {"type": "STRING"}, "expression": {"type": "STRING"},
+            "rhs": {"type": "STRING"}, "variable": {"type": "STRING"},
+            "order": {"type": "INTEGER"}, "lower": {"type": "STRING"}, "upper": {"type": "STRING"},
+            "point": {"type": "STRING"}, "direction": {"type": "STRING"}, "precision": {"type": "INTEGER"},
+            "matrix": {"type": "STRING"}, "matrix_operation": {"type": "STRING"},
+            "min": {"type": "NUMBER"}, "max": {"type": "NUMBER"},
+            "forces": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+                "label": {"type": "STRING"}, "magnitude": {"type": "NUMBER"}, "angle_deg": {"type": "NUMBER"}
+            }}},
+            "smiles": {"type": "STRING"},
+            "organ": {"type": "STRING", "description": "Organ for an interactive educational anatomy schematic"}
+        }, "required": ["action"]}
+    },
+    {
         "name": "account_connector",
         "description": (
-            "Connect, disconnect, inspect, search, read, or download from an authorized "
+            "Connect, disconnect, inspect, search, read, download, or create items in an authorized "
             "personal account. Supports Gmail, Google Calendar and Google Drive. Read/search/download "
-            "are direct after OAuth; never request or store the user's password."
+            "are direct after OAuth; Google Drive also supports find_folder, list_children, and "
+            "verified create_file/create_folder. For any Google Drive request, use only this tool: "
+            "never use file_controller, browser vision, or screen_process to claim a Drive change. "
+            "Never claim a write succeeded unless the tool result starts with 'Verified'. Never request "
+            "or store the user's password."
         ),
         "parameters": {"type": "OBJECT", "properties": {
             "provider": {"type": "STRING", "description": "gmail|outlook|google_calendar|google_drive"},
-            "action": {"type": "STRING", "description": "connect|disconnect|status|search|read|download"},
+            "action": {"type": "STRING", "description": "connect|disconnect|status|search|find_folder|list_children|read|download|create_file|create_folder"},
             "query": {"type": "STRING", "description": "Provider-specific search text or Gmail query"},
             "limit": {"type": "INTEGER"}, "item_id": {"type": "STRING"},
-            "attachment": {"type": "STRING"}, "destination": {"type": "STRING"}
+            "attachment": {"type": "STRING"}, "destination": {"type": "STRING"},
+            "name": {"type": "STRING", "description": "Name for create_file or create_folder"},
+            "content": {"type": "STRING", "description": "UTF-8 text content for create_file"},
+            "parent_id": {"type": "STRING", "description": "Google Drive folder ID returned by search/read"},
+            "mime_type": {"type": "STRING", "description": "Optional MIME type for create_file"}
         }, "required": ["provider", "action"]}
     },
     {
@@ -707,7 +868,14 @@ class JarvisLive:
         self._phone_active        = False   # True while phone mic is streaming; pauses PC mic
         self._vision_last_time     = 0.0     # monotonic time of last screen_process call (cooldown guard)
         self._vision_busy          = False   # True while a vision capture/inject cycle is in flight
+        self._camera_frame_pending = False
+        self._ever_connected       = False
+        self._live_session_state   = LiveSessionState()
+        self._audio_watchdog       = AudioInactivityWatchdog()
+        self._mic_callback_at      = time.monotonic()
+        self._remote_drive_folders: set[str] = set()
         self._interrupted          = False   # True while draining audio after user interrupt
+        self._interrupt_serial     = 0       # Old recovery timers cannot clear a newer ESC.
         self.ui.on_text_command   = self._on_text_command
         self.ui.on_remote_clicked = self._make_remote_key
         self.ui.on_interrupt      = self.interrupt
@@ -727,14 +895,13 @@ class JarvisLive:
         self._shutdown_started = False
         self._shutdown_farewell_audio_seen = False
         handlers = {
-            "open_app": lambda args: open_app(parameters=args, response=None, player=self.ui)
-                or f"Opened {args.get('app_name')}.",
+            "open_app": lambda args: open_app(parameters=args, response=None, player=self.ui),
             "weather_report": lambda args: weather_action(parameters=args, player=self.ui),
             "browser_control": lambda args: browser_control(parameters=args, player=self.ui),
             "file_controller": lambda args: file_controller(parameters=args, player=self.ui),
             "send_message": lambda args: send_message(
                 parameters=args, response=None, player=self.ui, session_memory=None
-            ) or f"Message sent to {args.get('receiver')}.",
+            ),
             "reminder": lambda args: reminder(parameters=args, response=None, player=self.ui),
             "youtube_video": lambda args: youtube_video(parameters=args, response=None, player=self.ui),
             "computer_settings": lambda args: computer_settings(
@@ -760,14 +927,56 @@ class JarvisLive:
             ),
             "memory_forget": lambda args: forget_memory(args["memory_id"]),
             "memory_restore": lambda args: restore_memory(args["memory_id"]),
-            "math_engine": lambda args: math_engine(parameters=args, player=self.ui),
+            "memory_graph": self._open_memory_graph,
+            "geo_map": self._run_geo_map,
+            "math_engine": lambda args: study_engine(parameters=args, player=self.ui),
+            "study_engine": lambda args: study_engine(parameters=args, player=self.ui),
             "account_connector": lambda args: account_connector(parameters=args, player=self.ui),
             "obsidian_connector": lambda args: obsidian_connector(parameters=args, player=self.ui),
+            "pet_mode": lambda args: self.ui.enter_pet_mode(
+                "LISTENING", "Pet Mode active."
+            ) or "Pet Mode activated; the voice session remains active.",
+            "interface_control": lambda args: self.ui.control_interface(
+                args.get("action", "open"),
+                args.get("target", "status"),
+                args.get("mode", ""),
+            ),
         }
         self.tool_registry = build_builtin_registry(TOOL_DECLARATIONS, handlers)
         self.permission_store = PermissionStore()
         self.permission_policy = PermissionPolicy(self.permission_store.load())
         self.tool_executor = ToolExecutor(self.tool_registry)
+
+    def _open_memory_graph(self, _args: dict):
+        self.ui.show_memory_graph()
+        return "Interactive local memory graph opened and reindexed."
+
+    def _run_geo_map(self, args: dict):
+        action = str(args.get("action", "open")).lower()
+        if action == "open":
+            self.ui.show_geo()
+            return "Holographic geographic workspace opened in local mode."
+        result = open_geo(args)
+        if action in {"focus", "place"}:
+            self.ui.show_geo(result)
+        elif action == "route":
+            route_view = dict(result.get("destination") or {})
+            route_view["path"] = result.get("path", [])
+            self.ui.show_geo(route_view)
+            distance = float(result.get("distance_meters", 0)) / 1000
+            self.ui.show_content(
+                "ROUTE / OPEN DATA",
+                f"{result['origin'].get('name')}  →  {result['destination'].get('name')}\n"
+                f"DISTANCE  {distance:.1f} km\nDURATION  {result.get('duration', 'N/A')}\n"
+                f"MODE      {result.get('travel_mode', 'DRIVE')}",
+            )
+        elif action == "weather":
+            self.ui.show_geo(result.get("place"))
+            self.ui.show_content(
+                "WEATHER / OPEN-METEO",
+                json.dumps(result, ensure_ascii=False, indent=2)[:4000],
+            )
+        return result
 
     def _run_file_processor(self, args: dict):
         args = dict(args)
@@ -912,18 +1121,21 @@ class JarvisLive:
     def interrupt(self) -> None:
         """Thread-safe ESC handler: cancel the model turn and local playback."""
         self._interrupted = True
+        self._interrupt_serial += 1
         self._interrupted_at = time.monotonic()
         self.set_speaking(False)
         self.ui.write_log("SYS: Interrupted — listening...")
         if self._loop:
+            serial = self._interrupt_serial
             self._loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self._interrupt_model_turn())
+                lambda: asyncio.create_task(self._interrupt_model_turn(serial))
             )
 
-    async def _interrupt_model_turn(self) -> None:
-        """Send explicit user activity so Gemini stops generating, then stay silent."""
+    async def _interrupt_model_turn(self, serial: int) -> None:
+        """Cancel one model turn and always restore the microphone afterwards."""
         await self._flush_playback("ESC")
         if not self.session:
+            self._release_interrupt(serial)
             return
         try:
             await self.session.send_realtime_input(
@@ -933,6 +1145,20 @@ class JarvisLive:
             # Local playback is already stopped; retain a useful diagnostic if the
             # active Live API version cannot accept manual activity signals.
             self.ui.write_log(f"AUDIO: Model cancellation signal failed: {exc}")
+        finally:
+            # A missing turn_complete used to leave _send_realtime dropping
+            # microphone frames forever after ESC.
+            await asyncio.sleep(0.75)
+            self._release_interrupt(serial)
+
+    def _release_interrupt(self, serial: int) -> None:
+        """Clear only the interrupt generation that requested this recovery."""
+        if serial != self._interrupt_serial:
+            return
+        self._interrupted = False
+        self._interrupted_at = 0.0
+        if self.ui.microphone_enabled:
+            self.ui.set_state("LISTENING")
 
     def _reset_output_stream(self) -> None:
         """Drop bytes already buffered by the audio device without killing the task."""
@@ -1000,6 +1226,14 @@ class JarvisLive:
         if scripts_str:
             parts.append(scripts_str)
         parts.append(sys_prompt)
+        parts.append(
+            """LIVE MICROPHONE TURN POLICY (highest priority):
+Prioritize hearing and answering the user. Do not require the user to say JARVIS, and do not discard a clear intelligible request merely because it is short or might be part of nearby conversation. Short replies such as yes, no, stop, cancel, or a requested value are valid whenever their meaning is clear from the current exchange.
+Ignore only audio that contains no intelligible speech, such as steady room noise, microphone hiss, a fan, or an isolated bump; never announce that such noise was ignored. If speech is audible but the actual request is clipped, incomplete, or unintelligible, ask the user once, briefly and naturally, to repeat it instead of remaining silent or guessing the missing words. Emergency interruption words such as stop, cancel, silence, or shut up must always be honored immediately."""
+        )
+        # Keep this last so general prompt text cannot override the explicit
+        # response-language preference.
+        parts.append(format_language_instruction(memory))
 
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -1015,13 +1249,20 @@ class JarvisLive:
                 activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     disabled=False,
-                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
                     end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
-                    prefix_padding_ms=80,
-                    silence_duration_ms=350,
+                    # Retain quiet initial consonants without delaying detection.
+                    prefix_padding_ms=500,
+                    # Allow natural hesitations without handing the turn to JARVIS.
+                    silence_duration_ms=1500,
                 ),
             ),
-            session_resumption=types.SessionResumptionConfig(),
+            session_resumption=types.SessionResumptionConfig(
+                handle=self._live_session_state.resumption_handle,
+            ),
+            context_window_compression=types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            ),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -1078,8 +1319,12 @@ class JarvisLive:
             saved = {"result": "invalid", "error": "missing key/value"}
             if key and value:
                 saved = create_memory(
-                    category, key, value, expires_at=args.get("expires_at"), replace=False
+                    category, key, value, expires_at=args.get("expires_at"),
+                    replace=bool(args.get("replace_existing", False)),
+                    contexts=args.get("contexts"),
                 )
+                if saved.get("result") in {"created", "updated", "unchanged"}:
+                    self.ui.refresh_memory_graph()
                 print(f"[Memory] save_memory: {category}/{key} = [redacted] ({saved['result']})")
             if self.ui.microphone_enabled:
                 self.ui.set_state("LISTENING")
@@ -1090,6 +1335,8 @@ class JarvisLive:
 
         loop   = asyncio.get_event_loop()
         result = "Done."
+        result_success = True
+        result_error = None
 
         try:
             definition = self.tool_registry.validate_for_execution(name)
@@ -1154,9 +1401,46 @@ class JarvisLive:
                 args["confirmed"] = "yes"
 
         try:
+            if name == "file_controller" and str(args.get("action", "")).lower() in {
+                "create_file", "create_folder", "new_file", "new_folder", "mkdir",
+            }:
+                local_path = str(args.get("path") or args.get("name") or "")
+                first_part = local_path.replace("\\", "/").strip("/").split("/", 1)[0]
+                if first_part.casefold() in self._remote_drive_folders:
+                    result = (
+                        f"Blocked local write: {first_part!r} was identified as a Google Drive "
+                        "folder in this session. Use account_connector with find_folder and then "
+                        "create_file/create_folder using its parent_id. No file was created."
+                    )
+                    return types.FunctionResponse(
+                        id=fc.id, name=name,
+                        response={"result": result, "error": "wrong_storage_provider"},
+                    )
             if name not in SPECIAL_TOOLS:
                 execution = await self.tool_executor.execute(name, args)
                 result = execution.message
+                result_success = execution.success
+                result_error = execution.error_code
+                if name == "account_connector" and execution.success:
+                    provider = str(args.get("provider", "")).casefold()
+                    action = str(args.get("action", "")).casefold()
+                    if provider in {"drive", "google_drive"} and action in {
+                        "search", "find_folder", "read",
+                    }:
+                        try:
+                            payload = json.loads(str(execution.data))
+                            items = payload if isinstance(payload, list) else [payload]
+                            for item in items:
+                                if (
+                                    isinstance(item, dict)
+                                    and item.get("mimeType") == "application/vnd.google-apps.folder"
+                                    and item.get("name")
+                                ):
+                                    self._remote_drive_folders.add(
+                                        str(item["name"]).casefold()
+                                    )
+                        except (TypeError, json.JSONDecodeError):
+                            pass
                 if not execution.success and execution.error_code == "exception":
                     self.speak_error(name, RuntimeError(result))
                 if name == "web_search" and execution.success:
@@ -1209,15 +1493,13 @@ class JarvisLive:
                     user_text = args.get("text", "What do you see?")
                     try:
                         if angle == "camera":
-                            started = await loop.run_in_executor(
-                                None,
-                                lambda: screen_process_action(
-                                    {"text": user_text, "angle": angle}, player=self.ui
-                                ),
+                            analysis = await loop.run_in_executor(
+                                None, lambda: analyze_visual(user_text, "camera")
                             )
+                            self.ui.set_camera_frame_callback(self._stream_camera_frame)
+                            self.ui.start_camera_stream()
                             result = (
-                                "Live camera analysis started and will remain active until closed."
-                                if started else "Could not start live camera analysis."
+                                f"Live camera attached to this primary voice session. {analysis}"
                             )
                         else:
                             result = await loop.run_in_executor(
@@ -1244,7 +1526,19 @@ class JarvisLive:
 
             elif name == "close_camera":
                 self.ui.stop_camera_stream()
+                self._camera_frame_pending = False
                 result = "Camera closed."
+
+            elif name == "camera_control":
+                mode = str(args.get("mode", "normal")).lower()
+                if mode not in {"normal", "hand"}:
+                    mode = "normal"
+                zoom = max(1.0, min(4.0, float(args.get("zoom", 1.0))))
+                pan_x = max(-1.0, min(1.0, float(args.get("pan_x", 0.0))))
+                pan_y = max(-1.0, min(1.0, float(args.get("pan_y", 0.0))))
+                self.ui.set_camera_mode(mode)
+                self.ui.set_camera_view(zoom, pan_x, pan_y)
+                result = f"Camera set to {mode} mode; zoom {zoom:.1f}."
 
             elif name == "permission_manager":
                 result = self._manage_permission(args)
@@ -1312,11 +1606,21 @@ class JarvisLive:
 
             else:
                 result = f"Unknown tool: {name}"
+                result_success = False
+                result_error = "unknown_tool"
 
         except Exception as e:
             result = f"Tool '{name}' failed: {e}"
+            result_success = False
+            result_error = "exception"
             traceback.print_exc()
             self.speak_error(name, e)
+
+        if name in SPECIAL_TOOLS and result_success:
+            normalized = normalize_tool_output(name, result, "Done.")
+            result = normalized.message
+            result_success = normalized.success
+            result_error = normalized.error_code
 
         if self.ui.microphone_enabled:
             self.ui.set_state("LISTENING")
@@ -1324,8 +1628,36 @@ class JarvisLive:
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
         return types.FunctionResponse(
             id=fc.id, name=name,
-            response={"result": result}
+            response={
+                "result": result,
+                "success": result_success,
+                "error": result_error,
+            }
         )
+
+    def _stream_camera_frame(self, image_bytes: bytes) -> None:
+        """Attach camera video to the same Live session that owns voice and playback."""
+        if not self._loop or not self.session or not image_bytes:
+            return
+
+        def _schedule() -> None:
+            if self._camera_frame_pending:
+                return
+            self._camera_frame_pending = True
+            asyncio.create_task(self._send_camera_frame(image_bytes))
+
+        self._loop.call_soon_threadsafe(_schedule)
+
+    async def _send_camera_frame(self, image_bytes: bytes) -> None:
+        try:
+            if self.session:
+                await self.session.send_realtime_input(
+                    video=types.Blob(data=image_bytes, mime_type="image/jpeg")
+                )
+        except Exception as exc:
+            print(f"[Camera] Primary-session frame failed: {exc}")
+        finally:
+            self._camera_frame_pending = False
 
     async def _send_realtime(self):
         while True:
@@ -1339,6 +1671,15 @@ class JarvisLive:
     async def _listen_audio(self):
         print("[JARVIS] 🎤 Mic started")
         loop = asyncio.get_event_loop()
+
+        def _apply_audio_transition(transition: str) -> None:
+            if transition == "sleep":
+                asyncio.create_task(self._close_idle_audio_stream())
+            elif transition == "wake":
+                self.ui.set_state("LISTENING")
+                self.ui.write_log(
+                    "AUDIO: Voice detected; listening stream reinitialized."
+                )
 
         def _enqueue_audio(blob: types.Blob) -> None:
             try:
@@ -1360,12 +1701,17 @@ class JarvisLive:
             # set_speaking(False).
             with self._speaking_lock:
                 jarvis_speaking = self._is_speaking
-            if (
+            self._mic_callback_at = time.monotonic()
+            mic_active = (
                 self.ui.microphone_enabled
                 and not self._phone_active
                 and not jarvis_speaking
-            ):
-                data = indata.tobytes()
+            )
+            data = indata.tobytes()
+            transition = self._audio_watchdog.observe_pcm(data, active=mic_active)
+            if transition in {"sleep", "wake"}:
+                loop.call_soon_threadsafe(_apply_audio_transition, transition)
+            if mic_active and transition not in {"sleep", "sleeping"}:
                 loop.call_soon_threadsafe(
                     _enqueue_audio,
                     types.Blob(
@@ -1384,14 +1730,37 @@ class JarvisLive:
                     callback=callback,
                 ):
                     print("[JARVIS] 🎤 Mic stream open")
+                    self._mic_callback_at = time.monotonic()
                     while True:
                         await asyncio.sleep(0.1)
+                        # Some Windows drivers stop invoking the callback after a
+                        # hardware mute without raising a PortAudio exception.
+                        # Reopening only the local stream is safe and keeps the
+                        # active Live conversation untouched.
+                        if time.monotonic() - self._mic_callback_at > 2.0:
+                            raise RuntimeError("microphone callback stalled")
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 print(f"[JARVIS] ❌ Mic: {e}; retrying in 1 second")
                 self.ui.write_log("AUDIO: Microphone lost; reconnecting...")
                 await asyncio.sleep(1)
+
+    async def _close_idle_audio_stream(self) -> None:
+        """End a muted/idle input stream while preserving the Live session."""
+        if not self.session or not self.ui.microphone_enabled:
+            return
+        try:
+            await self.session.send_realtime_input(audio_stream_end=True)
+            self.ui.set_state("SLEEPING")
+            self.ui.write_log(
+                "AUDIO: No voice for 12 seconds; sleeping until voice returns."
+            )
+        except Exception as exc:
+            # The regular session reconnect loop remains the fallback for a
+            # transport that disappears while the microphone is being reset.
+            self._audio_watchdog.reset()
+            print(f"[JARVIS] Audio stream reset failed: {exc}")
 
     async def _receive_audio(self):
         print("[JARVIS] 👂 Recv started")
@@ -1400,6 +1769,19 @@ class JarvisLive:
         try:
             while True:
                 async for response in self.session.receive():
+
+                    update = getattr(response, "session_resumption_update", None)
+                    # Checkpoints are internal session bookkeeping. Keep the
+                    # resumable handle current without leaking routine protocol
+                    # traffic into the user's conversation log.
+                    self._live_session_state.observe_resumption_update(update)
+                    go_away = getattr(response, "go_away", None)
+                    if go_away:
+                        remaining = getattr(go_away, "time_left", None)
+                        detail = f" ({remaining} remaining)" if remaining else ""
+                        self.ui.write_log(
+                            f"NET: Server requested a graceful reconnect{detail}."
+                        )
 
                     if response.data:
                         # Stale frames captured just before playback can otherwise
@@ -1428,7 +1810,9 @@ class JarvisLive:
                         sc = response.server_content
 
                         if sc.interrupted:
-                            self._interrupted = True
+                            # A server VAD interruption means the user spoke over
+                            # JARVIS. Stop playback, but keep the new user turn alive;
+                            # _interrupted is reserved for explicit ESC cancellation.
                             await self._flush_playback("VAD")
 
                         if sc.output_transcription and sc.output_transcription.text:
@@ -1450,8 +1834,7 @@ class JarvisLive:
                             # If this turn_complete ends an interrupted response, clear the
                             # flag and skip all further processing for that turn.
                             if self._interrupted:
-                                self._interrupted = False
-                                self._interrupted_at = 0.0
+                                self._release_interrupt(self._interrupt_serial)
                                 in_buf  = []
                                 out_buf = []
                                 continue
@@ -1554,6 +1937,7 @@ class JarvisLive:
             return
         self._shutdown_started = True
         self._shutdown_after_turn = False
+        update_runtime_state("jarvis", "off", reason="voice_shutdown")
         self.ui.write_log("SYS: Farewell complete. Shutting down JARVIS.")
 
         def _exit_after_device_flush():
@@ -1594,7 +1978,7 @@ class JarvisLive:
 
                 return str(entry).strip()
 
-            lang = _val("language")
+            lang = get_response_language(memory)
             name = _val("name")
 
             now = local_now()
@@ -1805,11 +2189,17 @@ class JarvisLive:
                     # Reset transient state that must not carry over from a previous session
                     self._vision_busy          = False
                     self._vision_last_time     = 0.0
+                    self._camera_frame_pending = False
                     self._interrupted          = False
+                    self._audio_watchdog.reset()
 
                     print("[JARVIS] Connected.")
                     self.ui.set_state("LISTENING")
-                    self.ui.write_log("SYS: JARVIS online.")
+                    if not self._ever_connected:
+                        self.ui.write_log("SYS: JARVIS online.")
+                        self._ever_connected = True
+                    else:
+                        self.ui.write_log("NET: Live session restored.")
 
                     if self._dashboard:
                         await self._dashboard.broadcast({"type": "status", "state": "active"})
@@ -1870,6 +2260,7 @@ class JarvisLive:
             finally:
                 self.session = None
 
+            await self._flush_playback("live session reconnect")
             self.set_speaking(False)
             self.ui.set_state("SLEEPING")
 
@@ -1881,7 +2272,24 @@ class JarvisLive:
             await asyncio.sleep(delay)
 
 def main():
-    ui = JarvisUI("face.png")
+    wake_supervised = os.environ.get("JARVIS_WAKE_SUPERVISED") == "1"
+    if not wake_supervised:
+        # Direct execution of main.py must obey the same microphone lifecycle
+        # as the official launcher: pause wake listening while JARVIS is open.
+        try:
+            from jarvis_launcher import stop_wake_detector
+            stop_wake_detector()
+        except Exception as exc:
+            print(f"[JARVIS] Could not pause wake detector: {exc}")
+
+    start_in_pet_mode = "--pet" in sys.argv[1:]
+    update_runtime_state(
+        "jarvis", "on", surface="pet" if start_in_pet_mode else "main"
+    )
+    if start_in_pet_mode:
+        ui = JarvisUI("face.png", start_in_pet_mode=True)
+    else:
+        ui = JarvisUI("face.png")
 
     def runner():
         ui.wait_for_api_key()
@@ -1891,8 +2299,33 @@ def main():
         except KeyboardInterrupt:
             print("\n🔴 Shutting down...")
 
+        except SystemExit:
+            return
+        except BaseException as exc:
+            _CRASH_REPORTER.record_exception("JARVIS core runner", exc)
+            print(f"[JARVIS] Core stopped unexpectedly: {exc}")
+            try:
+                ui.write_log(
+                    "ERR: JARVIS core stopped unexpectedly. "
+                    "A sanitized crash report was saved."
+                )
+                ui.set_state("ERROR")
+            except Exception:
+                pass
+
     threading.Thread(target=runner, daemon=True).start()
-    ui.root.mainloop()
+    try:
+        ui.root.mainloop()
+    finally:
+        update_runtime_state("jarvis", "off", reason="application_exit")
+        # Normal entry points supervise this process themselves.  If main.py
+        # was executed directly, restore the always-on wake listener here too.
+        if not wake_supervised:
+            try:
+                from jarvis_launcher import start_wake_detector
+                start_wake_detector()
+            except Exception as exc:
+                print(f"[JARVIS] Could not restore wake detector: {exc}")
 
 if __name__ == "__main__":
     main()

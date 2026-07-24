@@ -1,19 +1,28 @@
-# JARVIS — Mark XLVIII
+# JARVIS — Mark LI
 
-Asistente personal de escritorio con conversación por voz en tiempo real, control del sistema, memoria persistente, visión, automatizaciones e integraciones con servicios externos. Esta versión parte de **Mark XLVIII**, de [FatihMakes](https://github.com/FatihMakes/Mark-XLVIII), y contiene adaptaciones y mejoras propias orientadas principalmente a Windows.
+**Versión actual: 2.0.0 — Mark LI**
+
+Asistente personal de escritorio para Windows con conversación por voz en tiempo real, activación local, interfaz holográfica, memoria controlable, visión, herramientas científicas, automatizaciones e integraciones con servicios externos.
+
+Mark LI es una evolución amplia del proyecto anterior: reorganiza la interfaz, el ciclo de audio, la memoria, los permisos y el registro de herramientas, pero conserva la atribución a **Mark XLVIII**, de [FatihMakes](https://github.com/FatihMakes/Mark-XLVIII).
+
+La versión anterior publicada permanece preservada mediante el tag `v1.5-legacy`. Los cambios principales de cada versión están documentados en [CHANGELOG.md](CHANGELOG.md).
 
 > El proyecto puede controlar aplicaciones, archivos y servicios conectados. Revisá las confirmaciones antes de autorizar acciones sensibles y nunca publiques tus claves o configuraciones privadas.
 
 ## Funciones principales
 
 - Conversación de voz de baja latencia mediante Gemini Live.
-- Inicio directo o activación local por palabra clave con Vosk.
+- Inicio directo o activación local “Hey Jarvis” mediante OpenWakeWord, con Vosk como respaldo.
+- Recuperación automática del micrófono después de mute, silencio o bloqueo del driver.
 - Interrupción inmediata de la respuesta mediante `Esc` o desde la interfaz.
-- Captura de pantalla y cámara para análisis visual.
+- Interfaz Mark LI con Core, Pet Mode y workspaces especializados.
+- Captura de pantalla y cámara continua dentro de la sesión principal.
 - Control de aplicaciones, ventanas, teclado, mouse, volumen, brillo y archivos.
 - Búsqueda web, noticias, clima, vuelos, YouTube y recordatorios.
-- Memoria persistente y memoria de scripts reutilizables.
-- Cálculo matemático seguro y simbólico con SymPy.
+- Memoria persistente controlable y grafo formado exclusivamente por recuerdos reales.
+- Study para matemática, gráficos 2D/3D, matrices, física, química y anatomía educativa.
+- GEO con mapas, geocodificación, rutas y clima mediante servicios abiertos.
 - Integración con un vault de Obsidian.
 - Conectores OAuth para Gmail, Google Calendar, Google Drive y Outlook.
 - Dashboard local para usar JARVIS desde el teléfono, enviar comandos, audio y archivos.
@@ -25,18 +34,18 @@ Asistente personal de escritorio con conversación por voz en tiempo real, contr
 | Componente | Requisito |
 | --- | --- |
 | Sistema operativo | Windows 10/11 recomendado; algunas funciones también contemplan macOS y Linux |
-| Python | 3.11 o 3.12 recomendado |
+| Python | 3.12 a 3.14, 64 bits |
 | Hardware | Micrófono; cámara opcional |
 | Servicio de IA | Clave de Gemini API |
-| Palabra de activación | Modelo Vosk local, solo si se usa el modo `wake` |
+| Palabra de activación | Modelos OpenWakeWord incluidos; Vosk es el respaldo configurable |
 
 ## Instalación
 
 Cloná el repositorio y entrá a la carpeta:
 
 ```powershell
-git clone https://github.com/TU-USUARIO/TU-REPOSITORIO.git
-cd TU-REPOSITORIO
+git clone https://github.com/AlejoGaisser07/Jarvis-Project.git
+cd Jarvis-Project
 ```
 
 Creá un entorno virtual e instalá las dependencias:
@@ -87,22 +96,22 @@ python jarvis_launcher.py --mode direct
 
 ### Activación por voz
 
-Descargá un modelo compatible de Vosk y descomprimilo dentro de `models/`. La ruta predeterminada es:
-
-```text
-models/vosk-model-small-en-us-0.15
-```
-
-Después ejecutá:
+Los tres modelos ONNX necesarios para “Hey Jarvis” están incluidos en `models/openwakeword/`. Ejecutá:
 
 ```powershell
 python jarvis_launcher.py --mode wake
 ```
 
-Para configurar frases, modelo y sensibilidad:
+Para ejecutar temporalmente el detector con diagnóstico visible:
 
 ```powershell
-python jarvis_launcher.py --configure --phrases "hey jarvis,jarvis,oye jarvis" --model "models/vosk-model-small-en-us-0.15" --sensitivity 180
+python jarvis_launcher.py --mode wake --console
+```
+
+Las frases personalizadas usan Vosk como respaldo. Descargá un modelo compatible dentro de `models/` y configurá su ruta:
+
+```powershell
+python jarvis_launcher.py --configure --phrases "oye jarvis" --model "models/vosk-model-small-en-us-0.15" --sensitivity 180
 ```
 
 La configuración generada se guarda en `config/wake_word.json` y no se publica en Git.
@@ -182,8 +191,9 @@ python -m compileall -q .
 .
 ├── main.py                    # Sesión principal, audio y despacho de herramientas
 ├── jarvis_launcher.py         # Inicio directo o por palabra de activación
-├── wake_word.py               # Escucha local con Vosk
+├── wake_word.py               # OpenWakeWord, fallback Vosk y diagnóstico acústico
 ├── ui.py                      # Interfaz gráfica PyQt6
+├── ui_mk2/                    # Core, Pet y workspaces visuales Mark LI
 ├── actions/                   # Acciones disponibles para JARVIS
 ├── connectors/                # Gmail, Calendar, Drive y Outlook
 ├── core/
@@ -194,6 +204,7 @@ python -m compileall -q .
 │   └── prompt.txt             # Personalidad e instrucciones del asistente
 ├── dashboard/                 # Panel web local y conexión con el teléfono
 ├── memory/                    # Gestores de memoria persistente y scripts
+├── models/openwakeword/       # Modelos ONNX mínimos para “Hey Jarvis”
 ├── config/                    # Ejemplos y configuración local ignorada
 ├── tests/                     # Pruebas automatizadas
 └── utils/                     # Rutas y archivos temporales

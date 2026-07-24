@@ -76,6 +76,16 @@ class PermissionPolicyTests(unittest.TestCase):
             with self.subTest(tool=definition.name, args=args):
                 self.assertTrue(policy.evaluate(definition, args).allowed)
 
+    def test_drive_reads_and_writes_are_free(self):
+        connector = tool("account_connector", risk=RiskLevel.READ_ONLY)
+        policy = PermissionPolicy()
+        self.assertTrue(policy.evaluate(connector, {"action": "search"}).allowed)
+        for action in ("create_file", "create_folder"):
+            decision = policy.evaluate(connector, {"action": action})
+            self.assertEqual(decision.policy, "free")
+            self.assertTrue(decision.allowed)
+            self.assertFalse(decision.requires_confirmation)
+
     def test_computer_power_and_code_execution_remain_confirmed(self):
         policy = PermissionPolicy()
         settings = tool("computer_settings", risk=RiskLevel.SENSITIVE)

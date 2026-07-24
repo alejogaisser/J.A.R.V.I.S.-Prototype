@@ -6,16 +6,25 @@ import math
 import os
 import platform
 import queue
+import re
 import subprocess
 import sys
 import time
+import unicodedata
 from pathlib import Path
 from ctypes import wintypes
 
+import numpy as np
 import psutil
 import sounddevice as sd
-from vosk import KaldiRecognizer, Model, SetLogLevel
+from vosk import KaldiRecognizer, Model as VoskModel, SetLogLevel
 from jarvis_launcher import load_config
+from core.runtime_state import update_runtime_state
+
+try:
+    from openwakeword.model import Model as OpenWakeWordModel
+except ImportError:
+    OpenWakeWordModel = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -24,18 +33,29 @@ from jarvis_launcher import load_config
 
 BASE_DIR = Path(__file__).resolve().parent
 MAIN_FILE = BASE_DIR / "main.py"
+SPLASH_FILE = BASE_DIR / "startup_splash.py"
 
 MODEL_PATH = (
     BASE_DIR
     / "models"
     / "vosk-model-small-en-us-0.15"
 )
+OPENWAKEWORD_DIR = BASE_DIR / "models" / "openwakeword"
+OPENWAKEWORD_MODEL_PATH = OPENWAKEWORD_DIR / "hey_jarvis_v0.1.onnx"
+OPENWAKEWORD_MELSPEC_PATH = OPENWAKEWORD_DIR / "melspectrogram.onnx"
+OPENWAKEWORD_EMBEDDING_PATH = OPENWAKEWORD_DIR / "embedding_model.onnx"
 
 SAMPLE_RATE = 16_000
 BLOCK_SIZE = 4_000
-MIN_WAKE_RMS = 180
-MIN_WAKE_CONFIDENCE = 0.82
+OPENWAKEWORD_BLOCK_SIZE = 1_280
+MIN_WAKE_RMS = 110
+INPUT_DEVICE = None
+MIN_WAKE_CONFIDENCE = 0.65
+OPENWAKEWORD_THRESHOLD = 0.35
 WAKE_AUDIO_WINDOW = 1.5
+NOISE_MULTIPLIER = 2.8
+DIAGNOSTIC_INTERVAL = 0.5
+DIAGNOSTICS_ENABLED = os.environ.get("JARVIS_WAKE_DIAGNOSTICS") == "1"
 
 WAKE_PHRASES = ("hey jarvis",)
 
@@ -44,11 +64,13 @@ SetLogLevel(-1)
 
 _audio_queue: queue.Queue[bytes] = queue.Queue(maxsize=30)
 _instance_mutex = None
+_diagnostic_last_print = 0.0
 
 
 def apply_wake_config() -> None:
     """Load user-selectable phrases, model and voice threshold."""
-    global MODEL_PATH, MIN_WAKE_RMS, MIN_WAKE_CONFIDENCE, WAKE_PHRASES
+    global MODEL_PATH, MIN_WAKE_RMS, MIN_WAKE_CONFIDENCE, WAKE_PHRASES, INPUT_DEVICE
+    global OPENWAKEWORD_THRESHOLD
     config = load_config()
     phrases = config.get("phrases", ["hey jarvis"])
     if not isinstance(phrases, list) or not all(isinstance(p, str) for p in phrases):
@@ -59,8 +81,61 @@ def apply_wake_config() -> None:
     model_path = Path(str(config.get("model_path", MODEL_PATH)))
     MODEL_PATH = model_path if model_path.is_absolute() else BASE_DIR / model_path
     MIN_WAKE_RMS = int(config.get("min_wake_rms", MIN_WAKE_RMS))
+    configured_device = config.get("input_device")
+    INPUT_DEVICE = resolve_input_device(
+        int(configured_device) if configured_device is not None else None,
+        str(config.get("input_device_name", "")).strip(),
+    )
     MIN_WAKE_CONFIDENCE = float(config.get("min_confidence", MIN_WAKE_CONFIDENCE))
+    OPENWAKEWORD_THRESHOLD = float(
+        config.get("wake_threshold", OPENWAKEWORD_THRESHOLD)
+    )
+    if not 0 <= OPENWAKEWORD_THRESHOLD <= 1:
+        raise ValueError("'wake_threshold' must be between 0 and 1")
     WAKE_PHRASES = normalized
+
+
+def _device_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", normalized.casefold()).split())
+
+
+def validate_input_device(device: int | None) -> int | None:
+    """Return an input index only when it supports Vosk's exact PCM format."""
+    if device is None:
+        return None
+    try:
+        info = sd.query_devices(device, "input")
+        if int(info.get("max_input_channels", 0)) < 1:
+            raise ValueError("device has no input channels")
+        sd.check_input_settings(
+            device=device, channels=1, dtype="int16", samplerate=SAMPLE_RATE
+        )
+        return device
+    except Exception as exc:
+        print(
+            f"[WakeWord] Micrófono configurado {device} no disponible ({exc}); "
+            "usando el dispositivo predeterminado."
+        )
+        return None
+
+
+def resolve_input_device(device: int | None, preferred_name: str = "") -> int | None:
+    """Resolve a stable microphone name before considering a volatile index."""
+    preferred = _device_key(preferred_name)
+    if preferred:
+        preferred_tokens = set(preferred.split())
+        for index, info in enumerate(sd.query_devices()):
+            name = _device_key(str(info.get("name", "")))
+            if int(info.get("max_input_channels", 0)) < 1:
+                continue
+            if not preferred_tokens.issubset(set(name.split())):
+                continue
+            valid = validate_input_device(index)
+            if valid is not None:
+                print(f"[WakeWord] Micrófono seleccionado: {info['name']} (ID {valid})")
+                return valid
+    return validate_input_device(device)
 
 
 def acquire_single_instance() -> bool:
@@ -101,6 +176,27 @@ def clear_audio_queue() -> None:
             break
 
 
+def print_wake_diagnostic(message: str, *, force: bool = False) -> None:
+    """Print throttled live detector telemetry only in visible console mode."""
+    global _diagnostic_last_print
+    if not DIAGNOSTICS_ENABLED:
+        return
+    now = time.monotonic()
+    if not force and now - _diagnostic_last_print < DIAGNOSTIC_INTERVAL:
+        return
+    _diagnostic_last_print = now
+    print(f"[WakeDiag] {message}", flush=True)
+
+
+def reset_detector_state(model, reason: str) -> None:
+    """Clear audio and neural state before listening after a JARVIS session."""
+    reset = getattr(model, "reset", None)
+    if callable(reset):
+        reset()
+    clear_audio_queue()
+    print_wake_diagnostic(f"Detector reiniciado: {reason}.", force=True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # DETECCIÓN DE PROCESOS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -133,7 +229,7 @@ def get_running_jarvis_pid() -> int | None:
                 and Path(cwd).resolve() == BASE_DIR
             )
 
-            if expected_main in command or relative_main:
+            if (expected_main in command or relative_main) and process_is_active(process_id):
                 return int(process_id)
 
         except (
@@ -146,6 +242,32 @@ def get_running_jarvis_pid() -> int | None:
     return None
 
 
+def process_is_active(process_id: int) -> bool:
+    """Reject terminated Windows PIDs that remain visible through an open handle."""
+    if sys.platform != "win32":
+        try:
+            process = psutil.Process(process_id)
+            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION, False, process_id
+    )
+    if not handle:
+        return False
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def jarvis_is_running() -> bool:
     """Indica si main.py ya está ejecutándose."""
     return get_running_jarvis_pid() is not None
@@ -153,6 +275,7 @@ def jarvis_is_running() -> bool:
 
 def wait_until_jarvis_closes() -> None:
     """Espera hasta que no quede ninguna instancia de main.py."""
+    update_runtime_state("wake_word", "paused", reason="jarvis_on")
     while jarvis_is_running():
         time.sleep(1)
 
@@ -174,7 +297,7 @@ def bring_process_window_to_front(
 
     user32 = ctypes.windll.user32
 
-    SW_RESTORE = 9
+    SW_SHOW = 5
 
     HWND_TOPMOST = -1
     HWND_NOTOPMOST = -2
@@ -245,7 +368,7 @@ def bring_process_window_to_front(
             if "j.a.r.v.i.s" not in title:
                 return True
 
-            if "mark xlviii" not in title:
+            if "mark li" not in title and "mark xlviii" not in title:
                 return True
 
             main_window.append(int(hwnd))
@@ -258,7 +381,7 @@ def bring_process_window_to_front(
             hwnd = main_window[0]
 
             user32.AllowSetForegroundWindow(-1)
-            user32.ShowWindowAsync(hwnd, SW_RESTORE)
+            user32.ShowWindowAsync(hwnd, SW_SHOW)
 
             user32.SetWindowPos(
                 hwnd,
@@ -324,26 +447,31 @@ def launch_jarvis() -> None:
         executable = Path(sys.executable)
 
     print("[WakeWord] Estado: Abriendo. Iniciando JARVIS...")
+    update_runtime_state("wake_word", "paused", reason="launching_jarvis")
 
     creation_flags = 0
 
     if sys.platform == "win32":
         creation_flags = subprocess.CREATE_NO_WINDOW
 
-    process = subprocess.Popen(
-        [str(executable), str(MAIN_FILE)],
-        cwd=str(BASE_DIR),
-        creationflags=creation_flags,
-        close_fds=True,
-    )
+    log_dir = BASE_DIR / "logs"
+    log_dir.mkdir(exist_ok=True)
+    with (log_dir / "jarvis.log").open("a", encoding="utf-8") as jarvis_log:
+        main_env = {**os.environ, "JARVIS_WAKE_SUPERVISED": "1"}
+        process = subprocess.Popen(
+            [str(executable), "-u", str(MAIN_FILE), "--pet"],
+            cwd=str(BASE_DIR),
+            creationflags=creation_flags,
+            close_fds=True,
+            stdout=jarvis_log,
+            stderr=subprocess.STDOUT,
+            env=main_env,
+        )
 
     print(f"[WakeWord] Estado: En sesión. PID: {process.pid}")
 
-    # Espera a que PyQt cree la ventana y la trae al frente.
-    bring_process_window_to_front(
-        process_id=process.pid,
-        timeout=15.0,
-    )
+    # Pet Mode deliberately avoids stealing focus from the active application.
+    print("[WakeWord] Pet Mode visible; la app principal permanece cerrada.")
 
     print("[WakeWord] Esperando a que se cierre...")
 
@@ -381,13 +509,29 @@ def contains_wake_phrase(text: str) -> bool:
 
 
 def result_confidence(payload: str) -> float:
-    """Average confidence for the exact recognized phrase; zero if unavailable."""
+    """Average confidence; exact final words still guard against false wakes."""
     try:
         words = json.loads(payload).get("result", [])
         scores = [float(word.get("conf", 0.0)) for word in words if "conf" in word]
         return sum(scores) / len(scores) if scores else 0.0
     except (TypeError, ValueError, json.JSONDecodeError):
         return 0.0
+
+
+def result_words(payload: str) -> tuple[str, ...]:
+    """Return Vosk's final word sequence, excluding inferred/plain text."""
+    try:
+        words = json.loads(payload).get("result", [])
+        return tuple(str(item.get("word", "")).lower().strip() for item in words)
+    except (TypeError, json.JSONDecodeError):
+        return ()
+
+
+def result_matches_wake_phrase(payload: str) -> bool:
+    """Require the final word tokens to equal one configured phrase exactly."""
+    recognized = result_words(payload)
+    expected = {tuple(phrase.split()) for phrase in WAKE_PHRASES}
+    return bool(recognized) and recognized in expected
 
 
 def windows_session_available() -> bool:
@@ -424,26 +568,225 @@ def audio_rms(audio_data: bytes) -> float:
     return math.sqrt(total / sample_count)
 
 
-def listen_for_wake_word(model: Model) -> bool:
+class AdaptiveVoiceGate:
+    """Separate sustained voice-like audio from the current ambient floor."""
+
+    def __init__(self, absolute_floor: float) -> None:
+        self.absolute_floor = float(absolute_floor)
+        self.noise_floor = max(1.0, self.absolute_floor / NOISE_MULTIPLIER)
+        self.voiced_blocks = 0
+
+    @property
+    def threshold(self) -> float:
+        return max(self.absolute_floor, self.noise_floor * NOISE_MULTIPLIER)
+
+    def observe(self, rms: float, recognizer_has_speech: bool) -> bool:
+        # Follow steady room noise slowly, but never learn from recognized speech.
+        if not recognizer_has_speech and rms < self.threshold * 1.35:
+            self.noise_floor = (self.noise_floor * 0.97) + (rms * 0.03)
+
+        voiced = rms >= self.threshold
+        self.voiced_blocks = self.voiced_blocks + 1 if voiced else 0
+        return voiced
+
+    def reset_voice_run(self) -> None:
+        self.voiced_blocks = 0
+
+
+class RecentVoiceWindow:
+    """Bridge the short delay between spoken audio and neural wake scores."""
+
+    def __init__(self, duration: float = WAKE_AUDIO_WINDOW) -> None:
+        self.duration = float(duration)
+        self.last_voice_at: float | None = None
+
+    def observe(self, has_voice: bool, *, now: float | None = None) -> bool:
+        observed_at = time.monotonic() if now is None else now
+        if has_voice:
+            self.last_voice_at = observed_at
+        return (
+            self.last_voice_at is not None
+            and observed_at - self.last_voice_at <= self.duration
+        )
+
+
+def openwakeword_candidate_approved(
+    *,
+    has_recent_voice: bool,
+    score: float,
+    session_available: bool,
+) -> bool:
+    """Apply the three independent wake guards without frame-level coupling."""
+    return (
+        has_recent_voice
+        and score >= OPENWAKEWORD_THRESHOLD
+        and session_available
+    )
+
+
+def create_openwakeword_model():
+    """Load the dedicated Hey Jarvis detector and its local ONNX features."""
+    if OpenWakeWordModel is None:
+        return None
+    required = (
+        OPENWAKEWORD_MODEL_PATH,
+        OPENWAKEWORD_MELSPEC_PATH,
+        OPENWAKEWORD_EMBEDDING_PATH,
+    )
+
+    if not all(path.exists() for path in required):
+        return None
+    return OpenWakeWordModel(
+        wakeword_models=[str(OPENWAKEWORD_MODEL_PATH)],
+        inference_framework="onnx",
+        melspec_model_path=str(OPENWAKEWORD_MELSPEC_PATH),
+        embedding_model_path=str(OPENWAKEWORD_EMBEDDING_PATH),
+    )
+
+
+def listen_for_openwakeword(
+    model,
+    diagnostic_vosk_model: VoskModel | None = None,
+) -> bool:
+    """Activate immediately after a confident local ``Hey Jarvis`` match."""
+    clear_audio_queue()
+    voice_gate = AdaptiveVoiceGate(MIN_WAKE_RMS)
+    recent_voice = RecentVoiceWindow()
+    diagnostic_recognizer = None
+    diagnostic_partial = ""
+    if diagnostic_vosk_model is not None:
+        diagnostic_recognizer = KaldiRecognizer(diagnostic_vosk_model, SAMPLE_RATE)
+        diagnostic_recognizer.SetWords(True)
+    print("[WakeWord] Estado: Dormido. Frase requerida: Hey Jarvis")
+    print_wake_diagnostic(
+        "OpenWakeWord decide la activación; Vosk sólo transcribe para diagnóstico. "
+        f"Score mínimo={OPENWAKEWORD_THRESHOLD:.3f}, "
+        f"RMS absoluto mínimo={MIN_WAKE_RMS}.",
+        force=True,
+    )
+    update_runtime_state("wake_word", "listening", phrase="Hey Jarvis")
+
+    with sd.RawInputStream(
+        device=INPUT_DEVICE,
+        samplerate=SAMPLE_RATE,
+        blocksize=OPENWAKEWORD_BLOCK_SIZE,
+        dtype="int16",
+        channels=1,
+        callback=audio_callback,
+    ):
+        while True:
+            try:
+                audio_data = _audio_queue.get(timeout=0.5)
+            except queue.Empty:
+                if jarvis_is_running():
+                    model.reset()
+                    return False
+                continue
+
+            if jarvis_is_running():
+                model.reset()
+                clear_audio_queue()
+                return False
+
+            samples = np.frombuffer(audio_data, dtype=np.int16)
+            predictions = model.predict(samples)
+            score = max((float(value) for value in predictions.values()), default=0.0)
+            rms = audio_rms(audio_data)
+            has_voice = voice_gate.observe(rms, score > 0.05)
+            has_recent_voice = recent_voice.observe(has_voice)
+            session_available = windows_session_available()
+
+            if diagnostic_recognizer is not None:
+                if diagnostic_recognizer.AcceptWaveform(audio_data):
+                    diagnostic_result = diagnostic_recognizer.Result()
+                    diagnostic_text = extract_text(diagnostic_result, field="text")
+                    diagnostic_confidence = result_confidence(diagnostic_result)
+                    if diagnostic_text:
+                        print_wake_diagnostic(
+                            f"Vosk final='{diagnostic_text}' "
+                            f"confianza={diagnostic_confidence:.3f} "
+                            f"(referencia mínima fallback={MIN_WAKE_CONFIDENCE:.3f}).",
+                            force=True,
+                        )
+                    diagnostic_partial = ""
+                else:
+                    partial = extract_text(
+                        diagnostic_recognizer.PartialResult(), field="partial"
+                    )
+                    if partial and partial != diagnostic_partial:
+                        diagnostic_partial = partial
+                        print_wake_diagnostic(
+                            f"Vosk parcial='{partial}'.",
+                            force=True,
+                        )
+
+            print_wake_diagnostic(
+                f"RMS={rms:.0f} (mínimo={MIN_WAKE_RMS}, "
+                f"dinámico={voice_gate.threshold:.0f}) | "
+                f"score={score:.3f} (mínimo={OPENWAKEWORD_THRESHOLD:.3f}) | "
+                f"voz={'SÍ' if has_voice else 'NO'} | "
+                f"voz reciente={'SÍ' if has_recent_voice else 'NO'} | "
+                f"sesión Windows={'SÍ' if session_available else 'NO'}"
+            )
+
+            if openwakeword_candidate_approved(
+                has_recent_voice=has_recent_voice,
+                score=score,
+                session_available=session_available,
+            ):
+                print(
+                    f"[WakeWord] Hey Jarvis detectado — APROBADO: "
+                    f"score={score:.3f}/"
+                    f"{OPENWAKEWORD_THRESHOLD:.3f}, RMS={rms:.0f}/"
+                    f"{voice_gate.threshold:.0f}, voz reciente=SÍ."
+                )
+                model.reset()
+                clear_audio_queue()
+                return True
+            if score >= 0.05:
+                reasons = []
+                if not has_recent_voice:
+                    reasons.append(
+                        f"sin voz en los últimos {WAKE_AUDIO_WINDOW:.1f}s "
+                        f"(RMS actual {rms:.0f})"
+                    )
+                if score < OPENWAKEWORD_THRESHOLD:
+                    reasons.append(
+                        f"score {score:.3f} < {OPENWAKEWORD_THRESHOLD:.3f}"
+                    )
+                if not session_available:
+                    reasons.append("sesión de Windows bloqueada")
+                print_wake_diagnostic(
+                    "Candidato rechazado: " + ", ".join(reasons),
+                )
+
+
+def listen_for_wake_word(model: VoskModel) -> bool:
     """
     Abre el micrófono y espera hasta detectar Hey Jarvis.
 
     Al devolver True, el stream ya está cerrado y el micrófono
     queda libre para que main.py pueda utilizarlo.
     """
-    recognizer = KaldiRecognizer(
-        model,
-        SAMPLE_RATE,
-        json.dumps(list(dict.fromkeys([*WAKE_PHRASES, "jarvis", "[unk]"]))),
-    )
+    # Unrestricted decoding handles accents far better than a tiny closed
+    # grammar, which otherwise collapses valid speech into repeated [unk].
+    recognizer = KaldiRecognizer(model, SAMPLE_RATE)
     recognizer.SetWords(True)
 
     clear_audio_queue()
     recent_voice_until = 0.0
+    voice_gate = AdaptiveVoiceGate(MIN_WAKE_RMS)
 
     print(f"[WakeWord] Estado: Dormido. Escuchando: {', '.join(WAKE_PHRASES)}")
+    print_wake_diagnostic(
+        f"Fallback Vosk: confianza mínima={MIN_WAKE_CONFIDENCE:.3f}, "
+        f"RMS absoluto mínimo={MIN_WAKE_RMS}.",
+        force=True,
+    )
+    update_runtime_state("wake_word", "listening", phrases=list(WAKE_PHRASES))
 
     with sd.RawInputStream(
+        device=INPUT_DEVICE,
         samplerate=SAMPLE_RATE,
         blocksize=BLOCK_SIZE,
         dtype="int16",
@@ -464,11 +807,6 @@ def listen_for_wake_word(model: Model) -> bool:
                 clear_audio_queue()
                 return False
 
-            # Registrar si hubo voz real recientemente. Un micrófono muteado
-            # suele entregar ceros o un nivel extremadamente bajo.
-            if audio_rms(audio_data) >= MIN_WAKE_RMS:
-                recent_voice_until = time.monotonic() + WAKE_AUDIO_WINDOW
-
             if recognizer.AcceptWaveform(audio_data):
                 raw_result = recognizer.Result()
                 text = extract_text(
@@ -476,9 +814,30 @@ def listen_for_wake_word(model: Model) -> bool:
                     field="text",
                 )
                 confidence = result_confidence(raw_result)
+                rms = audio_rms(audio_data)
+                has_voice = voice_gate.observe(rms, bool(text))
+                if has_voice:
+                    recent_voice_until = time.monotonic() + WAKE_AUDIO_WINDOW
 
                 if text:
-                    print(f"[WakeWord] Escuchado: {text}")
+                    exact_text = contains_wake_phrase(text)
+                    exact_words = result_matches_wake_phrase(raw_result)
+                    recent_voice = time.monotonic() <= recent_voice_until
+                    session_available = windows_session_available()
+                    approved = (
+                        recent_voice
+                        and exact_text
+                        and exact_words
+                        and confidence >= MIN_WAKE_CONFIDENCE
+                        and session_available
+                    )
+                    print(
+                        f"[WakeWord] Vosk final='{text}' | "
+                        f"confianza={confidence:.3f}/{MIN_WAKE_CONFIDENCE:.3f} | "
+                        f"RMS={rms:.0f}/{voice_gate.threshold:.0f} | "
+                        f"frase exacta={'SÍ' if exact_text and exact_words else 'NO'} | "
+                        f"resultado={'APROBADO' if approved else 'RECHAZADO'}"
+                    )
 
                 # No abrir con resultados parciales. Exigir:
                 # 1) frase completa exacta;
@@ -486,11 +845,31 @@ def listen_for_wake_word(model: Model) -> bool:
                 if (
                     time.monotonic() <= recent_voice_until
                     and contains_wake_phrase(text)
+                    and result_matches_wake_phrase(raw_result)
                     and confidence >= MIN_WAKE_CONFIDENCE
                     and windows_session_available()
                 ):
                     clear_audio_queue()
                     return True
+
+                # A rejected final hypothesis must not leave old noise queued for
+                # the next recognition attempt.
+                clear_audio_queue()
+                voice_gate.reset_voice_run()
+            else:
+                # Partials are useful only to distinguish speech from the ambient
+                # floor. They can never activate JARVIS: provisional Vosk text is
+                # deliberately unstable around television, music and random noise.
+                partial_text = extract_text(recognizer.PartialResult(), field="partial")
+                rms = audio_rms(audio_data)
+                if voice_gate.observe(rms, bool(partial_text)):
+                    recent_voice_until = time.monotonic() + WAKE_AUDIO_WINDOW
+                if partial_text:
+                    print_wake_diagnostic(
+                        f"Vosk parcial='{partial_text}' | RMS={rms:.0f} "
+                        f"(mínimo dinámico={voice_gate.threshold:.0f}).",
+                        force=True,
+                    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -510,18 +889,26 @@ def main() -> None:
             f"Ruta esperada:\n{MAIN_FILE}"
         )
 
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            "No se encontró el modelo de Vosk.\n"
-            f"Ruta esperada:\n{MODEL_PATH}\n\n"
-            "Revisá que la carpeta del modelo tenga exactamente ese nombre."
+    wake_model = create_openwakeword_model()
+    if wake_model is not None and WAKE_PHRASES == ("hey jarvis",):
+        model = wake_model
+        diagnostic_vosk_model = None
+        if DIAGNOSTICS_ENABLED and MODEL_PATH.exists():
+            print("[WakeDiag] Cargando Vosk para transcripción visible...")
+            diagnostic_vosk_model = VoskModel(str(MODEL_PATH))
+        listen = lambda active_model: listen_for_openwakeword(
+            active_model, diagnostic_vosk_model
         )
-
-    print("[WakeWord] Cargando modelo de Vosk...")
-
-    model = Model(str(MODEL_PATH))
-
-    print("[WakeWord] Modelo cargado correctamente.")
+        print("[WakeWord] Detector local Hey Jarvis cargado.")
+    else:
+        if not MODEL_PATH.exists():
+            raise FileNotFoundError(
+                "No se encontró el modelo Vosk para la frase personalizada.\n"
+                f"Ruta esperada: {MODEL_PATH}"
+            )
+        print("[WakeWord] OpenWakeWord no disponible; usando Vosk como respaldo.")
+        model = VoskModel(str(MODEL_PATH))
+        listen = listen_for_wake_word
 
     while True:
         try:
@@ -529,11 +916,12 @@ def main() -> None:
                 print("[WakeWord] Estado: En sesión. Detector pausado y micrófono liberado.")
                 wait_until_jarvis_closes()
                 print("[WakeWord] JARVIS se cerró. Reactivando la palabra de inicio...")
-                clear_audio_queue()
+                update_runtime_state("wake_word", "restarting", reason="jarvis_closed")
+                reset_detector_state(model, "JARVIS se cerró")
                 time.sleep(1)
                 continue
 
-            detected = listen_for_wake_word(model)
+            detected = listen(model)
 
             if detected:
                 print("[WakeWord] Estado: Activando. Frase detectada.")
@@ -542,7 +930,7 @@ def main() -> None:
                 # por lo que el micrófono está libre.
                 launch_jarvis()
 
-                clear_audio_queue()
+                reset_detector_state(model, "regreso de la sesión")
                 time.sleep(1)
 
         except KeyboardInterrupt:
@@ -552,6 +940,7 @@ def main() -> None:
         except sd.PortAudioError as error:
             print(f"[WakeWord] Error de micrófono: {error}")
             print("[WakeWord] Reintentando en 3 segundos...")
+            update_runtime_state("wake_word", "retrying", error="microphone")
             time.sleep(3)
 
         except Exception as error:
@@ -560,6 +949,9 @@ def main() -> None:
                 f"{type(error).__name__}: {error}"
             )
             print("[WakeWord] Reintentando en 3 segundos...")
+            update_runtime_state(
+                "wake_word", "retrying", error=type(error).__name__
+            )
             time.sleep(3)
 
 

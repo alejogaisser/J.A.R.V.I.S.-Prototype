@@ -4,5 +4,9 @@
     "hey jarvis"
   ],
   "model_path": "models/vosk-model-small-en-us-0.15",
-  "min_wake_rms": 180
+  "min_wake_rms": 110,
+  "min_confidence": 0.65,
+  "wake_threshold": 0.35,
+  "input_device": null,
+  "input_device_name": "Intel Smart Sound Technology for Digital Microphones"
 }

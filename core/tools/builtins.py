@@ -9,7 +9,7 @@ from .registry import ToolRegistry
 
 
 SPECIAL_TOOLS = {
-    "save_memory", "screen_process", "visual_mouse", "close_camera", "shutdown_jarvis",
+    "save_memory", "screen_process", "visual_mouse", "close_camera", "camera_control", "shutdown_jarvis",
     "permission_manager",
 }
 
@@ -26,6 +26,9 @@ RISK = {
     "game_updater": RiskLevel.EXTERNAL_EFFECT,
     "shutdown_jarvis": RiskLevel.SENSITIVE,
     "save_memory": RiskLevel.LOCAL_CHANGE,
+    "pet_mode": RiskLevel.LOCAL_CHANGE,
+    "interface_control": RiskLevel.LOCAL_CHANGE,
+    "study_engine": RiskLevel.LOCAL_CHANGE,
     "memory_update": RiskLevel.LOCAL_CHANGE,
     "memory_forget": RiskLevel.SENSITIVE,
     "memory_restore": RiskLevel.LOCAL_CHANGE,
@@ -51,6 +54,7 @@ DEFAULT_RESULTS = {
     "weather_report": "Weather delivered.",
     "send_message": "Message sent.",
     "reminder": "Reminder set.",
+    "pet_mode": "Pet Mode activated.",
 }
 
 

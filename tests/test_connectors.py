@@ -2,6 +2,7 @@ import json
 import unittest
 from dataclasses import asdict
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from connectors.base import ConnectorCapabilities
 from connectors.gmail import _body
@@ -16,6 +17,33 @@ class ConnectorTests(unittest.TestCase):
         caps = asdict(ConnectorCapabilities(search=True, read=True, download=True))
         self.assertTrue(caps["search"])
         self.assertFalse(caps["send"])
+
+    def test_drive_supports_verified_writes(self):
+        connector = GoogleDriveConnector()
+        self.assertTrue(connector.capabilities.create_file)
+        self.assertTrue(connector.capabilities.create_folder)
+        service = MagicMock()
+        service.files.return_value.create.return_value.execute.return_value = {
+            "id": "new-id", "name": "urgent.txt"
+        }
+        service.files.return_value.get.return_value.execute.return_value = {
+            "id": "new-id", "name": "urgent.txt", "mimeType": "text/plain",
+            "parents": ["folder-id"], "trashed": False,
+        }
+        upload = MagicMock(return_value=object())
+        with patch.object(connector, "_service", return_value=service), patch(
+            "connectors.google_drive.google_dependencies",
+            return_value=(None, None, None, None, None, upload),
+        ), patch("connectors.google_drive.record"):
+            created = connector.create_file("urgent.txt", "contenido", "folder-id")
+        self.assertTrue(created["verified"])
+        self.assertEqual(created["parents"], ["folder-id"])
+
+    def test_drive_write_audit_uses_supported_metadata_only(self):
+        source = Path("connectors/google_drive.py").read_text(encoding="utf-8")
+        self.assertNotIn("item_id=", source)
+        self.assertIn('record(self.provider, "create_file", count=1)', source)
+        self.assertIn('record(self.provider, "create_folder", count=1)', source)
 
     def test_plain_text_gmail_body_is_decoded(self):
         import base64
@@ -54,3 +82,23 @@ class ConnectorTests(unittest.TestCase):
         item = GoogleDriveConnector._file({"id": "f", "name": "Guía", "mimeType": "application/pdf"})
         self.assertEqual(item["name"], "Guía")
         self.assertEqual(GOOGLE_EXPORTS["application/vnd.google-apps.document"][1], ".pdf")
+
+    def test_drive_folder_discovery_supports_shared_drives(self):
+        connector = GoogleDriveConnector()
+        service = MagicMock()
+        service.files.return_value.list.return_value.execute.return_value = {
+            "files": [{
+                "id": "tmp-id", "name": "tmp",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["root-id"],
+            }]
+        }
+        with patch.object(connector, "_service", return_value=service), patch(
+            "connectors.google_drive.record"
+        ):
+            folders = connector.find_folder("tmp")
+        self.assertEqual(folders[0]["id"], "tmp-id")
+        kwargs = service.files.return_value.list.call_args.kwargs
+        self.assertTrue(kwargs["includeItemsFromAllDrives"])
+        self.assertTrue(kwargs["supportsAllDrives"])
+        self.assertIn("mimeType = 'application/vnd.google-apps.folder'", kwargs["q"])

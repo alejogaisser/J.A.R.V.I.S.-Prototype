@@ -130,6 +130,51 @@ class VoiceConfirmationTests(unittest.TestCase):
 
 
 class AudioVisionRegressionTests(unittest.TestCase):
+    def test_live_microphone_policy_prioritizes_clear_speech(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        self.assertIn("LIVE MICROPHONE TURN POLICY", source)
+        self.assertIn("silence_duration_ms=1500", source.replace(" ", ""))
+        self.assertIn("Prioritize hearing and answering the user", source)
+        self.assertIn("ask the user once, briefly and naturally, to repeat it", source)
+        self.assertIn("never announce that such noise was ignored", source)
+        self.assertIn("START_SENSITIVITY_HIGH", source)
+        self.assertIn("prefix_padding_ms=500", source)
+
+    def test_close_app_matches_spoken_alias_title_and_process(self):
+        from actions.computer_settings import _window_candidate_score
+
+        self.assertGreater(
+            _window_candidate_score("la calculadora", "Calculator", "CalculatorApp.exe"),
+            0,
+        )
+        self.assertGreater(
+            _window_candidate_score("spotify", "Song title", "Spotify.exe"),
+            0,
+        )
+        self.assertGreater(
+            _window_candidate_score("bloc de notas", "untitled - Notepad", "Notepad.exe"),
+            0,
+        )
+        self.assertEqual(
+            _window_candidate_score("spotify", "Calculator", "CalculatorApp.exe"),
+            0,
+        )
+
+    def test_voice_interruption_preserves_the_new_user_turn(self):
+        tree = ast.parse(Path("main.py").read_text(encoding="utf-8"))
+        receive = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "_receive_audio"
+        )
+        vad_interrupt = next(
+            node for node in ast.walk(receive)
+            if isinstance(node, ast.If)
+            and ast.unparse(node.test) == "sc.interrupted"
+        )
+        body = ast.unparse(vad_interrupt)
+        self.assertIn("await self._flush_playback('VAD')", body)
+        self.assertNotIn("self._interrupted = True", body)
+
     def test_enter_releases_command_focus_without_changing_toggle(self):
         source = Path("ui.py").read_text(encoding="utf-8")
         self.assertIn("self._input.clearFocus()", source)
@@ -149,13 +194,21 @@ class AudioVisionRegressionTests(unittest.TestCase):
         self.assertIn("types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS", source)
 
     def test_camera_frames_continue_until_explicit_close(self):
-        vision = Path("actions/screen_processor.py").read_text(encoding="utf-8")
+        source = Path("main.py").read_text(encoding="utf-8")
         ui = Path("ui.py").read_text(encoding="utf-8")
-        self.assertIn("def stream_frame", vision)
-        self.assertIn("set_camera_frame_callback(_session.stream_frame)", vision)
-        self.assertIn("screen_process_action", Path("main.py").read_text(encoding="utf-8"))
-        self.assertNotIn("async def _deferred_close", vision)
+        self.assertIn("set_camera_frame_callback(self._stream_camera_frame)", source)
+        self.assertIn("def _stream_camera_frame", source)
+        self.assertIn("async def _send_camera_frame", source)
+        self.assertIn("video=types.Blob", source)
+        self.assertNotIn("screen_process_action", source)
         self.assertIn("now - self._last_camera_ai_frame >= 1.0", ui)
+
+    def test_camera_uses_one_audio_session(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        camera_branch = source[source.index('if angle == "camera"'):source.index('else:', source.index('if angle == "camera"'))]
+        self.assertIn('analyze_visual(user_text, "camera")', camera_branch)
+        self.assertIn("self.ui.start_camera_stream()", camera_branch)
+        self.assertNotIn("screen_process_action", camera_branch)
 
     def test_shutdown_waits_for_farewell_playback(self):
         source = Path("main.py").read_text(encoding="utf-8")
@@ -219,6 +272,16 @@ class AudioVisionRegressionTests(unittest.TestCase):
         self.assertTrue(any(isinstance(node, ast.While) for node in ast.walk(listen)))
         self.assertIn("Microphone lost; reconnecting", ast.unparse(listen))
 
+    def test_idle_microphone_ends_only_audio_stream_and_preserves_session(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        reset = source[source.index("    async def _close_idle_audio_stream"):source.index(
+            "    async def _receive_audio"
+        )]
+        self.assertIn("audio_stream_end=True", reset)
+        self.assertIn('self.ui.set_state("SLEEPING")', reset)
+        self.assertNotIn("self.session = None", reset)
+        self.assertIn("microphone callback stalled", source)
+
     def test_heavy_actions_load_after_ui_construction(self):
         source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn("def _load_action_dependencies()", source)
@@ -235,6 +298,15 @@ class AudioVisionRegressionTests(unittest.TestCase):
         }
         self.assertIn("call_soon_threadsafe", attrs)
         self.assertNotIn("get_nowait", attrs)
+
+    def test_escape_has_bounded_microphone_recovery(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        interrupt = source[source.index("    async def _interrupt_model_turn"):source.index(
+            "    def _reset_output_stream"
+        )]
+        self.assertIn("await asyncio.sleep(0.75)", interrupt)
+        self.assertIn("self._release_interrupt(serial)", interrupt)
+        self.assertIn("serial != self._interrupt_serial", interrupt)
 
     def test_listening_defaults_on_and_escape_works_outside_jarvis(self):
         source = Path("ui.py").read_text(encoding="utf-8")
@@ -295,7 +367,7 @@ class FileAndDesktopRegressionTests(unittest.TestCase):
             result = file_controller({
                 "action": "mkdir", "path": directory, "folder_name": "Nueva carpeta"
             })
-            self.assertIn("Folder created", result)
+            self.assertIn("Local folder created and verified", result)
             self.assertTrue((Path(directory) / "Nueva carpeta").is_dir())
 
     def test_file_create_write_read_and_open_pipeline(self):
@@ -305,12 +377,38 @@ class FileAndDesktopRegressionTests(unittest.TestCase):
             "actions.file_controller._is_protected_path", return_value=False
         ):
             path = Path(directory)
-            self.assertIn("File created", create_file(str(path), "qa.txt", "one"))
+            self.assertIn("Local file created and verified", create_file(str(path), "qa.txt", "one"))
             self.assertIn("Written to", write_file(str(path), "qa.txt", "two"))
             self.assertEqual(read_file(str(path), "qa.txt"), "two")
             with patch("actions.file_controller.os.startfile") as startfile:
                 self.assertIn("Opened", open_file(str(path), "qa.txt"))
                 startfile.assert_called_once()
+
+    def test_tmp_alias_resolves_to_the_project_temp_folder(self):
+        from actions.file_controller import _resolve_path
+
+        expected = Path("tmp").resolve()
+        self.assertEqual(_resolve_path("tmp").resolve(), expected)
+        self.assertEqual(_resolve_path("jarvis_tmp").resolve(), expected)
+
+    def test_create_file_does_not_duplicate_name_present_in_path(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "actions.file_controller._is_protected_path", return_value=False
+        ):
+            target = Path(directory) / "same.txt"
+            result = create_file(str(target), "same.txt", "verified")
+            self.assertEqual(target.read_text(encoding="utf-8"), "verified")
+            self.assertFalse((target / "same.txt").exists())
+            self.assertIn(str(target.resolve()), result)
+
+    def test_remote_drive_folder_names_block_local_write_fallback(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        self.assertIn("self._remote_drive_folders", source)
+        self.assertIn('"error": "wrong_storage_provider"', source)
+        self.assertIn("Blocked local write", source)
 
     def test_power_actions_require_central_confirmation_but_accept_preapproval(self):
         source = Path("main.py").read_text(encoding="utf-8")

@@ -79,6 +79,33 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertEqual(asyncio.run(executor.execute("fail", {})).error_code, "exception")
         self.assertEqual(asyncio.run(executor.execute("slow", {})).error_code, "timeout")
 
+    def test_executor_does_not_invent_success_for_legacy_failures(self):
+        registry = ToolRegistry([
+            ToolDefinition("none", "None", SCHEMA, handler=lambda args: None),
+            ToolDefinition(
+                "denied", "Denied", SCHEMA,
+                handler=lambda args: "Access denied: protected path",
+            ),
+            ToolDefinition(
+                "mapping", "Mapping", SCHEMA,
+                handler=lambda args: {"success": False, "error": "not_verified"},
+            ),
+        ])
+        executor = ToolExecutor(registry)
+
+        self.assertEqual(
+            asyncio.run(executor.execute("none", {})).error_code,
+            "missing_result",
+        )
+        self.assertEqual(
+            asyncio.run(executor.execute("denied", {})).error_code,
+            "handler_reported_failure",
+        )
+        self.assertEqual(
+            asyncio.run(executor.execute("mapping", {})).error_code,
+            "not_verified",
+        )
+
     def test_all_declarations_must_have_handlers_or_be_special(self):
         declarations = [{"name": "ordinary", "description": "", "parameters": SCHEMA}]
         with self.assertRaisesRegex(ValueError, "requires a handler"):

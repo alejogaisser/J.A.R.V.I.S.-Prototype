@@ -15,6 +15,8 @@ class ConnectorCapabilities:
     search: bool = False
     read: bool = False
     download: bool = False
+    create_file: bool = False
+    create_folder: bool = False
     send: bool = False
     delete: bool = False
 

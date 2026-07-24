@@ -17,6 +17,7 @@ except ImportError:
     _SEND2TRASH = False
 
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 _SAFE_ROOTS: list[Path] = [
     Path.home(),
@@ -99,6 +100,9 @@ def _resolve_path(raw: str) -> Path:
         "music":     _get_music(),
         "videos":    _get_videos(),
         "home":      Path.home(),
+        "tmp":       _PROJECT_ROOT / "tmp",
+        "jarvis_tmp": _PROJECT_ROOT / "tmp",
+        "jarvis temp": _PROJECT_ROOT / "tmp",
     }
     cleaned = str(raw).strip().strip('"').strip("'")
     lower = cleaned.lower()
@@ -112,6 +116,17 @@ def _resolve_path(raw: str) -> Path:
     if separator and prefix.casefold() in shortcuts:
         return shortcuts[prefix.casefold()] / Path(remainder)
     return Path(cleaned).expanduser()
+
+
+def _resolve_named_target(path: str, name: str) -> Path:
+    """Avoid duplicating a filename when models provide it in both fields."""
+    base = _resolve_path(path)
+    clean_name = str(name or "").strip().strip('"').strip("'")
+    if not clean_name:
+        return base
+    if base.name.casefold() == Path(clean_name).name.casefold():
+        return base
+    return base / clean_name
 
 def _format_size(b: int) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -167,25 +182,23 @@ def list_files(path: str = "desktop", show_hidden: bool = False) -> str:
 
 def create_file(path: str, name: str = "", content: str = "") -> str:
     try:
-        base   = _resolve_path(path)
-        target = (base / name) if name else base
+        target = _resolve_named_target(path, name)
         if not _is_safe_path(target):
             return f"Access denied: {target}"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        return f"File created: {target.name}"
+        return f"Local file created and verified: {target.resolve()}"
     except Exception as e:
         return f"Could not create file: {e}"
 
 
 def create_folder(path: str, name: str = "") -> str:
     try:
-        base   = _resolve_path(path)
-        target = (base / name) if name else base
+        target = _resolve_named_target(path, name)
         if not _is_safe_path(target):
             return f"Access denied: {target}"
         target.mkdir(parents=True, exist_ok=True)
-        return f"Folder created: {target.name}"
+        return f"Local folder created and verified: {target.resolve()}"
     except Exception as e:
         return f"Could not create folder: {e}"
 

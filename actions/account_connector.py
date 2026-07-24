@@ -37,12 +37,34 @@ def account_connector(parameters: dict, player=None) -> str:
             return json.dumps(connector.status(), ensure_ascii=False)
         if action == "search":
             return json.dumps(connector.search(str(args.get("query", "")), int(args.get("limit", 10))), ensure_ascii=False)
+        if action == "find_folder":
+            return json.dumps(connector.find_folder(
+                str(args.get("name") or args.get("query", "")),
+                str(args.get("parent_id", "")), int(args.get("limit", 20)),
+            ), ensure_ascii=False)
+        if action == "list_children":
+            return json.dumps(connector.list_children(
+                str(args.get("parent_id") or args.get("item_id", "")),
+                int(args.get("limit", 50)),
+            ), ensure_ascii=False)
         if action == "read":
             return json.dumps(connector.read(str(args["item_id"])), ensure_ascii=False)
+        if action == "create_folder":
+            created = connector.create_folder(
+                str(args.get("name", "")), str(args.get("parent_id", ""))
+            )
+            return "Verified Google Drive folder creation: " + json.dumps(created, ensure_ascii=False)
+        if action == "create_file":
+            created = connector.create_file(
+                str(args.get("name", "")), str(args.get("content", "")),
+                str(args.get("parent_id", "")),
+                str(args.get("mime_type", "text/plain")),
+            )
+            return "Verified Google Drive file creation: " + json.dumps(created, ensure_ascii=False)
         if action == "download":
             destination = Path(args.get("destination") or (Path.home() / "Downloads"))
             target = connector.download(str(args["item_id"]), str(args["attachment"]), destination)
             return f"Downloaded with {provider} to: {target}"
-        raise ValueError(f"Unknown connector action: {action}")
+        raise ValueError(f"Unknown connector action: {action}. No change was made.")
     except Exception as exc:
         return f"Connector error ({provider}/{action}): {exc}"

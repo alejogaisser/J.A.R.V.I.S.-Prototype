@@ -326,12 +326,114 @@ def minimize_window():
     else:               pyautogui.hotkey("win", "down")
 
 
+_WINDOW_TARGET_ALIASES = {
+    "calculadora": ("calculator", "calculadora", "calculatorapp"),
+    "calculator": ("calculator", "calculadora", "calculatorapp"),
+    "bloc de notas": ("notepad", "bloc de notas"),
+    "notepad": ("notepad", "bloc de notas"),
+    "explorador": ("explorer", "explorador de archivos", "file explorer"),
+    "chrome": ("chrome", "google chrome"),
+    "edge": ("msedge", "microsoft edge"),
+    "firefox": ("firefox", "mozilla firefox"),
+    "opera gx": ("opera", "opera gx"),
+    "spotify": ("spotify",),
+    "discord": ("discord",),
+}
+
+
+def _window_target_terms(value: str) -> tuple[str, ...]:
+    """Return stable app identifiers from a spoken name or visible title."""
+    import re
+    import unicodedata
+
+    normalized = unicodedata.normalize("NFKD", str(value)).encode(
+        "ascii", "ignore"
+    ).decode().casefold()
+    normalized = " ".join(re.sub(r"[^a-z0-9]+", " ", normalized).split())
+    for prefix in ("la ", "el ", "los ", "las ", "aplicacion ", "app "):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
+            break
+    aliases = _WINDOW_TARGET_ALIASES.get(normalized, ())
+    return tuple(dict.fromkeys((normalized, *aliases))) if normalized else ()
+
+
+def _window_candidate_score(target: str, window_title: str, process_name: str) -> int:
+    """Rank a native window using both its changing title and stable executable."""
+    terms = _window_target_terms(target)
+    title_terms = _window_target_terms(window_title)
+    process_terms = _window_target_terms(process_name.removesuffix(".exe"))
+    title_text = " ".join(title_terms)
+    process_text = " ".join(process_terms)
+    best = 0
+    for term in terms:
+        if not term:
+            continue
+        if term == process_text or term in process_terms:
+            best = max(best, 100)
+        if term == title_text or term in title_terms:
+            best = max(best, 90)
+        if term in process_text:
+            best = max(best, 80)
+        if term in title_text:
+            best = max(best, 70)
+    return best
+
+
+def _find_native_window(target: str):
+    """Find a visible Windows top-level window by title, alias, or process name."""
+    import ctypes
+    from ctypes import wintypes
+    import psutil
+
+    user32 = ctypes.windll.user32
+    candidates = []
+    enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def visit(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd) or user32.GetWindowTextLengthW(hwnd) <= 0:
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        try:
+            process_name = psutil.Process(pid.value).name()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            process_name = ""
+        score = _window_candidate_score(target, buffer.value, process_name)
+        if score:
+            candidates.append((score, int(hwnd), buffer.value, process_name))
+        return True
+
+    user32.EnumWindows(enum_proc(visit), 0)
+    return max(candidates, default=None, key=lambda item: item[0])
+
+
 def _native_window_action(action: str, title: str = "") -> str:
-    """Target a Windows window directly instead of hoping the right app has focus."""
+    """Target a Windows window by spoken app name, title, or executable."""
     if _OS != "Windows":
         raise RuntimeError("Native targeted window actions are Windows-only")
+    if title:
+        import ctypes
+
+        match = _find_native_window(title)
+        if match is None:
+            raise RuntimeError(f"Window not found: {title}")
+        _score, hwnd, matched_title, _process_name = match
+        if action == "minimize":
+            ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+        elif action == "maximize":
+            ctypes.windll.user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+        elif action in {"close", "close_window", "close_app"}:
+            ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+        else:
+            raise RuntimeError(f"Unsupported window action: {action}")
+        return f"{action.capitalize()}d window: {matched_title}"
+
     import pygetwindow as gw
-    candidates = gw.getWindowsWithTitle(title) if title else [gw.getActiveWindow()]
+    candidates = [gw.getActiveWindow()]
     window = next((item for item in candidates if item and item.title), None)
     if window is None:
         raise RuntimeError(f"Window not found: {title or 'active window'}")

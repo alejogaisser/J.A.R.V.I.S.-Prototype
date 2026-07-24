@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -53,10 +54,43 @@ class ControllableMemoryTests(unittest.TestCase):
         self.assertEqual(len(memory.list_memories("temporary", status="expired")), 1)
         self.assertNotIn("old_exam", memory.format_memory_for_prompt())
 
+        future = memory.create_memory(
+            "temporary", "submit_form", "Submit the form",
+            expires_at=(memory.local_now() + timedelta(hours=1)).isoformat(),
+        )
+        active_ids = {item["id"] for item in memory.list_memories("temporary", status="active")}
+        self.assertIn(future["record"]["id"], active_ids)
+        self.assertIn("submit form", memory.format_memory_for_prompt())
+
+    def test_recurring_birthday_is_durable_without_expiry(self):
+        created = memory.create_memory("identity", "birthday", "May 2")
+        self.assertIsNone(created["record"]["expires_at"])
+        self.assertIn("birthday", memory.format_memory_for_prompt())
+
     def test_sensitive_values_are_redacted_from_listing(self):
         memory.create_memory("notes", "private_detail", "secret", sensitivity="sensitive")
         self.assertEqual(memory.list_memories()[0]["value"], "[redacted]")
         self.assertEqual(memory.list_memories(include_sensitive=True)[0]["value"], "secret")
+
+    def test_explicit_contexts_are_normalized_and_never_inferred(self):
+        created = memory.create_memory(
+            "relationships", "study_friend", "A friend",
+            contexts=["University Life", "university-life", ""],
+        )
+        self.assertEqual(created["record"]["contexts"], ["university_life"])
+        unrelated = memory.create_memory("relationships", "neighbor", "A neighbor")
+        self.assertEqual(unrelated["record"]["contexts"], [])
+
+    def test_response_language_defaults_to_english(self):
+        self.assertEqual(memory.get_response_language(), "English")
+        instruction = memory.format_language_instruction()
+        self.assertIn("Always respond in English", instruction)
+        self.assertIn("regardless of the language used by the user", instruction)
+
+    def test_explicit_response_language_is_used(self):
+        memory.create_memory("identity", "language", "Italian")
+        self.assertEqual(memory.get_response_language(), "Italian")
+        self.assertIn("Always respond in Italian", memory.format_language_instruction())
 
 
 if __name__ == "__main__":

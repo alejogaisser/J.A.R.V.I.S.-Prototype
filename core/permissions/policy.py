@@ -21,7 +21,7 @@ _FREE_TOOLS = {
     "browser_control", "close_camera", "flight_finder", "open_app", "reminder",
     "screen_process", "shutdown_jarvis", "system_status", "visual_mouse",
     "weather_report", "web_search", "youtube_video",
-    "math_engine", "account_connector",
+    "math_engine",
 }
 _FREE_COMPUTER_ACTIONS = {
     "type", "smart_type", "click", "left_click", "double_click", "right_click",
@@ -44,6 +44,8 @@ class PermissionPolicy:
 
     @staticmethod
     def minimum(tool: ToolDefinition, operation: str) -> PermissionLevel:
+        if tool.name == "account_connector":
+            return PermissionLevel.FREE
         if tool.name in _FREE_TOOLS:
             return PermissionLevel.FREE
         if tool.name == "send_message":
