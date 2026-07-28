@@ -89,6 +89,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 4 - `ToolResult` v2 compatible
 
+- **Estado:** implementación y baseline completos el 2026-07-28 en
+  `codex/05-tool-result-v2`; pendiente de integración y publicación.
 - **Objetivo:** separar ejecución, efecto y verificación.
 - **Archivos previstos:** `core/tools/definitions.py`, `executor.py`, adapters de normalización, tests; sin migrar las 37 tools.
 - **Riesgo:** alto; contrato transversal.
@@ -96,6 +98,11 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Criterio de aceptación:** legacy adapters conservan comportamiento; estados de ejecución/efecto/verificación y latencia no se infieren de texto.
 - **Pruebas:** matriz semántica, serialización, timeouts, errores, compatibilidad con retornos legacy.
 - **Rollback:** mantener el constructor/adapter v1 hasta finalizar la migración.
+- **Evidencia:** enums independientes para ejecución, efecto, verificación y
+  rollback; duración y evidencia serializables; adaptadores de texto, bool,
+  mapping, `None` y v2. Timeout declara efecto desconocido, rechazo previo
+  declara no aplicado y las 37 tools conservan campos legacy. Baseline: 257
+  tests y 102 subtests aprobados.
 
 ### Fase 5 - Piloto de verificación
 
