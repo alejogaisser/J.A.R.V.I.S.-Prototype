@@ -1,44 +1,16 @@
-#web_search.py
-import json
-import sys
-from pathlib import Path
+# web_search.py
 
 from core.clock import local_now
-
-def _get_base_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
-    return Path(__file__).resolve().parent.parent
+from core.providers import GroundedSearchProvider, ProviderError
 
 
-BASE_DIR        = _get_base_dir()
-API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
-
-
-def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
-
-
-def _gemini_search(query: str) -> str:
-    from google import genai
-
-    client   = genai.Client(api_key=_get_api_key())
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=query,
-        config={"tools": [{"google_search": {}}]},
-    )
-
-    text = ""
-    for part in response.candidates[0].content.parts:
-        if hasattr(part, "text") and part.text:
-            text += part.text
-
-    text = text.strip()
-    if not text:
-        raise ValueError("Gemini returned an empty response.")
-    return text
+def _provider_search(
+    query: str,
+    provider: GroundedSearchProvider | None,
+) -> str:
+    if provider is None:
+        raise ProviderError("No grounded search provider is configured.")
+    return provider.search(query)
 
 
 def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
@@ -77,7 +49,7 @@ def _ddg_news(query: str, max_results: int = 8) -> list[dict]:
                     "date":    r.get("date",   ""),
                 })
     except Exception as e:
-        print(f"[WebSearch] ⚠️ DDG news() failed ({e}) — falling back to text search")
+        print(f"[WebSearch] DDG news failed ({e}); falling back to text search")
         results = _ddg_search(query, max_results=max_results)
     return results
 
@@ -117,26 +89,20 @@ def _format_news(query: str, results: list[dict]) -> str:
 
 # ── Briefing helper ────────────────────────────────────────────────────────────
 
-def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
+def _provider_headlines(
+    provider: GroundedSearchProvider,
+    n: int = 5,
+) -> tuple[list[str], str]:
     """
     Fetches current headlines via Gemini grounded search.
     Optimised for speed: minimal prompt + strict token cap.
     Returns (headline_list, raw_text_for_display).
     """
     import re
-    from google import genai
 
-    client = genai.Client(api_key=_get_api_key())
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=f"Current world news: {n} headlines. Numbered list, titles only.",
-        config={"tools": [{"google_search": {}}]},
+    raw = provider.search(
+        f"Current world news: {n} headlines. Numbered list, titles only."
     )
-
-    raw = ""
-    for part in response.candidates[0].content.parts:
-        if hasattr(part, "text") and part.text:
-            raw += part.text
 
     headlines = []
     for line in raw.strip().split("\n"):
@@ -156,17 +122,17 @@ def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
 
 # ── Modes ──────────────────────────────────────────────────────────────────────
 
-def _search(query: str) -> str:
+def _search(query: str, provider: GroundedSearchProvider | None) -> str:
     """Default search — Gemini grounded, DDG fallback."""
     try:
-        return _gemini_search(query)
+        return _provider_search(query, provider)
     except Exception as e:
-        print(f"[WebSearch] ⚠️ Gemini failed ({e}) — trying DDG...")
+        print(f"[WebSearch] Grounded provider failed ({e}); trying DDG")
         results = _ddg_search(query)
         return _format_ddg(query, results)
 
 
-def _news(query: str) -> str:
+def _news(query: str, provider: GroundedSearchProvider | None) -> str:
     """
     Runs Gemini grounded search AND DDG news in parallel.
     Returns whichever delivers a valid result first; cancels the other.
@@ -201,9 +167,9 @@ def _news(query: str) -> str:
 
     def _try_gemini():
         try:
-            _store(_gemini_search(gemini_query))
+            _store(_provider_search(gemini_query, provider))
         except Exception as e:
-            print(f"[WebSearch] ⚠️ Gemini news failed ({e})")
+            print(f"[WebSearch] Grounded news provider failed ({e})")
             _store("")
 
     def _try_ddg():
@@ -211,7 +177,7 @@ def _news(query: str) -> str:
             results = _ddg_news(ddg_query, max_results=8)
             _store(_format_news(ddg_query, results))
         except Exception as e:
-            print(f"[WebSearch] ⚠️ DDG news failed ({e})")
+            print(f"[WebSearch] DDG news failed ({e})")
             _store("")
 
     threading.Thread(target=_try_gemini, daemon=True).start()
@@ -221,7 +187,7 @@ def _news(query: str) -> str:
     return result_box[0] or f"No news found for: {query}"
 
 
-def _research(query: str) -> str:
+def _research(query: str, provider: GroundedSearchProvider | None) -> str:
     """
     Deep dive — asks Gemini for a comprehensive answer with context.
     Falls back to a wider DDG fetch.
@@ -231,33 +197,37 @@ def _research(query: str) -> str:
         "Include background context, key facts, current state, and important nuances."
     )
     try:
-        return _gemini_search(research_query)
+        return _provider_search(research_query, provider)
     except Exception as e:
-        print(f"[WebSearch] ⚠️ Research Gemini failed ({e}) — DDG fallback...")
+        print(f"[WebSearch] Grounded research failed ({e}); using DDG")
         results = _ddg_search(query, max_results=10)
         return _format_ddg(query, results)
 
 
-def _price(query: str) -> str:
+def _price(query: str, provider: GroundedSearchProvider | None) -> str:
     """Product price lookup — searches for current market prices."""
     price_query = f"current price of {query} — how much does it cost today"
     try:
-        return _gemini_search(price_query)
+        return _provider_search(price_query, provider)
     except Exception as e:
-        print(f"[WebSearch] ⚠️ Price Gemini failed ({e}) — DDG fallback...")
+        print(f"[WebSearch] Grounded price lookup failed ({e}); using DDG")
         results = _ddg_search(f"{query} price buy", max_results=6)
         return _format_ddg(query, results)
 
 
-def _compare(items: list[str], aspect: str) -> str:
+def _compare(
+    items: list[str],
+    aspect: str,
+    provider: GroundedSearchProvider | None,
+) -> str:
     query = (
         f"Compare {', '.join(items)} in terms of {aspect}. "
         "Give specific facts and data."
     )
     try:
-        return _gemini_search(query)
+        return _provider_search(query, provider)
     except Exception as e:
-        print(f"[WebSearch] ⚠️ Gemini compare failed: {e} — falling back to DDG")
+        print(f"[WebSearch] Grounded comparison failed ({e}); using DDG")
 
     all_results: dict[str, list] = {}
     for item in items:
@@ -284,6 +254,7 @@ def web_search(
     response=None,
     player=None,
     session_memory=None,
+    provider: GroundedSearchProvider | None = None,
 ) -> str:
     params = parameters or {}
     query  = params.get("query", "").strip()
@@ -300,19 +271,19 @@ def web_search(
     if player:
         player.write_log(f"[Search:{mode}] {query or ', '.join(items)}")
 
-    print(f"[WebSearch] 🔍 mode={mode!r}  query={query!r}")
+    print(f"[WebSearch] mode={mode!r} query={query!r}")
 
     try:
         if mode == "compare" and items:
-            return _compare(items, aspect)
+            return _compare(items, aspect, provider)
         if mode == "news":
-            return _news(query)
+            return _news(query, provider)
         if mode == "research":
-            return _research(query)
+            return _research(query, provider)
         if mode == "price":
-            return _price(query)
-        return _search(query)
+            return _price(query, provider)
+        return _search(query, provider)
 
     except Exception as e:
-        print(f"[WebSearch] ❌ All backends failed: {e}")
+        print(f"[WebSearch] All backends failed: {e}")
         return f"Search failed: {e}"

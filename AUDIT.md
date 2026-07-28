@@ -197,12 +197,19 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### H-08 - Proveedores y modelos están distribuidos
 
+- **Estado:** mitigado en Fase 9 con contratos Live/Text/Vision/Search y
+  migración completa de `web_search`; las demás acciones continúan pendientes.
 - **Descripción:** numerosas acciones crean clientes Gemini, leen la API key y eligen modelos.
 - **Evidencia:** imports/calls en `main.py`, `actions/code_helper.py`, `computer_control.py`, `computer_settings.py`, `desktop.py`, `dev_agent.py`, `file_processor.py`, `flight_finder.py`, `screen_processor.py`, `web_search.py` y `youtube_video.py`.
 - **Impacto:** retries, timeouts, modelos, secretos y pruebas son inconsistentes.
 - **Solución recomendada:** adapters separados Live/Text/Vision/Search y `ModelPolicy`; migrar una action piloto.
 - **Esfuerzo:** alto.
 - **Prioridad:** P1/P2.
+- **Resolución parcial:** `web_search` recibe `GroundedSearchProvider` y ya no
+  importa el SDK, lee secretos ni selecciona modelos. El adaptador Google
+  contiene deadline HTTP, búsqueda grounded, fallback de modelo sólo para
+  fallos transitorios y errores tipados para timeout, cuota y rechazo
+  permanente. DDG permanece como fallback del caso de uso.
 
 ### H-09 - Memoria atómica sólo dentro de un proceso
 

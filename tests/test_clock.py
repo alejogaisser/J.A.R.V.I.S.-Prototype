@@ -32,10 +32,17 @@ class JarvisClockTests(unittest.TestCase):
 
     def test_news_query_contains_authoritative_date_and_recency_limit(self):
         fixed = datetime(2026, 7, 15, 9, 0, tzinfo=JARVIS_TIMEZONE)
+
+        class SearchProvider:
+            def search(self, query: str) -> str:
+                return (
+                    "Fresh verified world-news result published 2026-07-15 "
+                    f"with a confirmed source and timestamp. Query: {query}"
+                )
+
         with patch.object(web_search, "local_now", return_value=fixed), \
-             patch.object(web_search, "_gemini_search", return_value="Fresh verified world-news result published 2026-07-15 with a confirmed source and timestamp"), \
              patch.object(web_search, "_ddg_news", return_value=[]):
-            result = web_search._news("top world news")
+            result = web_search._news("top world news", SearchProvider())
         self.assertIn("2026-07-15", result)
 
 
