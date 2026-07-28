@@ -54,7 +54,8 @@ class ScriptMemoryTests(unittest.TestCase):
 
     def test_confirmation_path_is_preapproved_and_cannot_be_replaced(self):
         source = Path("main.py").read_text(encoding="utf-8")
-        self.assertIn("_execute_tool(fc, preapproved=True)", source)
+        self.assertIn("preapproved=True,", source)
+        self.assertIn("source=source,", source)
         self.assertIn("VOICE_CONFIRMATION_ALREADY_PENDING", source)
         self.assertIn("decision.requires_confirmation and not preapproved", source)
 

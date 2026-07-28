@@ -58,7 +58,8 @@ from core.security import VoiceConfirmationGate, confirmation_request, safe_tool
 from core.live_session import AudioInactivityWatchdog, LiveSessionState
 from core.runtime_state import update_runtime_state
 from core.permissions import (
-    ExecutionContext, PermissionLevel, PermissionPolicy, PermissionStore, build_preview,
+    ExecutionContext, InputSource, PermissionLevel, PermissionPolicy, PermissionStore,
+    build_preview,
 )
 from core.tools import ToolExecutor, normalize_tool_output
 from core.tools.builtins import SPECIAL_TOOLS, build_builtin_registry
@@ -890,7 +891,10 @@ class JarvisLive:
         self._last_user_speech = time.monotonic()  # updated on every user utterance
         self._confirmation_gate = VoiceConfirmationGate(ttl_seconds=60)
         self._pending_confirmation_fc = None
+        self._pending_confirmation_source: InputSource | None = None
         self._confirmation_execution_scheduled = False
+        self._active_input_source = self._default_source()
+        self._input_source_locked = False
         self._shutdown_after_turn = False
         self._shutdown_started = False
         self._shutdown_farewell_audio_seen = False
@@ -1052,13 +1056,38 @@ class JarvisLive:
         asyncio.create_task(self._process_dashboard_commands())
         await asyncio.sleep(0)
 
+    @staticmethod
+    def _default_source() -> InputSource:
+        if os.environ.get("JARVIS_WAKE_SUPERVISED") == "1":
+            return InputSource.WAKE
+        return InputSource.LOCAL
+
+    def _set_input_source(self, source: InputSource, *, lock: bool = False) -> None:
+        current = getattr(self, "_active_input_source", self._default_source())
+        locked = getattr(self, "_input_source_locked", False)
+        if locked and current != source:
+            # A remote ingress can raise trust requirements, but no later local
+            # frame may downgrade a turn that already contains remote input.
+            if current.is_remote or not source.is_remote:
+                return
+        self._active_input_source = source
+        self._input_source_locked = lock or locked
+
+    def _reset_input_source(self) -> None:
+        self._active_input_source = self._default_source()
+        self._input_source_locked = False
+
+    async def _send_text_input(self, text: str, source: InputSource) -> None:
+        self._set_input_source(source, lock=True)
+        await self.session.send_realtime_input(text=text)
+
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
             return
         if self._handle_confirmation_text(text):
             return
         asyncio.run_coroutine_threadsafe(
-            self.session.send_realtime_input(text=text),
+            self._send_text_input(text, InputSource.UI),
             self._loop
         )
 
@@ -1075,6 +1104,7 @@ class JarvisLive:
             return True
         if decision == "denied":
             self._pending_confirmation_fc = None
+            self._pending_confirmation_source = None
             self.ui.write_log("SECURITY: Spoken confirmation denied.")
             if self._loop and self.session:
                 asyncio.run_coroutine_threadsafe(
@@ -1092,12 +1122,18 @@ class JarvisLive:
     async def _execute_confirmed_pending(self) -> None:
         """Execute the staged action after the user's explicit spoken approval."""
         fc = self._pending_confirmation_fc
+        source = self._pending_confirmation_source
         self._pending_confirmation_fc = None
+        self._pending_confirmation_source = None
         try:
             if fc is None:
                 return
             self._confirmation_gate.clear()
-            response = await self._execute_tool(fc, preapproved=True)
+            response = await self._execute_tool(
+                fc,
+                preapproved=True,
+                source=source,
+            )
             payload = getattr(response, "response", {}) or {}
             result = payload.get("result", "Done.") if isinstance(payload, dict) else str(payload)
             if self.session:
@@ -1272,9 +1308,19 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             ),
         )
 
-    async def _execute_tool(self, fc, preapproved: bool = False) -> types.FunctionResponse:
+    async def _execute_tool(
+        self,
+        fc,
+        preapproved: bool = False,
+        source: InputSource | None = None,
+    ) -> types.FunctionResponse:
         name = fc.name
         args = dict(fc.args or {})
+        execution_source = source or getattr(
+            self,
+            "_active_input_source",
+            self._default_source(),
+        )
 
         if name in {"file_processor", "code_helper", "dev_agent", "desktop_control", "computer_control"}:
             from actions.file_controller import _is_protected_path
@@ -1299,6 +1345,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
         if name == "shutdown_jarvis" and self._pending_confirmation_fc is not None:
             self._pending_confirmation_fc = None
+            self._pending_confirmation_source = None
             self._confirmation_gate.clear()
             self._confirmation_execution_scheduled = False
             self.ui.write_log("SECURITY: Pending confirmation cancelled by shutdown.")
@@ -1310,27 +1357,6 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     "[VOICE_CONFIRMATION_ALREADY_PENDING] Wait for the user's yes or no. "
                     "Do not call this or another tool again."
                 )},
-            )
-
-        if name == "save_memory":
-            category = args.get("category", "notes")
-            key      = args.get("key", "")
-            value    = args.get("value", "")
-            saved = {"result": "invalid", "error": "missing key/value"}
-            if key and value:
-                saved = create_memory(
-                    category, key, value, expires_at=args.get("expires_at"),
-                    replace=bool(args.get("replace_existing", False)),
-                    contexts=args.get("contexts"),
-                )
-                if saved.get("result") in {"created", "updated", "unchanged"}:
-                    self.ui.refresh_memory_graph()
-                print(f"[Memory] save_memory: {category}/{key} = [redacted] ({saved['result']})")
-            if self.ui.microphone_enabled:
-                self.ui.set_state("LISTENING")
-            return types.FunctionResponse(
-                id=fc.id, name=name,
-                response={"result": saved, "silent": saved.get("result") != "conflict"}
             )
 
         loop   = asyncio.get_event_loop()
@@ -1350,7 +1376,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         decision = self.permission_policy.evaluate(
             definition,
             args,
-            ExecutionContext(source="local", simulate=bool(args.get("simulate", False))),
+            ExecutionContext(
+                source=execution_source,
+                simulate=bool(args.get("simulate", False)),
+            ),
         )
         print(
             f"[SECURITY] {name}/{decision.operation}: {decision.policy} "
@@ -1382,6 +1411,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             )
             if not approved:
                 self._pending_confirmation_fc = fc
+                self._pending_confirmation_source = execution_source
                 self.ui.write_log(f"SECURITY DETAIL: {detail.replace(chr(10), ' | ')}")
                 question = "Confirm action?"
                 self.ui.write_log(f"SECURITY: Awaiting spoken approval for {name}.")
@@ -1543,6 +1573,28 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             elif name == "permission_manager":
                 result = self._manage_permission(args)
 
+            elif name == "save_memory":
+                category = args.get("category", "notes")
+                key = args.get("key", "")
+                value = args.get("value", "")
+                saved = {"result": "invalid", "error": "missing key/value"}
+                if key and value:
+                    saved = create_memory(
+                        category,
+                        key,
+                        value,
+                        expires_at=args.get("expires_at"),
+                        replace=bool(args.get("replace_existing", False)),
+                        contexts=args.get("contexts"),
+                    )
+                    if saved.get("result") in {"created", "updated", "unchanged"}:
+                        self.ui.refresh_memory_graph()
+                    print(
+                        f"[Memory] save_memory: {category}/{key} = "
+                        f"[redacted] ({saved['result']})"
+                    )
+                result = saved
+
             elif name == "computer_settings":
                 r = await loop.run_in_executor(None, lambda: computer_settings(parameters=args, response=None, player=self.ui))
                 result = r or "Done."
@@ -1662,11 +1714,13 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
     async def _send_realtime(self):
         while True:
             msg = await self.out_queue.get()
+            source, audio = msg
+            self._set_input_source(source)
             with self._speaking_lock:
                 jarvis_speaking = self._is_speaking
             if jarvis_speaking or self._interrupted:
                 continue
-            await self.session.send_realtime_input(audio=msg)
+            await self.session.send_realtime_input(audio=audio)
 
     async def _listen_audio(self):
         print("[JARVIS] 🎤 Mic started")
@@ -1681,9 +1735,9 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     "AUDIO: Voice detected; listening stream reinitialized."
                 )
 
-        def _enqueue_audio(blob: types.Blob) -> None:
+        def _enqueue_audio(item: tuple[InputSource, types.Blob]) -> None:
             try:
-                self.out_queue.put_nowait(blob)
+                self.out_queue.put_nowait(item)
             except asyncio.QueueFull:
                 # Preserve the most recent speech instead of a stale backlog.
                 try:
@@ -1691,7 +1745,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 except asyncio.QueueEmpty:
                     pass
                 try:
-                    self.out_queue.put_nowait(blob)
+                    self.out_queue.put_nowait(item)
                 except asyncio.QueueFull:
                     pass
 
@@ -1714,9 +1768,12 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             if mic_active and transition not in {"sleep", "sleeping"}:
                 loop.call_soon_threadsafe(
                     _enqueue_audio,
-                    types.Blob(
-                        data=data,
-                        mime_type=f"audio/pcm;rate={SEND_SAMPLE_RATE}",
+                    (
+                        self._default_source(),
+                        types.Blob(
+                            data=data,
+                            mime_type=f"audio/pcm;rate={SEND_SAMPLE_RATE}",
+                        ),
                     ),
                 )
 
@@ -1769,6 +1826,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         try:
             while True:
                 async for response in self.session.receive():
+                    turn_completed = False
 
                     update = getattr(response, "session_resumption_update", None)
                     # Checkpoints are internal session bookkeeping. Keep the
@@ -1828,6 +1886,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                                 self._handle_confirmation_text(txt)
 
                         if sc.turn_complete:
+                            turn_completed = True
                             if self._turn_done_event:
                                 self._turn_done_event.set()
 
@@ -1837,6 +1896,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                                 self._release_interrupt(self._interrupt_serial)
                                 in_buf  = []
                                 out_buf = []
+                                self._reset_input_source()
                                 continue
 
                             full_in = " ".join(in_buf).strip()
@@ -1871,6 +1931,8 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         await self.session.send_tool_response(
                             function_responses=fn_responses
                         )
+                    if turn_completed:
+                        self._reset_input_source()
         except Exception as e:
             print(f"[JARVIS] ❌ Recv: {e}")
             traceback.print_exc()
@@ -2113,7 +2175,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 speaking = self._is_speaking
             if not speaking and self.ui.microphone_enabled:
                 try:
-                    self.out_queue.put_nowait(chunk)
+                    self.out_queue.put_nowait((InputSource.DASHBOARD_AUDIO, chunk))
                 except asyncio.QueueFull:
                     pass
 
@@ -2131,24 +2193,27 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 )
                 if not text:
                     continue
-                if self._handle_confirmation_text(text):
-                    self.ui.write_log(f"[Web]: {text}")
-                    continue
-                # Wait up to 8s for session to become ready after a wake
-                for _ in range(80):
-                    if self.session:
-                        break
-                    await asyncio.sleep(0.1)
-                if self.session:
-                    await self.session.send_realtime_input(text=text)
-                    self.ui.write_log(f"[Web]: {text}")
-                else:
-                    print(f"[Dashboard] Dropped command (no session): {text}")
+                await self._forward_dashboard_command(text)
             except asyncio.TimeoutError:
                 pass
             except Exception as e:
                 print(f"[Dashboard] Command error: {e}")
                 await asyncio.sleep(0.5)
+
+    async def _forward_dashboard_command(self, text: str) -> None:
+        if self._handle_confirmation_text(text):
+            self.ui.write_log(f"[Web]: {text}")
+            return
+        # Wait up to 8s for session to become ready after a wake.
+        for _ in range(80):
+            if self.session:
+                break
+            await asyncio.sleep(0.1)
+        if self.session:
+            await self._send_text_input(text, InputSource.DASHBOARD_TEXT)
+            self.ui.write_log(f"[Web]: {text}")
+        else:
+            print(f"[Dashboard] Dropped command (no session): {text}")
 
     # ── main loop ───────────────────────────────────────────────────────────
 
@@ -2192,6 +2257,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     self._camera_frame_pending = False
                     self._interrupted          = False
                     self._audio_watchdog.reset()
+                    self._reset_input_source()
 
                     print("[JARVIS] Connected.")
                     self.ui.set_state("LISTENING")

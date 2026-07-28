@@ -76,7 +76,7 @@ flowchart TD
 | `actions/*` | SO, navegador, archivos, visión, web, recordatorios, estudio y desarrollo | heterogéneas; varias importan Gemini | Amplio, contratos desiguales |
 | `memory/*` | Memoria v2, historial, expiración, sensibilidad, grafo y scripts | JSON, filesystem | Implementado; falta locking entre procesos |
 | `connectors/*` | Gmail, Calendar, Drive y Outlook | SDK Google/Microsoft, `keyring` | Implementado con capacidades desiguales |
-| `dashboard/server.py` | Entrada LAN autenticada de texto, audio y archivos | FastAPI, Uvicorn, criptografía | Opt-in; origen no llega a policy |
+| `dashboard/server.py` | Entrada LAN autenticada de texto, audio y archivos | FastAPI, Uvicorn, criptografía | Opt-in; texto/audio conservan origen remoto hasta policy |
 | `tests/*` | 218 tests, 1 omitido y 28 subtests en el snapshot | pytest/unittest, mocks | Base sólida, sin hardware ni E2E completo |
 
 ## Ciclo de vida
@@ -170,10 +170,11 @@ flowchart LR
 
 Problemas actuales del flujo:
 
-- `ExecutionContext(source="local")` se usa siempre, incluso tras comandos del dashboard.
-- `save_memory` se ejecuta antes de validar registro y policy.
-- `file_processor` queda con riesgo por defecto de sólo lectura aunque puede escribir, ejecutar código y extraer archivos.
-- `code_helper` considera `write` y `edit` libres.
+- Fase 1 incorporó `InputSource` y conserva `local`, `ui`, `wake`,
+  `dashboard_text` o `dashboard_audio` hasta `PermissionPolicy`.
+- `save_memory` valida registro y policy antes de escribir.
+- `file_processor` y `code_helper` tienen mínimos por operación y ya no dejan
+  escritura o ejecución libres por omisión.
 - `ToolExecutor` aplica timeout a la espera, pero un handler síncrono en `to_thread` puede seguir ejecutándose.
 - `ToolResult` no expresa efecto, evidencia, verificación, rollback, latencia ni correlación.
 - La normalización todavía infiere fallos a partir de prefijos de texto.
@@ -279,8 +280,8 @@ flowchart TD
 
 | Afirmación del PDF | Evidencia actual | Evaluación |
 | --- | --- | --- |
-| Fuente remota eleva el mínimo | La policy lo implementa, pero `main.py:1350-1354` fija `source="local"` | Parcial; no está integrado extremo a extremo |
-| Todas las tool calls pasan por policy central | `save_memory` retorna antes de la validación/policy (`main.py:1315-1334`) | No se cumple |
+| Fuente remota eleva el mínimo | `InputSource` se propaga desde dashboard texto/audio y la policy falla cerrada para fuentes desconocidas | Cumplido en Fase 1 |
+| Todas las tool calls pasan por policy central | `save_memory` fue movida detrás de registro, policy y confirmación | Cumplido para las 37 tools; persisten branches especiales posteriores a policy |
 | ToolRegistry y ToolExecutor centralizan el flujo | Existen, pero siete tools son especiales y queda dispatch heredado inalcanzable | Parcial |
 | PermissionStore debe hacerse atómico | `save()` usa `write_text()` directo | Confirmado |
 | Memoria usa escritura atómica | Temporal + `os.replace` presentes | Confirmado; falta fsync/lock interproceso |

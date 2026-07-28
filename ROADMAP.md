@@ -34,6 +34,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 1 - Cerrar origen y clasificación de riesgo
 
+- **Estado:** implementación y baseline completos el 2026-07-28 en
+  `codex/02-origin-risk`; pendiente sólo de integración y publicación.
 - **Objetivo:** impedir que entradas remotas se evalúen como locales y corregir herramientas subclasificadas (`file_processor`, `code_helper`, browser, reminder y escrituras de conectores).
 - **Archivos previstos:** `main.py`, `dashboard/server.py`, `core/permissions/models.py`, `core/permissions/policy.py`, `core/tools/builtins.py`, tests de policy/seguridad.
 - **Riesgo:** alto; puede añadir confirmaciones a flujos hoy libres.
@@ -41,6 +43,13 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Criterio de aceptación:** todo comando conserva `local`, `dashboard_text`, `dashboard_audio`, `ui` o `wake`; ninguna acción de escritura/ejecución queda con `READ_ONLY/FREE` por omisión.
 - **Pruebas:** integración dashboard -> function call -> policy; tabla parametrizada de mínimos por operación; pruebas negativas sin efectos reales.
 - **Rollback:** revertir el mapping de riesgo/origen; conservar los tests como especificación de decisión.
+- **Evidencia:** `InputSource` distingue `local`, `ui`, `wake`,
+  `dashboard_text` y `dashboard_audio`; los turnos remotos conservan su origen
+  hasta policy y confirmación; `save_memory` ya no evita policy; matriz de
+  mínimos parametrizada para processor, code, browser, reminder, conectores y
+  creación/copia de archivos. Baseline limpio: 226 tests y 102 subtests
+  aprobados, inventario de 37 tools, `compileall`, imports, launcher y
+  `pip check`.
 
 ### Fase 2 - `RequestContext` y trazabilidad estructurada
 
