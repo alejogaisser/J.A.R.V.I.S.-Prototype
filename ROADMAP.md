@@ -143,8 +143,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 7 - Ownership de sesión, audio, visión y lifecycle
 
-- **Estado:** implementación y pruebas de rama completadas el 2026-07-28 en
-  `codex/08-session-lifecycle`; integración en `main` pendiente.
+- **Estado:** completada e integrada en `main` el 2026-07-28 desde
+  `codex/08-session-lifecycle`.
 - **Objetivo:** extraer servicios con un único escritor por estado sin cambiar el protocolo Gemini.
 - **Archivos previstos:** nuevos `services/session.py`, `audio.py`, `vision.py`, `lifecycle.py`; `main.py`; tests.
 - **Riesgo:** muy alto.
@@ -157,7 +157,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   transitorios; generaciones evitan liberar una interrupción nueva desde una
   tarea vieja; cámara aplica backpressure; shutdown es idempotente y conserva
   deadline/métricas. `main.py` conserva el transporte y protocolo existentes,
-  pero delega esos estados. Baseline: 283 tests y 104 subtests aprobados.
+  pero delega esos estados. El baseline posterior al merge `49e0677` aprobó 283
+  tests y 104 subtests.
 
 ### Fase 8 - Frontera de UI
 
