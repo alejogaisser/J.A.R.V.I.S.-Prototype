@@ -18,8 +18,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 0 - Línea base reproducible e inventario
 
-- **Estado:** implementación y validación completadas el 2026-07-28 en
-  `codex/01-baseline-inventory`; integración remota pendiente.
+- **Estado:** completada e integrada en `main` el 2026-07-28 desde
+  `codex/01-baseline-inventory`.
 - **Objetivo:** documentar una instalación limpia, distinguir dependencias principales/opcionales/legacy, medir baseline y completar la matriz de 37 herramientas y rutas especiales.
 - **Archivos previstos:** `requirements.txt`, `readme.md`, posible `requirements-optional.txt` o extras, `docs/baseline.md`, `docs/tool_migration_matrix.md`, tests de imports.
 - **Riesgo:** bajo; una corrección de dependencias puede ser pesada en Python 3.14.
