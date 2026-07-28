@@ -1,9 +1,19 @@
+import hashlib
 import os
-import shutil
 import platform
+import shutil
 import subprocess
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+from core.tools import (
+    EffectStatus,
+    ExecutionStatus,
+    RollbackStatus,
+    ToolResult,
+    VerificationStatus,
+)
+from core.tools.file_verifier import FileEvidence, capture_file_evidence
 
 try:
     import send2trash
@@ -283,6 +293,215 @@ def copy_file(path: str, name: str = "", destination: str = "") -> str:
 
     except Exception as e:
         return f"Could not copy: {e}"
+
+
+def _rejected_result(message: str) -> ToolResult:
+    return ToolResult(
+        False,
+        message,
+        error_code="precondition_failed",
+        execution_status=ExecutionStatus.REJECTED,
+        effect_status=EffectStatus.NOT_APPLIED,
+        verification_status=VerificationStatus.NOT_REQUESTED,
+    )
+
+
+def _operation_failed_result(
+    message: str,
+    destination: Path | None = None,
+) -> ToolResult:
+    observed = bool(destination and destination.exists())
+    return ToolResult(
+        False,
+        message,
+        error_code="operation_failed",
+        execution_status=ExecutionStatus.FAILED,
+        effect_status=EffectStatus.PARTIAL if observed else EffectStatus.UNKNOWN,
+        verification_status=VerificationStatus.UNKNOWN,
+        rollback_status=(
+            RollbackStatus.AVAILABLE if observed else RollbackStatus.UNKNOWN
+        ),
+    )
+
+
+def _verification_failed_result(
+    operation: str,
+    destination: Path,
+    *,
+    source: Path | None = None,
+) -> ToolResult:
+    observed = destination.exists()
+    rollback = (
+        {"action": "trash", "path": str(destination.resolve())}
+        if operation in {"create_file", "copy"}
+        else {
+            "action": "move",
+            "source": str(destination.resolve()),
+            "destination": str(source.resolve()) if source else "",
+        }
+    )
+    return ToolResult(
+        False,
+        f"{operation} completed but destination verification failed.",
+        data={
+            "operation": operation,
+            "resolved_path": str(destination.resolve()),
+            "rollback": rollback,
+        },
+        error_code="verification_failed",
+        execution_status=ExecutionStatus.SUCCEEDED,
+        effect_status=EffectStatus.APPLIED if observed else EffectStatus.UNKNOWN,
+        verification_status=VerificationStatus.FAILED,
+        rollback_status=(
+            RollbackStatus.AVAILABLE if observed else RollbackStatus.UNKNOWN
+        ),
+    )
+
+
+def _verified_result(
+    operation: str,
+    evidence: FileEvidence,
+    *,
+    source: Path | None = None,
+    source_absent: bool = False,
+) -> ToolResult:
+    destination = Path(evidence.resolved_path)
+    if operation in {"create_file", "copy"}:
+        rollback = {"action": "trash", "path": evidence.resolved_path}
+    else:
+        rollback = {
+            "action": "move",
+            "source": evidence.resolved_path,
+            "destination": str(source.resolve()) if source else "",
+        }
+    tokens = evidence.tokens + (
+        (f"source_absent:{str(source_absent).lower()}",)
+        if operation == "move"
+        else ()
+    )
+    return ToolResult(
+        True,
+        f"{operation} applied and verified: {destination}",
+        data={
+            "operation": operation,
+            "resolved_path": evidence.resolved_path,
+            "source_path": str(source.resolve()) if source else None,
+            "size": evidence.size,
+            "sha256": evidence.sha256,
+            "rollback": rollback,
+        },
+        execution_status=ExecutionStatus.SUCCEEDED,
+        effect_status=EffectStatus.APPLIED,
+        verification_status=VerificationStatus.VERIFIED,
+        rollback_status=RollbackStatus.AVAILABLE,
+        evidence=tokens,
+    )
+
+
+def _verified_create_file(path: str, name: str, content: str) -> ToolResult:
+    target = _resolve_named_target(path, name)
+    if not _is_safe_path(target):
+        return _rejected_result(f"Access denied: {target}")
+    if target.exists():
+        return _rejected_result(f"Destination already exists: {target}")
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    except Exception as exc:
+        return _operation_failed_result(
+            f"Could not create file: {exc}",
+            target,
+        )
+    evidence = capture_file_evidence(target)
+    expected = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    if evidence is None or evidence.sha256 != expected:
+        return _verification_failed_result("create_file", target)
+    return _verified_result("create_file", evidence)
+
+
+def _verified_copy_file(
+    source_path: str,
+    name: str,
+    destination_path: str,
+) -> ToolResult | str:
+    base = _resolve_path(source_path)
+    source = (base / name) if name else base
+    if source.is_dir():
+        return copy_file(source_path, name=name, destination=destination_path)
+    destination = _resolve_path(destination_path) if destination_path else None
+    if not source.exists() or not source.is_file():
+        return _rejected_result(f"Source file not found: {source}")
+    if destination is None:
+        return _rejected_result("No destination specified.")
+    if destination.is_dir():
+        destination = destination / source.name
+    if not _is_safe_path(source) or not _is_safe_path(destination):
+        return _rejected_result("Access denied for source or destination.")
+    if destination.exists():
+        return _rejected_result(f"Destination already exists: {destination}")
+    source_evidence = capture_file_evidence(source)
+    if source_evidence is None:
+        return _rejected_result(f"Could not inspect source file: {source}")
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(source), str(destination))
+    except Exception as exc:
+        return _operation_failed_result(f"Could not copy: {exc}", destination)
+    destination_evidence = capture_file_evidence(destination)
+    if not source_evidence.matches(destination_evidence):
+        return _verification_failed_result(
+            "copy",
+            destination,
+            source=source,
+        )
+    return _verified_result("copy", destination_evidence, source=source)
+
+
+def _verified_move_file(
+    source_path: str,
+    name: str,
+    destination_path: str,
+) -> ToolResult | str:
+    base = _resolve_path(source_path)
+    source = (base / name) if name else base
+    if source.is_dir():
+        return move_file(source_path, name=name, destination=destination_path)
+    destination = _resolve_path(destination_path) if destination_path else None
+    if not source.exists() or not source.is_file():
+        return _rejected_result(f"Source file not found: {source}")
+    if destination is None:
+        return _rejected_result("No destination specified.")
+    if destination.is_dir():
+        destination = destination / source.name
+    if not _is_safe_path(source) or not _is_safe_path(destination):
+        return _rejected_result("Access denied for source or destination.")
+    if destination.exists():
+        return _rejected_result(f"Destination already exists: {destination}")
+    source_evidence = capture_file_evidence(source)
+    if source_evidence is None:
+        return _rejected_result(f"Could not inspect source file: {source}")
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(destination))
+    except Exception as exc:
+        return _operation_failed_result(f"Could not move: {exc}", destination)
+    destination_evidence = capture_file_evidence(destination)
+    source_absent = not source.exists()
+    if (
+        not source_evidence.matches(destination_evidence)
+        or not source_absent
+    ):
+        return _verification_failed_result(
+            "move",
+            destination,
+            source=source,
+        )
+    return _verified_result(
+        "move",
+        destination_evidence,
+        source=source,
+        source_absent=True,
+    )
 
 
 def rename_file(path: str, name: str = "", new_name: str = "") -> str:
@@ -630,7 +849,7 @@ def file_controller(
     response=None,
     player=None,
     session_memory=None,
-) -> str:
+) -> str | ToolResult:
     params = parameters or {}
     action = params.get("action", "").lower().strip().replace("-", "_").replace(" ", "_")
     action = {
@@ -666,7 +885,11 @@ def file_controller(
             return list_files(path)
 
         elif action == "create_file":
-            return create_file(path, name=name, content=params.get("content", ""))
+            return _verified_create_file(
+                path,
+                name=name,
+                content=params.get("content", ""),
+            )
 
         elif action == "create_folder":
             return create_folder(path, name=name)
@@ -675,10 +898,18 @@ def file_controller(
             return delete_file(path, name=name)
 
         elif action == "move":
-            return move_file(path, name=name, destination=params.get("destination", ""))
+            return _verified_move_file(
+                path,
+                name=name,
+                destination_path=params.get("destination", ""),
+            )
 
         elif action == "copy":
-            return copy_file(path, name=name, destination=params.get("destination", ""))
+            return _verified_copy_file(
+                path,
+                name=name,
+                destination_path=params.get("destination", ""),
+            )
 
         elif action == "rename":
             return rename_file(path, name=name, new_name=params.get("new_name", ""))

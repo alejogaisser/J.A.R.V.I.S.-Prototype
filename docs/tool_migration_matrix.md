@@ -27,7 +27,7 @@ sin añadir una fila y declarar sus límites.
 | `visual_mouse` | read_only | FREE | No | Ruta especial | UIA/imagen parcial | No disponible | 30 | special | Seguridad estática | Riesgo real + envelope común |
 | `computer_settings` | sensitive | FREE; power CONFIRM_ALWAYS | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Policy/seguridad | Matriz por operación |
 | `browser_control` | sensitive | Lectura/navegación FREE; interacción ONCE; desconocida ALWAYS | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Policy parametrizada | Preview y verificación de submit |
-| `file_controller` | sensitive | Por acción | Sí | Texto/JSON legacy | Parcial por filesystem | Papelera/inversa parcial | 30 | executor | Seguridad amplia | Verifier piloto + rutas resueltas |
+| `file_controller` | sensitive | Por acción | Sí | `ToolResult` v2 en create/copy/move de archivos; resto legacy | Ruta, tamaño y SHA-256; ausencia de origen en move | Papelera para create/copy; movimiento inverso para move | 30 | executor | Seguridad + verifier piloto | Verificación recursiva y migrar operaciones restantes |
 | `desktop_control` | sensitive | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Sin prueba directa | Clasificación por operación |
 | `code_helper` | sensitive | explain FREE; write/edit/optimize ONCE; resto ALWAYS | No | Texto legacy | Sin contrato | VCS/manual | 120 | executor | Policy/scripts | Sandbox y evidencia |
 | `dev_agent` | sensitive | CONFIRM_ONCE | No | Texto legacy | Sin contrato | VCS/manual | 120 | executor | Policy | Límite de workspace + evidencia |
@@ -64,4 +64,5 @@ resultado, conservando sus requisitos de UI/lifecycle.
 2. Corregir `file_processor`, `code_helper`, browser, reminder y escrituras de
    conectores.
 3. Incorporar `RequestContext` antes de migrar rutas especiales.
-4. Introducir verificación sólo en dos o tres operaciones seguras de archivos.
+4. Extender por lotes el piloto ya activo de verificación de archivos sin
+   inferir efectos de los retornos legacy.

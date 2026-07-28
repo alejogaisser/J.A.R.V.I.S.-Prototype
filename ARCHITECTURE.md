@@ -186,6 +186,10 @@ Problemas actuales del flujo:
 - `ToolExecutor` aplica timeout a la espera, pero un handler síncrono en `to_thread` puede seguir ejecutándose.
 - `ToolResult` v2 separa ejecución, efecto, verificación, rollback, duración y
   evidencia; las tools heredadas permanecen `effect=unknown` hasta migrarse.
+- El piloto de `file_controller` captura ruta resuelta, tamaño y SHA-256 después
+  de `create_file`, `copy` y `move` para archivos regulares. Sólo comunica
+  `applied/verified` cuando la evidencia coincide; los directorios conservan el
+  adaptador legacy mientras se define su verificación recursiva.
 - La normalización todavía infiere fallos a partir de prefijos de texto.
 - Varios branches heredados bajo `elif name == ...` son inalcanzables porque esas herramientas ya pasaron por el branch normal.
 
