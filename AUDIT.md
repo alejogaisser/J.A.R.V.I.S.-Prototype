@@ -34,8 +34,12 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 1. **Origen remoto:** la policy sabe elevar fuentes no locales, pero el runtime siempre construye `ExecutionContext(source="local")`.
 2. **Policy universal:** `save_memory` se ejecuta antes de registro y policy.
 3. **Dispatch central:** existe ToolExecutor, pero las rutas especiales siguen dentro de `main.py` y hay branches heredados inalcanzables.
-4. **Matriz de tools:** el recuento de 37 es correcto, pero no existe aún una matriz versionada completa de retorno/policy/verify/rollback.
-5. **Dependencias:** el entorno actual pasa, pero `requirements.txt` no reproduce capacidades opcionales anunciadas.
+4. **Matriz de tools:** resuelto en Fase 0 mediante
+   `docs/tool_migration_matrix.md` y un test que sincroniza las 37 tools con el
+   registro efectivo.
+5. **Dependencias:** el runtime principal y pytest se reproducen mediante
+   `requirements-dev.txt`; las capacidades opcionales anunciadas todavía no
+   tienen extras verificados.
 6. **Atomicidad:** memoria y runtime state reemplazan temporales; PermissionStore no.
 7. **UI:** `ui_mk2` separa varias piezas, pero acciones registradas pueden tocar Qt desde worker threads.
 8. **Observabilidad:** CrashReporter y auditoría de conectores existen; no hay traza estructurada de toda tool call.
@@ -127,8 +131,15 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### H-07 - Dependencias instalables no reproducen capacidades anunciadas
 
-- **Descripción:** el entorno actual pasa `pip check`, pero faltan paquetes importados por PDF, Word, Excel, audio y módulos TTS/STT.
-- **Evidencia:** imports en `actions/file_processor.py` y `core/stt.py`/`core/tts.py`; ausencia en `requirements.txt`; el entorno no encuentra `python-docx`, `pandas`, `openpyxl`, `PyPDF2`, `pdfplumber`, `pydub`, `faster-whisper`, `kokoro`, `miniaudio` ni `torch`.
+- **Estado:** mitigado parcialmente en Fase 0; sigue abierto para extras.
+- **Descripción:** una instalación limpia del runtime principal y tests ya es
+  reproducible, pero faltan extras verificados para PDF, Word, Excel, audio y
+  módulos TTS/STT.
+- **Evidencia:** `requirements-dev.txt` declara pytest y fue instalado en un
+  entorno vacío con Python 3.14.6; imports opcionales en
+  `actions/file_processor.py` y `core/stt.py`/`core/tts.py` todavía incluyen
+  `python-docx`, `pandas`, `openpyxl`, `PyPDF2`, `pdfplumber`, `pydub`,
+  `faster-whisper`, `kokoro`, `miniaudio` y `torch`.
 - **Impacto:** una instalación limpia no cumple todo lo prometido en README; fallos aparecen sólo al usar la función.
 - **Solución recomendada:** definir core vs extras; tests de import; documentar funciones opcionales; retirar dependencias legacy no conectadas.
 - **Esfuerzo:** medio.

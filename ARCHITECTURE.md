@@ -293,3 +293,18 @@ flowchart TD
 ## Límites de validación de esta auditoría
 
 Se verificaron sintaxis, imports, launcher `--help`, import offscreen de `main.py`, dependencias instaladas y suite automática. No se abrió una sesión real Gemini, no se tomó el micrófono/cámara, no se activó el dashboard LAN, no se tocaron cuentas externas y no se ejecutaron herramientas con efectos reales.
+
+## Evolución posterior al snapshot
+
+### 2026-07-28 - Fase 0
+
+- `docs/tool_migration_matrix.md` cataloga las 37 herramientas y las siete
+  rutas especiales con risk, policy, preview, retorno, verificación, rollback,
+  timeout, ruta, cobertura y migración pendiente.
+- `tests/test_tool_inventory.py` impide que nombres, risk, timeout o ruta se
+  desincronicen del registro efectivo.
+- `requirements-dev.txt` separa pytest del runtime principal.
+- `scripts/validate_baseline.ps1` reproduce dependencias, launcher, imports,
+  UI offscreen, sintaxis, inventario, suite y diff.
+- La instalación limpia sobre Python 3.14.6 y las validaciones se completaron
+  sin acceder a hardware, cuentas, secretos ni efectos externos.

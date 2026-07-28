@@ -18,6 +18,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 0 - Línea base reproducible e inventario
 
+- **Estado:** implementación y validación completadas el 2026-07-28 en
+  `codex/01-baseline-inventory`; integración remota pendiente.
 - **Objetivo:** documentar una instalación limpia, distinguir dependencias principales/opcionales/legacy, medir baseline y completar la matriz de 37 herramientas y rutas especiales.
 - **Archivos previstos:** `requirements.txt`, `readme.md`, posible `requirements-optional.txt` o extras, `docs/baseline.md`, `docs/tool_migration_matrix.md`, tests de imports.
 - **Riesgo:** bajo; una corrección de dependencias puede ser pesada en Python 3.14.
@@ -25,6 +27,10 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Criterio de aceptación:** entorno nuevo instala; launcher `--help`, imports y UI offscreen funcionan; cada herramienta tiene retorno, risk, policy, preview, verify, rollback, timeout, ruta y tests registrados.
 - **Pruebas:** `pip check`, smoke imports, `compileall`, suite completa, prueba de instalación en entorno vacío.
 - **Rollback:** revertir sólo documentación/manifest; no tocar runtime.
+- **Evidencia:** instalación nueva en Python 3.14.6; `requirements-dev.txt`;
+  `scripts/validate_baseline.ps1`; matriz sincronizada por test; `pip check`,
+  launcher, imports, UI offscreen, `compileall`, 213 tests y 65 subtests
+  aprobados. Las dependencias opcionales continúan explícitamente pendientes.
 
 ### Fase 1 - Cerrar origen y clasificación de riesgo
 
