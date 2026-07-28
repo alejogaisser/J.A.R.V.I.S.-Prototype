@@ -227,9 +227,20 @@ Problemas actuales del flujo:
 - `ui.py` crea la ventana principal, cámara, paneles, configuración, accesos directos y telemetría.
 - `ui_mk2.state.VisualStateController` normaliza seis estados visuales.
 - `ui_mk2` separa Core, Pet, Memory, Study y workspaces web.
-- `main.py` llama métodos de UI directamente.
-- Algunos handlers registrados que tocan UI son ejecutados por `ToolExecutor` dentro de `asyncio.to_thread`; Qt exige que las mutaciones de widgets se encolen al hilo gráfico.
-- Existen señales y guards puntuales, pero no un contrato único de comandos/eventos.
+- `main.py` conserva `JarvisUI` para el lifecycle del runtime, pero entrega
+  `UiCommandFacade` a todos los handlers ejecutados por `ToolExecutor`.
+- La fachada sólo ofrece comandos de presentación y snapshots; no expone
+  ventanas, widgets, QApplication ni métodos de filesystem/red/subprocess.
+- `JarvisUI` encola mutaciones mediante señales Qt. Los comandos que necesitan
+  resultado (`interface_control` y Study) esperan una confirmación producida por
+  el slot en el hilo gráfico.
+- Archivo seleccionado, modo de escucha y estado del micrófono se leen desde
+  `MainWindow.tool_snapshot()` bajo `RLock`, nunca desde un widget.
+- La notificación del teléfono usa `_phone_connected_sig`; el callback de
+  cámara se intercambia bajo `_cam_lock` y se invoca fuera del lock.
+
+El contrato y sus invariantes están detallados en
+`docs/ui_thread_boundary.md`.
 
 ## Flujo de memoria
 

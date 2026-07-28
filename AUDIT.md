@@ -122,12 +122,19 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### H-03 - Mutaciones Qt pueden ejecutarse desde threads de herramientas
 
+- **Estado:** resuelto en Fase 8 para handlers de `ToolExecutor` y notificaciones
+  de runtime; cámara y workspaces conservan señales Qt y locks explícitos.
 - **Descripción:** ToolExecutor envía handlers síncronos a un worker; varios handlers registrados llaman directamente a métodos de UI.
 - **Evidencia:** `core/tools/executor.py:88-91`; handlers de UI en `main.py:930-943`; registro/ejecución en `main.py:897-948`.
 - **Impacto:** carreras, crashes nativos, estados visuales intermitentes y cierres difíciles de reproducir.
 - **Solución recomendada:** command bus/señales Qt con respuesta futura; toda mutación de widget en el hilo gráfico.
 - **Esfuerzo:** medio-alto.
 - **Prioridad:** P1.
+- **Resolución:** `UiCommandFacade` limita lo que un handler puede pedir a la
+  presentación; `JarvisUI` traduce esas órdenes a señales y sólo expone
+  snapshots protegidos para archivo y micrófono. La conexión del teléfono ya no
+  toca el overlay desde el callback del dashboard y el callback de cámara se
+  publica/consume bajo el lock de la sesión.
 
 ### H-04 - Trazabilidad común y verificación obligatoria
 
@@ -265,7 +272,8 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 ### M-06 - `ui.py` y `main.py` siguen concentrando responsabilidades
 
 - **Estado:** mitigado parcialmente en Fase 7 para estado de sesión, audio,
-  visión y shutdown; transporte, IO y casos de uso siguen en `main.py`.
+  visión y shutdown, y en Fase 8 para la frontera de comandos UI; transporte,
+  IO y casos de uso siguen en `main.py`.
 - **Descripción:** 4.535 y 2.331 líneas respectivamente, con estado, IO y lifecycle mezclados.
 - **Evidencia:** recuento directo y outlines de clases/métodos.
 - **Impacto:** cambios de UI/audio tienen amplio radio de regresión.
@@ -276,7 +284,8 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
   transiciones explícitas, locks donde cruzan threads, snapshots inmutables y
   métricas. Se eliminaron flags duplicados de `JarvisLive` sin cambiar el
   protocolo Gemini ni mover UI/hardware. Colas, streams y providers continúan
-  pendientes.
+  pendientes. `UiCommandFacade` reduce el acceso de handlers al contrato de
+  presentación sin intentar dividir mecánicamente `ui.py`.
 
 ### M-07 - Colas y tareas sin política única
 

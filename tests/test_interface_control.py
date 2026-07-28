@@ -146,13 +146,15 @@ def test_study_auto_opens_only_when_main_app_is_already_visible():
     ui._surface_mode = "main"
     ui._win = _FakeStudyWindow(visible_signal)
     ui.show_study_result({"title": "Result"}, automatic=True)
-    assert visible_signal.request["open"] is True
+    assert visible_signal.request["automatic"] is True
+    assert visible_signal.request["surface_mode"] == "main"
 
     pet_signal = _CompletingSignal(result="Study result stored without opening the application.")
     ui._surface_mode = "pet"
     ui._win = _FakeStudyWindow(pet_signal, visible=False)
     ui.show_study_result({"title": "Queued"}, automatic=True)
-    assert pet_signal.request["open"] is False
+    assert pet_signal.request["automatic"] is True
+    assert pet_signal.request["surface_mode"] == "pet"
 
 
 def test_prompt_routes_jarvis_ui_orders_without_mouse_simulation():

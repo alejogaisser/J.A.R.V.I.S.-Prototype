@@ -125,7 +125,7 @@ class Mk2IntegrationTests(unittest.TestCase):
         prompt = Path("core/prompt.txt").read_text(encoding="utf-8")
         builtins = Path("core/tools/builtins.py").read_text(encoding="utf-8")
         self.assertIn('"name": "pet_mode"', main)
-        self.assertIn('"pet_mode": lambda args: self.ui.enter_pet_mode(', main)
+        self.assertIn('"pet_mode": lambda args: self.ui_tools.enter_pet_mode(', main)
         self.assertIn('"pet_mode": RiskLevel.LOCAL_CHANGE', builtins)
         self.assertIn("call pet_mode immediately", prompt)
 

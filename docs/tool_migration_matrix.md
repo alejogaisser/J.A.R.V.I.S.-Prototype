@@ -6,6 +6,10 @@ Snapshot del registro de 37 `ToolDefinition` al 2026-07-28. La tabla describe
 el comportamiento actual, no el nivel deseado. `Sin contrato` significa que
 el runtime todavía no dispone de evidencia/verificación o rollback tipados.
 
+Desde la Fase 8 todos los handlers `executor` reciben `UiCommandFacade`, no
+`JarvisUI`. Esto cierra el acceso directo a widgets pero no convierte por sí
+solo sus retornos legacy en resultados verificables.
+
 El test `tests/test_tool_inventory.py` compara nombres, riesgo, ruta y timeout
 contra `main.py` y `core/tools/builtins.py`. Una tool nueva no puede incorporarse
 sin añadir una fila y declarar sus límites.
@@ -22,8 +26,8 @@ sin añadir una fila y declarar sus límites.
 | `screen_process` | read_only | FREE | No | Ruta especial | Captura parcial + owner de cooldown | No aplica | 30 | special | Seguridad + runtime owner | Envelope común + latencia |
 | `close_camera` | read_only | FREE | No | Ruta especial | Owner libera frame pendiente; UI implícita | Reabrir cámara | 30 | special | Seguridad + runtime owner | Evento/verificación de cámara |
 | `camera_control` | read_only | FREE | No | Ruta especial | Owner de backpressure; estado UI implícito | Acción inversa | 30 | special | Cámara + runtime owner | Riesgo por operación + evento |
-| `pet_mode` | local_change | FREE | No | Texto legacy | Estado UI implícito | Salir de Pet | 30 | executor | UI | Señal Qt + resultado tipado |
-| `interface_control` | local_change | FREE | No | Texto legacy | Estado UI implícito | Acción inversa | 30 | executor | Interfaz | Señal Qt + afinidad de hilo |
+| `pet_mode` | local_change | FREE | No | Texto legacy | Señal Qt encolada | Salir de Pet | 30 | executor | UI + afinidad Qt | Resultado tipado |
+| `interface_control` | local_change | FREE | No | Texto legacy | Confirmación del slot Qt | Acción inversa | 30 | executor | Interfaz + afinidad Qt | Resultado tipado |
 | `visual_mouse` | read_only | FREE | No | Ruta especial | UIA/imagen parcial | No disponible | 30 | special | Seguridad estática | Riesgo real + envelope común |
 | `computer_settings` | sensitive | FREE; power CONFIRM_ALWAYS | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Policy/seguridad | Matriz por operación |
 | `browser_control` | sensitive | Lectura/navegación FREE; interacción ONCE; desconocida ALWAYS | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Policy parametrizada | Preview y verificación de submit |
@@ -42,8 +46,8 @@ sin añadir una fila y declarar sus límites.
 | `memory_update` | local_change | CONFIRM_ONCE | No | Bool/dict legacy | Persistencia parcial | Historial | 30 | executor | Policy/memoria | Evidencia + versión |
 | `memory_forget` | sensitive | CONFIRM_ALWAYS | No | Bool/dict legacy | Persistencia parcial | `memory_restore` | 30 | executor | Policy/memoria | Evidencia + versión |
 | `memory_restore` | local_change | CONFIRM_ONCE | No | Bool/dict legacy | Persistencia parcial | `memory_forget` | 30 | executor | Policy/memoria | Evidencia + versión |
-| `memory_graph` | read_only | FREE | No | Texto legacy | Reindexado implícito | No aplica | 30 | executor | Grafo/UI | Señal Qt + métricas |
-| `geo_map` | read_only | FREE | No | Dict/texto legacy | Respuesta del provider | No aplica | 30 | executor | GEO | Provider + afinidad UI |
+| `memory_graph` | read_only | FREE | No | Texto legacy | Reindexado implícito vía señal Qt | No aplica | 30 | executor | Grafo/UI + afinidad Qt | Métricas |
+| `geo_map` | read_only | FREE | No | Dict/texto legacy | Respuesta del provider; presentación encolada | No aplica | 30 | executor | GEO + afinidad Qt | Provider tipado |
 | `math_engine` | read_only | FREE | No | Texto/archivo legacy | Cálculo local parcial | No aplica | 30 | executor | Math/seguridad | Resultado/artefacto tipado |
 | `study_engine` | local_change | FREE | No | Texto/archivo legacy | Parcial por operación | Según artefacto | 30 | executor | Study | Riesgo y provider por operación |
 | `account_connector` | external_effect | Lectura FREE; connect/download ONCE; create/disconnect ALWAYS | No | Texto/JSON legacy | Provider parcial | Según operación | 30 | executor | Conectores/policy | Preview y verificación externa |
