@@ -1,19 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum, IntEnum
+from enum import IntEnum
 
-
-class InputSource(str, Enum):
-    LOCAL = "local"
-    UI = "ui"
-    WAKE = "wake"
-    DASHBOARD_TEXT = "dashboard_text"
-    DASHBOARD_AUDIO = "dashboard_audio"
-
-    @property
-    def is_remote(self) -> bool:
-        return self in {self.DASHBOARD_TEXT, self.DASHBOARD_AUDIO}
+from core.request_context import InputSource
 
 
 class PermissionLevel(IntEnum):
@@ -37,6 +27,7 @@ class PermissionLevel(IntEnum):
 class ExecutionContext:
     source: InputSource | str = InputSource.LOCAL
     simulate: bool = False
+    request_id: str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.source, InputSource):

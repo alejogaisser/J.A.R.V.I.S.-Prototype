@@ -54,6 +54,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 2 - `RequestContext` y trazabilidad estructurada
 
+- **Estado:** implementación y baseline completos el 2026-07-28 en
+  `codex/03-request-context`; pendiente de integración y publicación.
 - **Objetivo:** correlación extremo a extremo sin cambiar Gemini Live, audio ni UI visual.
 - **Archivos previstos:** nuevo `core/request_context.py`, `core/tools/definitions.py`, `core/tools/executor.py`, `core/permissions/*`, `main.py`, nuevo sink de auditoría sanitizado, `docs/request_lifecycle.md`.
 - **Riesgo:** medio-alto; toca el camino central de herramientas.
@@ -61,6 +63,11 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Criterio de aceptación:** `request_id` único en requested, policy, confirmation, started, completed y response; logs sin tokens, cuerpos, memoria ni argumentos sensibles.
 - **Pruebas:** unicidad, propagación, sanitización, fallos del sink, correlación en ruta normal/especial.
 - **Rollback:** adapters con context opcional; feature flag para sink.
+- **Evidencia:** `RequestContext` único llega a policy, confirmación, executor,
+  `ToolResult` y `FunctionResponse`; rutas normal y especial emiten
+  `requested`, `policy`, `confirmation`, `started`, `completed` y `response`.
+  El sink JSONL usa allowlist, no recibe argumentos, tolera fallos y puede
+  desactivarse. Baseline: 236 tests y 102 subtests aprobados.
 
 ### Fase 3 - Persistencia atómica de permisos
 

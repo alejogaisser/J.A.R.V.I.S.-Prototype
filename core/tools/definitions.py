@@ -64,3 +64,4 @@ class ToolResult:
     message: str
     data: Any = None
     error_code: str | None = None
+    request_id: str | None = None

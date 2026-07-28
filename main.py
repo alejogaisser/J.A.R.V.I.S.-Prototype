@@ -57,6 +57,8 @@ from core.diagnostics import CrashReporter
 from core.security import VoiceConfirmationGate, confirmation_request, safe_tool_args
 from core.live_session import AudioInactivityWatchdog, LiveSessionState
 from core.runtime_state import update_runtime_state
+from core.request_audit import RequestAuditSink
+from core.request_context import RequestContext
 from core.permissions import (
     ExecutionContext, InputSource, PermissionLevel, PermissionPolicy, PermissionStore,
     build_preview,
@@ -892,6 +894,7 @@ class JarvisLive:
         self._confirmation_gate = VoiceConfirmationGate(ttl_seconds=60)
         self._pending_confirmation_fc = None
         self._pending_confirmation_source: InputSource | None = None
+        self._pending_confirmation_context: RequestContext | None = None
         self._confirmation_execution_scheduled = False
         self._active_input_source = self._default_source()
         self._input_source_locked = False
@@ -949,7 +952,11 @@ class JarvisLive:
         self.tool_registry = build_builtin_registry(TOOL_DECLARATIONS, handlers)
         self.permission_store = PermissionStore()
         self.permission_policy = PermissionPolicy(self.permission_store.load())
-        self.tool_executor = ToolExecutor(self.tool_registry)
+        self.request_audit = RequestAuditSink()
+        self.tool_executor = ToolExecutor(
+            self.tool_registry,
+            audit_sink=self.request_audit,
+        )
 
     def _open_memory_graph(self, _args: dict):
         self.ui.show_memory_graph()
@@ -1077,6 +1084,59 @@ class JarvisLive:
         self._active_input_source = self._default_source()
         self._input_source_locked = False
 
+    def _audit_request(
+        self,
+        context: RequestContext,
+        event: str,
+        tool: str,
+        **metadata,
+    ) -> None:
+        sink = getattr(self, "request_audit", None)
+        if sink is None:
+            return
+        try:
+            sink.record(context, event, tool, **metadata)
+        except Exception:
+            # Audit is intentionally best effort and cannot block a tool response.
+            pass
+
+    def _function_response(
+        self,
+        fc,
+        context: RequestContext,
+        response: dict,
+        *,
+        completed: bool = False,
+        outcome: str | None = None,
+        duration_ms: float | None = None,
+    ) -> types.FunctionResponse:
+        payload = dict(response)
+        payload["request_id"] = context.request_id
+        response_outcome = outcome or (
+            "error" if payload.get("error") else "success"
+        )
+        if completed:
+            self._audit_request(
+                context,
+                "completed",
+                fc.name,
+                outcome=response_outcome,
+                error_code=payload.get("error"),
+                duration_ms=duration_ms,
+            )
+        self._audit_request(
+            context,
+            "response",
+            fc.name,
+            outcome=response_outcome,
+            error_code=payload.get("error"),
+        )
+        return types.FunctionResponse(
+            id=fc.id,
+            name=fc.name,
+            response=payload,
+        )
+
     async def _send_text_input(self, text: str, source: InputSource) -> None:
         self._set_input_source(source, lock=True)
         await self.session.send_realtime_input(text=text)
@@ -1103,8 +1163,24 @@ class JarvisLive:
                 )
             return True
         if decision == "denied":
+            pending_fc = self._pending_confirmation_fc
+            pending_context = getattr(self, "_pending_confirmation_context", None)
             self._pending_confirmation_fc = None
             self._pending_confirmation_source = None
+            self._pending_confirmation_context = None
+            if pending_fc is not None and pending_context is not None:
+                self._audit_request(
+                    pending_context,
+                    "confirmation",
+                    pending_fc.name,
+                    outcome="denied",
+                )
+                self._audit_request(
+                    pending_context,
+                    "completed",
+                    pending_fc.name,
+                    outcome="denied",
+                )
             self.ui.write_log("SECURITY: Spoken confirmation denied.")
             if self._loop and self.session:
                 asyncio.run_coroutine_threadsafe(
@@ -1123,8 +1199,10 @@ class JarvisLive:
         """Execute the staged action after the user's explicit spoken approval."""
         fc = self._pending_confirmation_fc
         source = self._pending_confirmation_source
+        context = getattr(self, "_pending_confirmation_context", None)
         self._pending_confirmation_fc = None
         self._pending_confirmation_source = None
+        self._pending_confirmation_context = None
         try:
             if fc is None:
                 return
@@ -1133,6 +1211,7 @@ class JarvisLive:
                 fc,
                 preapproved=True,
                 source=source,
+                request_context=context,
             )
             payload = getattr(response, "response", {}) or {}
             result = payload.get("result", "Done.") if isinstance(payload, dict) else str(payload)
@@ -1313,14 +1392,24 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         fc,
         preapproved: bool = False,
         source: InputSource | None = None,
+        request_context: RequestContext | None = None,
     ) -> types.FunctionResponse:
         name = fc.name
         args = dict(fc.args or {})
-        execution_source = source or getattr(
-            self,
-            "_active_input_source",
-            self._default_source(),
-        )
+        if request_context is None:
+            execution_source = source or getattr(
+                self,
+                "_active_input_source",
+                self._default_source(),
+            )
+            request_context = RequestContext.create(
+                execution_source,
+                tool_call_id=str(fc.id),
+            )
+            self._audit_request(request_context, "requested", name)
+        else:
+            execution_source = request_context.source
+        request_started_at = time.monotonic()
 
         if name in {"file_processor", "code_helper", "dev_agent", "desktop_control", "computer_control"}:
             from actions.file_controller import _is_protected_path
@@ -1331,32 +1420,55 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 }:
                     continue
                 if _is_protected_path(Path(str(raw_path)).expanduser()):
-                    return types.FunctionResponse(
-                        id=fc.id,
-                        name=name,
-                        response={
+                    return self._function_response(
+                        fc,
+                        request_context,
+                        {
                             "result": "Access denied: protected system, credential, or private path.",
                             "error": "protected_path",
                         },
+                        completed=True,
+                        outcome="blocked",
+                        duration_ms=(time.monotonic() - request_started_at) * 1000,
                     )
 
         print(f"[JARVIS] 🔧 {name}  {safe_tool_args(args)}")
         self.ui.set_state("THINKING")
 
         if name == "shutdown_jarvis" and self._pending_confirmation_fc is not None:
+            cancelled_fc = self._pending_confirmation_fc
+            cancelled_context = getattr(self, "_pending_confirmation_context", None)
             self._pending_confirmation_fc = None
             self._pending_confirmation_source = None
+            self._pending_confirmation_context = None
+            if cancelled_context is not None:
+                self._audit_request(
+                    cancelled_context,
+                    "confirmation",
+                    cancelled_fc.name,
+                    outcome="cancelled",
+                )
+                self._audit_request(
+                    cancelled_context,
+                    "completed",
+                    cancelled_fc.name,
+                    outcome="cancelled",
+                )
             self._confirmation_gate.clear()
             self._confirmation_execution_scheduled = False
             self.ui.write_log("SECURITY: Pending confirmation cancelled by shutdown.")
 
         if self._pending_confirmation_fc is not None and not preapproved:
-            return types.FunctionResponse(
-                id=fc.id, name=name,
-                response={"result": (
+            return self._function_response(
+                fc,
+                request_context,
+                {"result": (
                     "[VOICE_CONFIRMATION_ALREADY_PENDING] Wait for the user's yes or no. "
                     "Do not call this or another tool again."
                 )},
+                completed=True,
+                outcome="blocked",
+                duration_ms=(time.monotonic() - request_started_at) * 1000,
             )
 
         loop   = asyncio.get_event_loop()
@@ -1368,9 +1480,12 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             definition = self.tool_registry.validate_for_execution(name)
             self.tool_registry.validate_arguments(definition, args)
         except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
-            return types.FunctionResponse(
-                id=fc.id, name=name,
-                response={"result": str(exc), "error": "unavailable"},
+            return self._function_response(
+                fc,
+                request_context,
+                {"result": str(exc), "error": "unavailable"},
+                completed=True,
+                duration_ms=(time.monotonic() - request_started_at) * 1000,
             )
 
         decision = self.permission_policy.evaluate(
@@ -1379,6 +1494,19 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             ExecutionContext(
                 source=execution_source,
                 simulate=bool(args.get("simulate", False)),
+                request_id=request_context.request_id,
+            ),
+        )
+        self._audit_request(
+            request_context,
+            "policy",
+            name,
+            operation=decision.operation,
+            policy=decision.policy,
+            outcome=(
+                "confirmation_required"
+                if decision.requires_confirmation
+                else "allowed" if decision.allowed else "blocked"
             ),
         )
         print(
@@ -1387,15 +1515,38 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         )
         if decision.simulated:
             preview = build_preview(name, args, decision)
+            self._audit_request(
+                request_context,
+                "confirmation",
+                name,
+                outcome="not_applicable",
+            )
             if self.ui.microphone_enabled:
                 self.ui.set_state("LISTENING")
-            return types.FunctionResponse(id=fc.id, name=name, response={"result": preview})
+            return self._function_response(
+                fc,
+                request_context,
+                {"result": preview},
+                completed=True,
+                outcome="simulated",
+                duration_ms=(time.monotonic() - request_started_at) * 1000,
+            )
         if not decision.allowed and not decision.requires_confirmation:
+            self._audit_request(
+                request_context,
+                "confirmation",
+                name,
+                outcome="not_applicable",
+            )
             if self.ui.microphone_enabled:
                 self.ui.set_state("LISTENING")
-            return types.FunctionResponse(
-                id=fc.id, name=name,
-                response={"result": decision.reason, "error": "blocked"},
+            return self._function_response(
+                fc,
+                request_context,
+                {"result": decision.reason, "error": "blocked"},
+                completed=True,
+                outcome="blocked",
+                duration_ms=(time.monotonic() - request_started_at) * 1000,
             )
 
         approval = confirmation_request(name, args)
@@ -1412,23 +1563,45 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             if not approved:
                 self._pending_confirmation_fc = fc
                 self._pending_confirmation_source = execution_source
+                self._pending_confirmation_context = request_context
+                self._audit_request(
+                    request_context,
+                    "confirmation",
+                    name,
+                    outcome="requested",
+                )
                 self.ui.write_log(f"SECURITY DETAIL: {detail.replace(chr(10), ' | ')}")
                 question = "Confirm action?"
                 self.ui.write_log(f"SECURITY: Awaiting spoken approval for {name}.")
                 if self.ui.microphone_enabled:
                     self.ui.set_state("LISTENING")
-                return types.FunctionResponse(
-                    id=fc.id, name=name,
-                    response={
+                return self._function_response(
+                    fc,
+                    request_context,
+                    {
                         "result": f'[VOICE_CONFIRMATION_REQUIRED] Say exactly "{question}" Then wait.'
-                    }
+                    },
+                    outcome="confirmation_required",
                 )
             if name == "computer_settings":
                 args["confirmed"] = "yes"
         elif decision.requires_confirmation and preapproved:
+            self._audit_request(
+                request_context,
+                "confirmation",
+                name,
+                outcome="approved",
+            )
             self.ui.write_log(f"SECURITY: Executing preapproved action {name} once.")
             if name == "computer_settings":
                 args["confirmed"] = "yes"
+        else:
+            self._audit_request(
+                request_context,
+                "confirmation",
+                name,
+                outcome="not_required",
+            )
 
         try:
             if name == "file_controller" and str(args.get("action", "")).lower() in {
@@ -1442,12 +1615,24 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         "folder in this session. Use account_connector with find_folder and then "
                         "create_file/create_folder using its parent_id. No file was created."
                     )
-                    return types.FunctionResponse(
-                        id=fc.id, name=name,
-                        response={"result": result, "error": "wrong_storage_provider"},
+                    self._audit_request(request_context, "started", name)
+                    return self._function_response(
+                        fc,
+                        request_context,
+                        {"result": result, "error": "wrong_storage_provider"},
+                        completed=True,
+                        outcome="blocked",
+                        duration_ms=(time.monotonic() - request_started_at) * 1000,
                     )
+            if name in SPECIAL_TOOLS:
+                self._audit_request(request_context, "started", name)
+
             if name not in SPECIAL_TOOLS:
-                execution = await self.tool_executor.execute(name, args)
+                execution = await self.tool_executor.execute(
+                    name,
+                    args,
+                    context=request_context,
+                )
                 result = execution.message
                 result_success = execution.success
                 result_error = execution.error_code
@@ -1673,18 +1858,29 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             result = normalized.message
             result_success = normalized.success
             result_error = normalized.error_code
+        if name in SPECIAL_TOOLS:
+            self._audit_request(
+                request_context,
+                "completed",
+                name,
+                outcome="success" if result_success else "error",
+                error_code=result_error,
+                duration_ms=(time.monotonic() - request_started_at) * 1000,
+            )
 
         if self.ui.microphone_enabled:
             self.ui.set_state("LISTENING")
 
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
-        return types.FunctionResponse(
-            id=fc.id, name=name,
-            response={
+        return self._function_response(
+            fc,
+            request_context,
+            {
                 "result": result,
                 "success": result_success,
                 "error": result_error,
-            }
+            },
+            outcome="success" if result_success else "error",
         )
 
     def _stream_camera_frame(self, image_bytes: bytes) -> None:
