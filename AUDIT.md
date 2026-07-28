@@ -96,12 +96,20 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### H-02 - `PermissionStore.save()` no es atómico
 
-- **Descripción:** escribe el JSON final directamente.
-- **Evidencia:** `core/permissions/store.py:52-63`.
+- **Estado:** resuelto en Fase 3 para atomicidad, recuperación y concurrencia
+  intra-proceso.
+- **Descripción original:** escribía el JSON final directamente.
+- **Evidencia original:** `PermissionStore.save()` usaba `Path.write_text()`
+  sobre el destino definitivo.
 - **Impacto:** corte o crash puede dejar preferencias parciales; la carga vuelve a defaults y puede alterar el endurecimiento del usuario.
 - **Solución recomendada:** temporal en el mismo directorio, flush/fsync, `os.replace`, backup validado y fault injection.
 - **Esfuerzo:** bajo-medio.
 - **Prioridad:** P0.
+- **Resolución:** serialización y validación ocurren antes de publicar; el
+  temporal durable vive en el mismo directorio y se reemplaza con `os.replace`.
+  Sólo un primario válido actualiza `.bak`; `load()` intenta
+  primario → backup → defaults seguros. Sigue fuera de alcance el locking
+  interproceso.
 
 ### H-03 - Mutaciones Qt pueden ejecutarse desde threads de herramientas
 
