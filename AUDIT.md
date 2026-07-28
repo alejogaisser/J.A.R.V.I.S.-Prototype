@@ -114,12 +114,18 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### H-04 - No existe trazabilidad común ni verificación obligatoria
 
+- **Estado:** trazabilidad resuelta en Fase 2; verificación de efectos continúa
+  pendiente para Fases 4 y 5.
 - **Descripción:** `ToolResult` sólo tiene success/message/data/error; no hay request ID, efecto, evidencia, rollback o latencia.
 - **Evidencia:** `core/tools/definitions.py:50-55`; consola en `main.py:1297,1355-1358,1628`; auditoría limitada a conectores en `connectors/audit.py`.
 - **Impacto:** no se puede reconstruir una acción ni distinguir ejecución exitosa de efecto aplicado.
 - **Solución recomendada:** `RequestContext`, `ToolResult v2`, eventos JSONL sanitizados y verificadores por familia.
 - **Esfuerzo:** alto.
 - **Prioridad:** P0/P1.
+- **Resolución parcial:** `RequestContext` correlaciona policy, confirmación,
+  ejecución y respuesta; el sink JSONL sólo admite metadata enumerada y
+  `ToolResult` expone `request_id`. Todavía no existen estados de efecto,
+  evidencia, rollback ni verificación obligatoria.
 
 ### H-05 - Rutas especiales evitan partes del contrato común
 

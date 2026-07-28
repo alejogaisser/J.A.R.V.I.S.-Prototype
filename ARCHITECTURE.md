@@ -70,6 +70,7 @@ flowchart TD
 | `ui.py` | Ventana, widgets, cámara, archivos, configuración, accesos directos, telemetría y callbacks | PyQt6, filesystem, subprocess, threads | Funcional, monolítico |
 | `ui_mk2/*` | Estado visual, Core/Pet y workspaces Memory/Study/GEO | PyQt6 y WebEngine | Modularización parcial |
 | `core/tools/*` | Definiciones, registro, validación básica, timeout y normalización | biblioteca estándar | Buen núcleo inicial |
+| `core/request_context.py` / `request_audit.py` | Correlación por solicitud y eventos JSONL sanitizados | biblioteca estándar | Integrado en rutas normal y especial |
 | `core/permissions/*` | Mínimos, preferencias, simulación y decisión contextual | `core.tools` | Implementado con huecos de integración |
 | `core/live_session.py` | Checkpoint resumible y watchdog de audio | biblioteca estándar | Aislado y probado |
 | `core/runtime_state.py` | Estado observable por proceso mediante JSON reemplazado | filesystem | Atómico por reemplazo; errores silenciosos deliberados |
@@ -116,7 +117,9 @@ flowchart TD
 8. Se crea `FunctionResponse` para Gemini.
 9. UI y consola reciben cambios de estado o texto.
 
-Límite importante: hoy no existe un `RequestContext` persistente. El ID de Gemini (`fc.id`) no se propaga como correlación propia a policy, executor, logs, verificación y respuesta.
+Desde Fase 2 existe un `RequestContext` local e independiente de Gemini. Su
+`request_id` se propaga a policy, confirmación, executor, `ToolResult`, auditoría
+y `FunctionResponse`; el ID del proveedor queda como correlación secundaria.
 
 ## Flujo de audio
 
@@ -153,6 +156,7 @@ Colas y defensas observadas:
 ```mermaid
 flowchart LR
     FC["Gemini FunctionCall"]
+    RC["RequestContext\nrequest_id + source"]
     V["ToolRegistry\navailability + required/basic types"]
     P["PermissionPolicy"]
     C{"blocked / preview /\nconfirmation / allowed"}
@@ -161,11 +165,12 @@ flowchart LR
     N["normalize_tool_output"]
     R["FunctionResponse"]
 
-    FC --> V --> P --> C
+    FC --> RC --> V --> P --> C
     C --> E
     C --> S
     E --> N --> R
     S --> N --> R
+    RC -. "requested / policy / confirmation /\nstarted / completed / response" .-> R
 ```
 
 Problemas actuales del flujo:
@@ -175,8 +180,11 @@ Problemas actuales del flujo:
 - `save_memory` valida registro y policy antes de escribir.
 - `file_processor` y `code_helper` tienen mínimos por operación y ya no dejan
   escritura o ejecución libres por omisión.
+- Fase 2 correlaciona rutas normales y especiales con un `request_id` y registra
+  sólo metadata enumerada en un sink que falla sin interrumpir ejecución.
 - `ToolExecutor` aplica timeout a la espera, pero un handler síncrono en `to_thread` puede seguir ejecutándose.
-- `ToolResult` no expresa efecto, evidencia, verificación, rollback, latencia ni correlación.
+- `ToolResult` ya expone correlación; todavía no expresa efecto, evidencia,
+  verificación ni rollback.
 - La normalización todavía infiere fallos a partir de prefijos de texto.
 - Varios branches heredados bajo `elif name == ...` son inalcanzables porque esas herramientas ya pasaron por el branch normal.
 

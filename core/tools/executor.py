@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 from collections.abc import Mapping
+from dataclasses import replace
 
+from core.request_context import RequestContext
 from .definitions import ToolResult
 from .registry import ToolRegistry
 
@@ -75,20 +78,67 @@ def normalize_tool_output(name: str, value, default_result: str) -> ToolResult:
 
 
 class ToolExecutor:
-    def __init__(self, registry: ToolRegistry) -> None:
+    def __init__(self, registry: ToolRegistry, audit_sink=None) -> None:
         self.registry = registry
+        self.audit_sink = audit_sink
 
-    async def execute(self, name: str, args: dict) -> ToolResult:
+    def _audit(self, context: RequestContext | None, event: str, name: str, **metadata) -> None:
+        if context is None or self.audit_sink is None:
+            return
+        try:
+            self.audit_sink.record(context, event, name, **metadata)
+        except Exception:
+            # Observability must never become an execution dependency.
+            pass
+
+    def _completed(
+        self,
+        result: ToolResult,
+        context: RequestContext | None,
+        name: str,
+        started_at: float,
+    ) -> ToolResult:
+        self._audit(
+            context,
+            "completed",
+            name,
+            outcome="success" if result.success else "error",
+            error_code=result.error_code,
+            duration_ms=(time.monotonic() - started_at) * 1000,
+        )
+        if context is None:
+            return result
+        return replace(result, request_id=context.request_id)
+
+    async def execute(
+        self,
+        name: str,
+        args: dict,
+        *,
+        context: RequestContext | None = None,
+    ) -> ToolResult:
+        started_at = time.monotonic()
         try:
             definition = self.registry.validate_for_execution(name)
             self.registry.validate_arguments(definition, args)
         except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
-            return ToolResult(False, str(exc), error_code="unavailable")
+            return self._completed(
+                ToolResult(False, str(exc), error_code="unavailable"),
+                context,
+                name,
+                started_at,
+            )
+        self._audit(context, "started", name)
         if definition.special:
-            return ToolResult(
-                False,
-                f"Tool '{name}' requires its session-specific executor.",
-                error_code="special_executor_required",
+            return self._completed(
+                ToolResult(
+                    False,
+                    f"Tool '{name}' requires its session-specific executor.",
+                    error_code="special_executor_required",
+                ),
+                context,
+                name,
+                started_at,
             )
 
         async def invoke():
@@ -98,12 +148,31 @@ class ToolExecutor:
 
         try:
             value = await asyncio.wait_for(invoke(), timeout=definition.timeout)
-            return normalize_tool_output(name, value, definition.default_result)
+            return self._completed(
+                normalize_tool_output(name, value, definition.default_result),
+                context,
+                name,
+                started_at,
+            )
         except asyncio.TimeoutError:
-            return ToolResult(
-                False,
-                f"Tool '{name}' timed out after {definition.timeout:g} seconds.",
-                error_code="timeout",
+            return self._completed(
+                ToolResult(
+                    False,
+                    f"Tool '{name}' timed out after {definition.timeout:g} seconds.",
+                    error_code="timeout",
+                ),
+                context,
+                name,
+                started_at,
             )
         except Exception as exc:
-            return ToolResult(False, f"Tool '{name}' failed: {exc}", error_code="exception")
+            return self._completed(
+                ToolResult(
+                    False,
+                    f"Tool '{name}' failed: {exc}",
+                    error_code="exception",
+                ),
+                context,
+                name,
+                started_at,
+            )
