@@ -124,8 +124,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 6 - Cancelación y aislamiento de herramientas
 
-- **Estado:** implementación y pruebas de rama completadas el 2026-07-28 en
-  `codex/07-tool-cancellation`; integración en `main` pendiente.
+- **Estado:** completada e integrada en `main` el 2026-07-28 desde
+  `codex/07-tool-cancellation`.
 - **Objetivo:** que timeout no signifique sólo dejar de esperar mientras el thread continúa.
 - **Archivos previstos:** `core/tools/executor.py`, contratos de cancelación, pilotos de acciones largas, tests de fault injection.
 - **Riesgo:** alto.
@@ -138,7 +138,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   efecto/rollback declarados por el handler. El runner de procesos termina y
   recolecta el árbol iniciado por JARVIS. `dev_agent` es el primer piloto:
   incorpora checkpoints y su proceso de proyecto no queda ejecutándose tras
-  timeout. Baseline: 273 tests y 104 subtests aprobados.
+  timeout. El baseline posterior al merge `9e1e97a` aprobó 273 tests y 104
+  subtests.
 
 ### Fase 7 - Ownership de sesión, audio, visión y lifecycle
 
