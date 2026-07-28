@@ -106,8 +106,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 5 - Piloto de verificación
 
-- **Estado:** implementación y pruebas de rama completadas el 2026-07-28 en
-  `codex/06-file-verification-pilot`; integración en `main` pendiente.
+- **Estado:** completada e integrada en `main` el 2026-07-28 desde
+  `codex/06-file-verification-pilot`.
 - **Objetivo:** implementar verifier para dos o tres operaciones seguras de `file_controller`.
 - **Archivos previstos:** `actions/file_controller.py`, nuevo módulo de verificadores, `core/tools/*`, tests.
 - **Riesgo:** medio.
@@ -119,7 +119,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   devuelven `ToolResult` v2 con ruta resuelta, tamaño y SHA-256 observados.
   Los conflictos se rechazan sin sobrescritura; un destino no observable queda
   `verification=failed`; directorios siguen en el adaptador legacy. Pruebas
-  focalizadas: 67 tests y 22 subtests aprobados.
+  focalizadas: 67 tests y 22 subtests aprobados. El baseline posterior al merge
+  `fa664e4` aprobó 264 tests y 104 subtests.
 
 ### Fase 6 - Cancelación y aislamiento de herramientas
 
