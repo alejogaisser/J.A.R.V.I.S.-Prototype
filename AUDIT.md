@@ -48,30 +48,40 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### C-01 - El origen remoto se degrada a local
 
+- **Estado:** resuelto en Fase 1.
 - **Descripción:** todos los tool calls son evaluados como locales, aunque el texto o audio provenga del dashboard.
 - **Evidencia:** `main.py:1350-1354` fija `ExecutionContext(source="local")`; `dashboard/server.py:778-784` y `main.py:2126-2143` reinyectan comandos sin conservar origen. La elevación remota sí existe en `core/permissions/policy.py:97-110`.
 - **Impacto:** un cliente LAN autenticado puede recibir mínimos más permisivos que los diseñados para una fuente remota.
 - **Solución recomendada:** crear `RequestContext/InputSource`, conservarlo desde cada entrada y exigirlo en policy/executor.
 - **Esfuerzo:** medio.
 - **Prioridad:** P0, antes de ampliar dashboard o tools.
+- **Resolución:** `InputSource` tipa las cinco entradas; texto y audio del
+  dashboard fijan un origen remoto que no puede degradarse dentro del turno, y
+  `_execute_tool()` lo entrega a `PermissionPolicy`.
 
 ### C-02 - `file_processor` puede escribir o ejecutar con clasificación de sólo lectura
 
+- **Estado:** resuelto en Fase 1 para la policy central.
 - **Descripción:** la herramienta no aparece en `RISK` ni `CONFIRMATION`, por lo que toma defaults `READ_ONLY/NEVER`; sin regla específica, policy queda `FREE`.
 - **Evidencia:** `core/tools/builtins.py:11-56`; operaciones `run/test` y escrituras en `actions/file_processor.py:455-510`; extracción a destino en `actions/file_processor.py:713-741`.
 - **Impacto:** contenido subido o instrucciones del modelo pueden ejecutar código, escribir resultados o extraer archivos sin confirmación central.
 - **Solución recomendada:** clasificar por operación, bloquear ejecución por defecto, validar destino y separar procesamiento consultivo de efectos.
 - **Esfuerzo:** medio.
 - **Prioridad:** P0.
+- **Resolución:** metadata `SENSITIVE` y mínimos por operación: consultas
+  libres, transformaciones con confirmación y `run/test` siempre confirmados.
 
 ### C-03 - `code_helper write/edit` contradice la confirmación de seguridad
 
+- **Estado:** resuelto en Fase 1.
 - **Descripción:** `confirmation_request()` prepara confirmación para escribir/editar, pero policy declara esas operaciones `FREE`, por lo que el gate nunca se invoca.
 - **Evidencia:** `core/permissions/policy.py:63-66`; escritura en `actions/code_helper.py:75-81`, `344` y `425-427`; confirmación esperada en `core/security.py:63-68`.
 - **Impacto:** modificación de código local iniciada por modelo sin aprobación efectiva.
 - **Solución recomendada:** `explain=FREE`; `write/edit=CONFIRM_ONCE` o `ALWAYS`; `run/build/auto=CONFIRM_ALWAYS`; tests de integración policy -> gate.
 - **Esfuerzo:** bajo.
 - **Prioridad:** P0.
+- **Resolución:** `explain=FREE`, `write/edit/optimize=CONFIRM_ONCE` y el resto,
+  incluida ejecución, `CONFIRM_ALWAYS`.
 
 ## Hallazgos altos
 
@@ -113,6 +123,8 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### H-05 - Rutas especiales evitan partes del contrato común
 
+- **Estado:** mitigado en Fase 1 para `save_memory`; las demás rutas especiales
+  siguen abiertas.
 - **Descripción:** `save_memory` retorna antes de validación y policy; siete herramientas se implementan mediante branches específicos.
 - **Evidencia:** `main.py:1315-1334`; `core/tools/builtins.py:10-13`; `main.py:1482-1605`.
 - **Impacto:** cobertura desigual de permisos, auditoría, timeout, cancelación y resultado.
@@ -122,12 +134,16 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### H-06 - Browser, recordatorios y conectores tienen mínimos demasiado amplios
 
+- **Estado:** resuelto en Fase 1 para browser, reminder y account connector.
 - **Descripción:** `browser_control`, `reminder` y otras tools están en `_FREE_TOOLS`; `account_connector` es siempre `FREE`, incluso para creación en Drive.
 - **Evidencia:** `core/permissions/policy.py:20-25,47-50`; declaración de operaciones en `main.py:389-415,228-238,793-813`.
 - **Impacto:** clicks, formularios, tareas persistentes o escrituras externas pueden no reflejar el riesgo real de la operación.
 - **Solución recomendada:** policy por operación y origen; lectura libre, cambios/submit/create con confirmación y verificación.
 - **Esfuerzo:** medio.
 - **Prioridad:** P0/P1.
+- **Resolución:** navegación/lectura se separan de interacción y escritura;
+  recordatorios exigen confirmación; creación/desconexión del conector exige
+  confirmación permanente.
 
 ### H-07 - Dependencias instalables no reproducen capacidades anunciadas
 

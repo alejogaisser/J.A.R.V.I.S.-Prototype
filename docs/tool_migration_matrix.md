@@ -17,7 +17,7 @@ sin añadir una fila y declarar sus límites.
 | `system_status` | read_only | FREE | No | Texto legacy | Lectura puntual | No aplica | 30 | executor | Policy | Resultado estructurado |
 | `weather_report` | read_only | FREE | No | Texto legacy | Fuente en texto | No aplica | 30 | executor | Indirecta | Provider inyectable |
 | `send_message` | external_effect | CONFIRM_ALWAYS | Sí | Texto legacy | Sin contrato | No disponible | 30 | executor | Policy/preview | ID remoto + estado de entrega |
-| `reminder` | external_effect | FREE | No | Texto legacy | Sin contrato | Manual | 30 | executor | Sin prueba directa | Corregir policy y verificar persistencia |
+| `reminder` | external_effect | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Manual | 30 | executor | Policy parametrizada | Verificar persistencia |
 | `youtube_video` | read_only | FREE | No | Texto legacy | Sin contrato | Cerrar navegador | 30 | executor | Sin prueba directa | Resultado y destino tipados |
 | `screen_process` | read_only | FREE | No | Ruta especial | Captura atómica parcial | No aplica | 30 | special | Seguridad estática | Envelope común + latencia |
 | `close_camera` | read_only | FREE | No | Ruta especial | Estado UI implícito | Reabrir cámara | 30 | special | Seguridad estática | Evento/verificación de cámara |
@@ -26,16 +26,16 @@ sin añadir una fila y declarar sus límites.
 | `interface_control` | local_change | FREE | No | Texto legacy | Estado UI implícito | Acción inversa | 30 | executor | Interfaz | Señal Qt + afinidad de hilo |
 | `visual_mouse` | read_only | FREE | No | Ruta especial | UIA/imagen parcial | No disponible | 30 | special | Seguridad estática | Riesgo real + envelope común |
 | `computer_settings` | sensitive | FREE; power CONFIRM_ALWAYS | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Policy/seguridad | Matriz por operación |
-| `browser_control` | read_only | FREE | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Sin prueba directa | Reclasificar escritura/navegación |
+| `browser_control` | sensitive | Lectura/navegación FREE; interacción ONCE; desconocida ALWAYS | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Policy parametrizada | Preview y verificación de submit |
 | `file_controller` | sensitive | Por acción | Sí | Texto/JSON legacy | Parcial por filesystem | Papelera/inversa parcial | 30 | executor | Seguridad amplia | Verifier piloto + rutas resueltas |
 | `desktop_control` | sensitive | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Sin prueba directa | Clasificación por operación |
-| `code_helper` | sensitive | explain/write/edit FREE; resto ALWAYS | No | Texto legacy | Sin contrato | VCS/manual | 120 | executor | Policy/scripts | Corregir write/edit + sandbox |
+| `code_helper` | sensitive | explain FREE; write/edit/optimize ONCE; resto ALWAYS | No | Texto legacy | Sin contrato | VCS/manual | 120 | executor | Policy/scripts | Sandbox y evidencia |
 | `dev_agent` | sensitive | CONFIRM_ONCE | No | Texto legacy | Sin contrato | VCS/manual | 120 | executor | Policy | Límite de workspace + evidencia |
 | `computer_control` | sensitive | Acciones comunes FREE; resto ONCE | No | Texto legacy | UIA/imagen parcial | No disponible | 30 | executor | Seguridad parcial | Riesgo por acción + límites |
 | `game_updater` | external_effect | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Gestor externo | 120 | executor | Seguridad estática | Estado de instalación verificable |
 | `flight_finder` | read_only | FREE | No | Texto legacy | Fuentes en texto | No aplica | 30 | executor | Sin prueba directa | Provider + esquema de resultados |
 | `shutdown_jarvis` | sensitive | FREE | No | Ruta especial | Flags de shutdown | Reinicio manual | 30 | special | Policy | Policy sensible + lifecycle |
-| `file_processor` | read_only | FREE | No | Texto/archivo legacy | Sin contrato | Según operación | 30 | executor | Sin prueba directa | Reclasificar escritura/ejecución |
+| `file_processor` | sensitive | Lectura FREE; escritura ONCE; ejecución ALWAYS | No | Texto/archivo legacy | Sin contrato | Según operación | 30 | executor | Policy parametrizada | Verificación de artefactos |
 | `save_memory` | local_change | Bypass de policy | No | Ruta especial | Lectura posterior no contractual | Forget/manual | 30 | special | Memoria indirecta | Pasar por policy y executor |
 | `memory_list` | read_only | FREE | No | Lista/dict legacy | Datos cargados | No aplica | 30 | executor | Memoria | Resultado paginado/tipado |
 | `memory_search` | read_only | FREE | No | Lista/dict legacy | Datos cargados | No aplica | 30 | executor | Memoria | Resultado paginado/tipado |
@@ -46,7 +46,7 @@ sin añadir una fila y declarar sus límites.
 | `geo_map` | read_only | FREE | No | Dict/texto legacy | Respuesta del provider | No aplica | 30 | executor | GEO | Provider + afinidad UI |
 | `math_engine` | read_only | FREE | No | Texto/archivo legacy | Cálculo local parcial | No aplica | 30 | executor | Math/seguridad | Resultado/artefacto tipado |
 | `study_engine` | local_change | FREE | No | Texto/archivo legacy | Parcial por operación | Según artefacto | 30 | executor | Study | Riesgo y provider por operación |
-| `account_connector` | read_only | FREE forzado | No | Texto/JSON legacy | Provider parcial | Según operación | 30 | executor | Conectores | Reclasificar escrituras/OAuth |
+| `account_connector` | external_effect | Lectura FREE; connect/download ONCE; create/disconnect ALWAYS | No | Texto/JSON legacy | Provider parcial | Según operación | 30 | executor | Conectores/policy | Preview y verificación externa |
 | `obsidian_connector` | sensitive | Lectura FREE; escritura ONCE; resto ALWAYS | No | Texto/JSON legacy | Filesystem parcial | Historial/manual | 30 | executor | Obsidian/policy | Preview + evidencia de nota |
 | `permission_manager` | sensitive | Lectura FREE; cambios ALWAYS | No | Ruta especial | Store recargado | Restaurar preferencia | 30 | special | Policy/seguridad | Store atómico + envelope común |
 

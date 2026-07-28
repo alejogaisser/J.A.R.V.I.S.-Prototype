@@ -18,11 +18,32 @@ _CHANGE_FILE_ACTIONS = {
     "move", "rename", "write", "organize_desktop"
 }
 _FREE_TOOLS = {
-    "browser_control", "close_camera", "flight_finder", "open_app", "reminder",
+    "close_camera", "flight_finder", "open_app",
     "screen_process", "shutdown_jarvis", "system_status", "visual_mouse",
     "weather_report", "web_search", "youtube_video",
     "math_engine",
 }
+_FILE_PROCESSOR_READ_ACTIONS = {
+    "analyze", "describe", "explain", "extract_text", "info", "list", "ocr",
+    "read", "reformat", "review", "stats", "summarize", "translate_hint",
+    "validate", "word_count",
+}
+_FILE_PROCESSOR_EXECUTE_ACTIONS = {"run", "test"}
+_BROWSER_READ_ACTIONS = {
+    "get_text", "get_url", "list_browsers", "screenshot",
+}
+_BROWSER_NAVIGATION_ACTIONS = {
+    "back", "close", "close_all", "close_tab", "forward", "go_to", "new_tab",
+    "reload", "scroll", "search", "switch",
+}
+_BROWSER_INTERACTION_ACTIONS = {
+    "click", "fill_form", "press", "smart_click", "smart_type", "type",
+}
+_ACCOUNT_READ_ACTIONS = {
+    "find_folder", "list_children", "read", "search", "status",
+}
+_ACCOUNT_LOCAL_CHANGE_ACTIONS = {"connect", "download"}
+_ACCOUNT_EXTERNAL_ACTIONS = {"create_file", "create_folder", "disconnect"}
 _FREE_COMPUTER_ACTIONS = {
     "type", "smart_type", "click", "left_click", "double_click", "right_click",
     "move", "drag", "hotkey", "press", "scroll", "copy", "paste", "screenshot",
@@ -45,7 +66,11 @@ class PermissionPolicy:
     @staticmethod
     def minimum(tool: ToolDefinition, operation: str) -> PermissionLevel:
         if tool.name == "account_connector":
-            return PermissionLevel.FREE
+            if operation in _ACCOUNT_READ_ACTIONS:
+                return PermissionLevel.FREE
+            if operation in _ACCOUNT_LOCAL_CHANGE_ACTIONS:
+                return PermissionLevel.CONFIRM_ONCE
+            return PermissionLevel.CONFIRM_ALWAYS
         if tool.name in _FREE_TOOLS:
             return PermissionLevel.FREE
         if tool.name == "send_message":
@@ -61,14 +86,30 @@ class PermissionPolicy:
                 return PermissionLevel.CONFIRM_ALWAYS
             return PermissionLevel.FREE
         if tool.name == "code_helper":
-            if operation in {"explain", "write", "edit"}:
+            if operation == "explain":
                 return PermissionLevel.FREE
+            if operation in {"edit", "optimize", "write"}:
+                return PermissionLevel.CONFIRM_ONCE
+            return PermissionLevel.CONFIRM_ALWAYS
+        if tool.name == "file_processor":
+            if operation in _FILE_PROCESSOR_READ_ACTIONS:
+                return PermissionLevel.FREE
+            if operation in _FILE_PROCESSOR_EXECUTE_ACTIONS:
+                return PermissionLevel.CONFIRM_ALWAYS
+            if operation == "default":
+                return PermissionLevel.CONFIRM_ALWAYS
+            return PermissionLevel.CONFIRM_ONCE
+        if tool.name == "browser_control":
+            if operation in _BROWSER_READ_ACTIONS | _BROWSER_NAVIGATION_ACTIONS:
+                return PermissionLevel.FREE
+            if operation in _BROWSER_INTERACTION_ACTIONS:
+                return PermissionLevel.CONFIRM_ONCE
             return PermissionLevel.CONFIRM_ALWAYS
         if tool.name == "file_controller":
             if operation in _READ_FILE_ACTIONS:
                 return PermissionLevel.FREE
             if operation in _REVERSIBLE_FILE_ACTIONS:
-                return PermissionLevel.FREE
+                return PermissionLevel.CONFIRM_ONCE
             if operation in _ALWAYS_FILE_ACTIONS:
                 return PermissionLevel.CONFIRM_ALWAYS
             if operation in _CHANGE_FILE_ACTIONS:
@@ -106,7 +147,7 @@ class PermissionPolicy:
             self.preferences.get(tool.name, PermissionLevel.FREE),
         )
         level = max(minimum, configured)
-        if context.source != "local" and level < PermissionLevel.CONFIRM_ONCE:
+        if context.is_remote and level < PermissionLevel.CONFIRM_ONCE:
             level = PermissionLevel.CONFIRM_ONCE
         return level
 

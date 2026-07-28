@@ -16,9 +16,12 @@ SPECIAL_TOOLS = {
 RISK = {
     "send_message": RiskLevel.EXTERNAL_EFFECT,
     "reminder": RiskLevel.EXTERNAL_EFFECT,
+    "account_connector": RiskLevel.EXTERNAL_EFFECT,
     "open_app": RiskLevel.LOCAL_CHANGE,
+    "browser_control": RiskLevel.SENSITIVE,
     "computer_settings": RiskLevel.SENSITIVE,
     "file_controller": RiskLevel.SENSITIVE,
+    "file_processor": RiskLevel.SENSITIVE,
     "desktop_control": RiskLevel.SENSITIVE,
     "code_helper": RiskLevel.SENSITIVE,
     "dev_agent": RiskLevel.SENSITIVE,
@@ -39,7 +42,8 @@ RISK = {
 CONFIRMATION = {
     name: ConfirmationPolicy.DEPENDS_ON_ARGUMENTS
     for name in {
-        "send_message", "file_controller", "computer_settings", "desktop_control",
+        "send_message", "reminder", "account_connector", "browser_control",
+        "file_controller", "file_processor", "computer_settings", "desktop_control",
         "code_helper", "dev_agent", "game_updater",
         "obsidian_connector",
     }

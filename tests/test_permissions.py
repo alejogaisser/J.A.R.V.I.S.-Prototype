@@ -46,9 +46,11 @@ class PermissionPolicyTests(unittest.TestCase):
         for action in ("inspect", "browse", "inspect_folder", "read_folder"):
             with self.subTest(action=action):
                 self.assertTrue(policy.evaluate(files, {"action": action}).allowed)
-        self.assertTrue(policy.evaluate(files, {"action": "create_folder"}).allowed)
-        self.assertTrue(policy.evaluate(files, {"action": "create_file"}).allowed)
-        self.assertTrue(policy.evaluate(files, {"action": "copy"}).allowed)
+        for action in ("create_folder", "create_file", "copy"):
+            with self.subTest(action=action):
+                decision = policy.evaluate(files, {"action": action})
+                self.assertEqual(decision.policy, "confirm_once")
+                self.assertTrue(decision.requires_confirmation)
         self.assertEqual(policy.evaluate(files, {"action": "write"}).policy, "confirm_once")
         self.assertEqual(policy.evaluate(files, {"action": "delete"}).policy, "confirm_always")
         self.assertEqual(policy.evaluate(files, {"action": "clear_jarvis_temp"}).policy, "confirm_always")
@@ -76,15 +78,15 @@ class PermissionPolicyTests(unittest.TestCase):
             with self.subTest(tool=definition.name, args=args):
                 self.assertTrue(policy.evaluate(definition, args).allowed)
 
-    def test_drive_reads_and_writes_are_free(self):
+    def test_drive_reads_are_free_and_writes_require_confirmation(self):
         connector = tool("account_connector", risk=RiskLevel.READ_ONLY)
         policy = PermissionPolicy()
         self.assertTrue(policy.evaluate(connector, {"action": "search"}).allowed)
         for action in ("create_file", "create_folder"):
             decision = policy.evaluate(connector, {"action": action})
-            self.assertEqual(decision.policy, "free")
-            self.assertTrue(decision.allowed)
-            self.assertFalse(decision.requires_confirmation)
+            self.assertEqual(decision.policy, "confirm_always")
+            self.assertFalse(decision.allowed)
+            self.assertTrue(decision.requires_confirmation)
 
     def test_computer_power_and_code_execution_remain_confirmed(self):
         policy = PermissionPolicy()
@@ -94,7 +96,10 @@ class PermissionPolicyTests(unittest.TestCase):
             policy.evaluate(settings, {"description": "restart the computer"}).policy,
             "confirm_always",
         )
-        self.assertTrue(policy.evaluate(code, {"action": "write"}).allowed)
+        self.assertEqual(
+            policy.evaluate(code, {"action": "write"}).policy,
+            "confirm_once",
+        )
         self.assertEqual(policy.evaluate(code, {"action": "run"}).policy, "confirm_always")
 
     def test_memory_reads_are_free_and_forgetting_requires_confirmation(self):
