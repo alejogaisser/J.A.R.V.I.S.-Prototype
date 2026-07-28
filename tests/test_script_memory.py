@@ -9,10 +9,21 @@ from core.tools import RiskLevel, ToolDefinition
 
 class ScriptMemoryTests(unittest.TestCase):
     def test_open_daily_targets_codex_not_chatgpt_store_protocol(self):
-        routine = script_memory.get_script("open daily")
-        self.assertIsNotNone(routine)
-        self.assertIn("codex://", routine["code"])
-        self.assertNotIn("chatgpt://", routine["code"])
+        original = script_memory.SCRIPT_MEMORY_PATH
+        try:
+            with TemporaryDirectory() as directory:
+                script_memory.SCRIPT_MEMORY_PATH = Path(directory) / "scripts.json"
+                script_memory.register_script(
+                    "open daily",
+                    "print('codex://daily')",
+                    "Open the Codex daily task",
+                )
+                routine = script_memory.get_script("open daily")
+                self.assertIsNotNone(routine)
+                self.assertIn("codex://", routine["code"])
+                self.assertNotIn("chatgpt://", routine["code"])
+        finally:
+            script_memory.SCRIPT_MEMORY_PATH = original
 
     def test_register_and_format_script(self):
         original = script_memory.SCRIPT_MEMORY_PATH

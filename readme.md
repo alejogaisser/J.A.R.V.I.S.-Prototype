@@ -175,11 +175,30 @@ Estos archivos **no se recuperan al clonar el repositorio**. Guardalos en una co
 
 ## Pruebas
 
+Instalá las dependencias de desarrollo (incluyen el runtime y pytest):
+
+```powershell
+python -m pip install -r requirements-dev.txt
+```
+
 ```powershell
 python -m pytest
 ```
 
-Para comprobar rápidamente la sintaxis del proyecto:
+La línea base completa y reproducible (dependencias, launcher, imports, tool
+inventory, sintaxis, tests y diff) se ejecuta con:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate_baseline.ps1 `
+  -Python .\.venv\Scripts\python.exe
+```
+
+Consultá [docs/baseline.md](docs/baseline.md) para el alcance, limitaciones y
+procedimiento de instalación limpia, y
+[docs/tool_migration_matrix.md](docs/tool_migration_matrix.md) para el
+inventario contractual de las 37 herramientas.
+
+Para comprobar únicamente la sintaxis del proyecto:
 
 ```powershell
 python -m compileall -q .
