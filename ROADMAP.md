@@ -143,6 +143,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 7 - Ownership de sesión, audio, visión y lifecycle
 
+- **Estado:** implementación y pruebas de rama completadas el 2026-07-28 en
+  `codex/08-session-lifecycle`; integración en `main` pendiente.
 - **Objetivo:** extraer servicios con un único escritor por estado sin cambiar el protocolo Gemini.
 - **Archivos previstos:** nuevos `services/session.py`, `audio.py`, `vision.py`, `lifecycle.py`; `main.py`; tests.
 - **Riesgo:** muy alto.
@@ -150,6 +152,12 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Criterio de aceptación:** owners documentados; reconexión, interrupción y shutdown mantienen métricas; `main.py` compone en vez de implementar.
 - **Pruebas:** fault injection de red/mic/cámara, doble sesión, audio en cola, shutdown y recuperación.
 - **Rollback:** facade que delega al comportamiento heredado por servicio.
+- **Evidencia de rama:** `RuntimeServices` compone owners separados de sesión,
+  audio, visión y lifecycle. Reconexión preserva el checkpoint y reinicia sólo
+  transitorios; generaciones evitan liberar una interrupción nueva desde una
+  tarea vieja; cámara aplica backpressure; shutdown es idempotente y conserva
+  deadline/métricas. `main.py` conserva el transporte y protocolo existentes,
+  pero delega esos estados. Baseline: 283 tests y 104 subtests aprobados.
 
 ### Fase 8 - Frontera de UI
 

@@ -66,7 +66,10 @@ class LiveSessionStateTests(unittest.TestCase):
 
     def test_checkpoint_updates_are_not_shown_in_the_chat(self):
         source = Path("main.py").read_text(encoding="utf-8")
-        self.assertIn("observe_resumption_update(update)", source)
+        self.assertIn(
+            "self._runtime.session.resumption.observe_resumption_update",
+            source,
+        )
         self.assertNotIn("Conversation checkpoint updated", source)
 
 

@@ -56,7 +56,7 @@ _CRASH_LOG_HANDLE = (_CRASH_LOG_DIR / "jarvis_crash.log").open(
 faulthandler.enable(_CRASH_LOG_HANDLE, all_threads=True)
 from core.diagnostics import CrashReporter
 from core.security import VoiceConfirmationGate, confirmation_request, safe_tool_args
-from core.live_session import AudioInactivityWatchdog, LiveSessionState
+from services.runtime import RuntimeServices
 from core.runtime_state import update_runtime_state
 from core.request_audit import RequestAuditSink
 from core.request_context import RequestContext
@@ -867,6 +867,7 @@ class JarvisLive:
     def __init__(self, ui: JarvisUI):
         _load_action_dependencies()
         self.ui             = ui
+        self._runtime       = RuntimeServices()
         self.session              = None
         self.audio_in_queue       = None
         self.out_queue            = None
@@ -877,16 +878,7 @@ class JarvisLive:
         self._output_stream       = None
         self._playback_generation = 0
         self._phone_active        = False   # True while phone mic is streaming; pauses PC mic
-        self._vision_last_time     = 0.0     # monotonic time of last screen_process call (cooldown guard)
-        self._vision_busy          = False   # True while a vision capture/inject cycle is in flight
-        self._camera_frame_pending = False
-        self._ever_connected       = False
-        self._live_session_state   = LiveSessionState()
-        self._audio_watchdog       = AudioInactivityWatchdog()
-        self._mic_callback_at      = time.monotonic()
         self._remote_drive_folders: set[str] = set()
-        self._interrupted          = False   # True while draining audio after user interrupt
-        self._interrupt_serial     = 0       # Old recovery timers cannot clear a newer ESC.
         self.ui.on_text_command   = self._on_text_command
         self.ui.on_remote_clicked = self._make_remote_key
         self.ui.on_interrupt      = self.interrupt
@@ -906,9 +898,6 @@ class JarvisLive:
         self._confirmation_execution_scheduled = False
         self._active_input_source = self._default_source()
         self._input_source_locked = False
-        self._shutdown_after_turn = False
-        self._shutdown_started = False
-        self._shutdown_farewell_audio_seen = False
         handlers = {
             "open_app": lambda args: open_app(parameters=args, response=None, player=self.ui),
             "weather_report": lambda args: weather_action(parameters=args, player=self.ui),
@@ -1248,13 +1237,10 @@ class JarvisLive:
 
     def interrupt(self) -> None:
         """Thread-safe ESC handler: cancel the model turn and local playback."""
-        self._interrupted = True
-        self._interrupt_serial += 1
-        self._interrupted_at = time.monotonic()
+        serial = self._runtime.audio.begin_interrupt()
         self.set_speaking(False)
         self.ui.write_log("SYS: Interrupted — listening...")
         if self._loop:
-            serial = self._interrupt_serial
             self._loop.call_soon_threadsafe(
                 lambda: asyncio.create_task(self._interrupt_model_turn(serial))
             )
@@ -1281,10 +1267,8 @@ class JarvisLive:
 
     def _release_interrupt(self, serial: int) -> None:
         """Clear only the interrupt generation that requested this recovery."""
-        if serial != self._interrupt_serial:
+        if not self._runtime.audio.release_interrupt(serial):
             return
-        self._interrupted = False
-        self._interrupted_at = 0.0
         if self.ui.microphone_enabled:
             self.ui.set_state("LISTENING")
 
@@ -1386,7 +1370,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 ),
             ),
             session_resumption=types.SessionResumptionConfig(
-                handle=self._live_session_state.resumption_handle,
+                handle=self._runtime.session.resumption.resumption_handle,
             ),
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow(),
@@ -1712,13 +1696,17 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             elif name == "screen_process":
                 _now = time.monotonic()
                 _cooldown = 4.0  # seconds — covers echo window after speaking ends
-                if self._vision_busy or (_now - self._vision_last_time) < _cooldown:
-                    _wait = max(0, _cooldown - (_now - self._vision_last_time))
+                if not self._runtime.vision.try_begin_analysis(
+                    now=_now,
+                    cooldown=_cooldown,
+                ):
+                    _wait = self._runtime.vision.cooldown_remaining(
+                        now=_now,
+                        cooldown=_cooldown,
+                    )
                     print(f"[Vision] ⏳ Cooldown active ({_wait:.1f}s remaining) — ignoring duplicate call")
                     result = "Vision is still processing the previous request. I will not call this again."
                 else:
-                    self._vision_busy      = True
-                    self._vision_last_time = _now
                     angle = args.get("angle", "screen").lower()
                     user_text = args.get("text", "What do you see?")
                     try:
@@ -1736,7 +1724,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                                 None, lambda: analyze_visual(user_text, angle)
                             )
                     finally:
-                        self._vision_busy = False
+                        self._runtime.vision.finish_analysis()
 
             elif name == "visual_mouse":
                 mouse_action = {
@@ -1756,7 +1744,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
             elif name == "close_camera":
                 self.ui.stop_camera_stream()
-                self._camera_frame_pending = False
+                self._runtime.vision.finish_camera_frame()
                 result = "Camera closed."
 
             elif name == "camera_control":
@@ -1847,9 +1835,8 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
             elif name == "shutdown_jarvis":
                 self.ui.write_log("SYS: Shutdown requested.")
-                self._shutdown_after_turn = True
-                self._shutdown_farewell_audio_seen = False
-                asyncio.create_task(self._shutdown_fallback_timeout())
+                if self._runtime.lifecycle.request_shutdown():
+                    asyncio.create_task(self._shutdown_fallback_timeout())
                 result = (
                     "[SHUTDOWN_SCHEDULED] Say one brief, natural goodbye in the user's "
                     "language now. Do not call another tool. JARVIS will close only after "
@@ -1932,14 +1919,22 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             return
 
         def _schedule() -> None:
-            if self._camera_frame_pending:
+            frame_generation = (
+                self._runtime.vision.try_queue_camera_frame()
+            )
+            if frame_generation is None:
                 return
-            self._camera_frame_pending = True
-            asyncio.create_task(self._send_camera_frame(image_bytes))
+            asyncio.create_task(
+                self._send_camera_frame(image_bytes, frame_generation)
+            )
 
         self._loop.call_soon_threadsafe(_schedule)
 
-    async def _send_camera_frame(self, image_bytes: bytes) -> None:
+    async def _send_camera_frame(
+        self,
+        image_bytes: bytes,
+        generation: int,
+    ) -> None:
         try:
             if self.session:
                 await self.session.send_realtime_input(
@@ -1948,7 +1943,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         except Exception as exc:
             print(f"[Camera] Primary-session frame failed: {exc}")
         finally:
-            self._camera_frame_pending = False
+            self._runtime.vision.finish_camera_frame(generation)
 
     async def _send_realtime(self):
         while True:
@@ -1957,7 +1952,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             self._set_input_source(source)
             with self._speaking_lock:
                 jarvis_speaking = self._is_speaking
-            if jarvis_speaking or self._interrupted:
+            if jarvis_speaking or self._runtime.audio.interrupted:
                 continue
             await self.session.send_realtime_input(audio=audio)
 
@@ -1994,14 +1989,17 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             # set_speaking(False).
             with self._speaking_lock:
                 jarvis_speaking = self._is_speaking
-            self._mic_callback_at = time.monotonic()
+            self._runtime.audio.mark_microphone_callback()
             mic_active = (
                 self.ui.microphone_enabled
                 and not self._phone_active
                 and not jarvis_speaking
             )
             data = indata.tobytes()
-            transition = self._audio_watchdog.observe_pcm(data, active=mic_active)
+            transition = self._runtime.audio.watchdog.observe_pcm(
+                data,
+                active=mic_active,
+            )
             if transition in {"sleep", "wake"}:
                 loop.call_soon_threadsafe(_apply_audio_transition, transition)
             if mic_active and transition not in {"sleep", "sleeping"}:
@@ -2026,20 +2024,23 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     callback=callback,
                 ):
                     print("[JARVIS] 🎤 Mic stream open")
-                    self._mic_callback_at = time.monotonic()
+                    self._runtime.audio.mark_microphone_callback()
                     while True:
                         await asyncio.sleep(0.1)
                         # Some Windows drivers stop invoking the callback after a
                         # hardware mute without raising a PortAudio exception.
                         # Reopening only the local stream is safe and keeps the
                         # active Live conversation untouched.
-                        if time.monotonic() - self._mic_callback_at > 2.0:
+                        if self._runtime.audio.microphone_stalled(
+                            threshold=2.0
+                        ):
                             raise RuntimeError("microphone callback stalled")
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 print(f"[JARVIS] ❌ Mic: {e}; retrying in 1 second")
                 self.ui.write_log("AUDIO: Microphone lost; reconnecting...")
+                self._runtime.audio.mark_microphone_recovery()
                 await asyncio.sleep(1)
 
     async def _close_idle_audio_stream(self) -> None:
@@ -2055,7 +2056,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         except Exception as exc:
             # The regular session reconnect loop remains the fallback for a
             # transport that disappears while the microphone is being reset.
-            self._audio_watchdog.reset()
+            self._runtime.audio.watchdog.reset()
             print(f"[JARVIS] Audio stream reset failed: {exc}")
 
     async def _receive_audio(self):
@@ -2071,7 +2072,9 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     # Checkpoints are internal session bookkeeping. Keep the
                     # resumable handle current without leaking routine protocol
                     # traffic into the user's conversation log.
-                    self._live_session_state.observe_resumption_update(update)
+                    self._runtime.session.resumption.observe_resumption_update(
+                        update
+                    )
                     go_away = getattr(response, "go_away", None)
                     if go_away:
                         remaining = getattr(go_away, "time_left", None)
@@ -2089,9 +2092,9 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                                 self.out_queue.get_nowait()
                             except asyncio.QueueEmpty:
                                 break
-                        if self._shutdown_after_turn:
-                            self._shutdown_farewell_audio_seen = True
-                        if self._interrupted:
+                        if self._runtime.lifecycle.shutdown_requested:
+                            self._runtime.lifecycle.observe_farewell_audio()
+                        if self._runtime.audio.interrupted:
                             pass  # discard: interrupted
                         else:
                             if self._turn_done_event and self._turn_done_event.is_set():
@@ -2109,7 +2112,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         if sc.interrupted:
                             # A server VAD interruption means the user spoke over
                             # JARVIS. Stop playback, but keep the new user turn alive;
-                            # _interrupted is reserved for explicit ESC cancellation.
+                            # AudioService.interrupted is reserved for explicit ESC cancellation.
                             await self._flush_playback("VAD")
 
                         if sc.output_transcription and sc.output_transcription.text:
@@ -2131,8 +2134,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
                             # If this turn_complete ends an interrupted response, clear the
                             # flag and skip all further processing for that turn.
-                            if self._interrupted:
-                                self._release_interrupt(self._interrupt_serial)
+                            if self._runtime.audio.interrupted:
+                                self._release_interrupt(
+                                    self._runtime.audio.interrupt_generation
+                                )
                                 in_buf  = []
                                 out_buf = []
                                 self._reset_input_source()
@@ -2206,8 +2211,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         self._turn_done_event.clear()
                         if self._briefing_phase1_done:
                             self._briefing_phase1_done.set()
-                        if self._shutdown_after_turn and self._shutdown_farewell_audio_seen:
-                            self._finish_shutdown_after_audio()
+                        if self._runtime.lifecycle.shutdown_requested:
+                            self._runtime.lifecycle.observe_playback_drained()
+                            if self._runtime.lifecycle.ready_to_finish():
+                                self._finish_shutdown_after_audio()
                     continue
                 self.set_speaking(True)
                 try:
@@ -2215,7 +2222,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
                     def _write_current_chunk() -> None:
                         with self._output_stream_lock:
-                            if generation != self._playback_generation or self._interrupted:
+                            if (
+                                generation != self._playback_generation
+                                or self._runtime.audio.interrupted
+                            ):
                                 return
                             stream.write(chunk)
 
@@ -2234,10 +2244,8 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
     def _finish_shutdown_after_audio(self) -> None:
         """Exit once, only after Gemini's farewell has drained from playback."""
-        if self._shutdown_started:
+        if not self._runtime.lifecycle.begin_finish():
             return
-        self._shutdown_started = True
-        self._shutdown_after_turn = False
         update_runtime_state("jarvis", "off", reason="voice_shutdown")
         self.ui.write_log("SYS: Farewell complete. Shutting down JARVIS.")
 
@@ -2251,7 +2259,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
     async def _shutdown_fallback_timeout(self) -> None:
         """Guarantee an explicit shutdown even if Gemini produces no farewell audio."""
         await asyncio.sleep(12)
-        if self._shutdown_after_turn and not self._shutdown_started:
+        if self._runtime.lifecycle.ready_to_finish():
             self.ui.write_log("SYS: Farewell audio timed out; completing shutdown.")
             self._finish_shutdown_after_audio()
 
@@ -2486,23 +2494,20 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     asyncio.TaskGroup() as tg,
                 ):
                     self.session          = session
+                    connection_outcome = self._runtime.on_transport_connected(
+                        session
+                    )
                     self.audio_in_queue   = asyncio.Queue()
                     self.out_queue        = asyncio.Queue(maxsize=25)
                     self._turn_done_event = asyncio.Event()
 
                     # Reset transient state that must not carry over from a previous session
-                    self._vision_busy          = False
-                    self._vision_last_time     = 0.0
-                    self._camera_frame_pending = False
-                    self._interrupted          = False
-                    self._audio_watchdog.reset()
                     self._reset_input_source()
 
                     print("[JARVIS] Connected.")
                     self.ui.set_state("LISTENING")
-                    if not self._ever_connected:
+                    if connection_outcome == "online":
                         self.ui.write_log("SYS: JARVIS online.")
-                        self._ever_connected = True
                     else:
                         self.ui.write_log("NET: Live session restored.")
 
@@ -2563,6 +2568,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 else:
                     self._conn_backoff = 3
             finally:
+                self._runtime.on_transport_disconnected(self.session)
                 self.session = None
 
             await self._flush_playback("live session reconnect")
