@@ -277,7 +277,12 @@ Límites:
 
 Los archivos reales de API, OAuth, permisos, certificados, memoria y logs están ignorados por Git. La auditoría sólo comprobó su presencia, no leyó su contenido.
 
-La configuración no está centralizada: `api_keys.json` y los nombres de modelos se consultan desde `main.py`, `config`, `memory`, `dashboard` y múltiples acciones. Algunos fallos devuelven `{}` o valores por defecto sin diagnóstico suficiente.
+La configuración todavía no está centralizada: `api_keys.json` y los nombres
+de modelos se consultan desde `main.py`, `config`, `memory`, `dashboard` y
+múltiples acciones. Fase 9 cerró ese ownership para el piloto `web_search`:
+`main.py` entrega la credencial al adaptador, mientras modelos, deadline y SDK
+quedan en `core/providers/google.py`. Algunos fallos del resto de acciones aún
+devuelven `{}` o valores por defecto sin diagnóstico suficiente.
 
 `requirements.txt` permite iniciar la base actual en el entorno existente, pero no declara varias dependencias importadas por capacidades anunciadas: `python-docx`, `pandas`, `openpyxl`, `PyPDF2`/`pdfplumber`, `pydub`, `faster-whisper`, `kokoro`, `miniaudio` y `torch`. Algunas son opcionales o legado no conectado; esa distinción todavía no está documentada ni separada en extras.
 
@@ -293,7 +298,8 @@ La configuración no está centralizada: `api_keys.json` y los nombres de modelo
 6. Persistencia de permisos no atómica.
 7. Sin correlación extremo a extremo ni auditoría común de tool calls.
 8. `ToolResult` insuficiente para afirmar efectos externos.
-9. Proveedores Gemini importados directamente por numerosas acciones.
+9. Proveedores Gemini aún importados directamente por numerosas acciones;
+   `web_search` ya consume un puerto inyectado.
 10. Configuración, modelos y manejo de errores distribuidos.
 11. 360 handlers de excepción amplios, 67 con `pass`, y 303 llamadas `print()` en el árbol versionado.
 12. Dependencias opcionales/legacy mezcladas con capacidades principales.

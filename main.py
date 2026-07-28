@@ -61,6 +61,8 @@ from core.runtime_state import update_runtime_state
 from core.request_audit import RequestAuditSink
 from core.request_context import RequestContext
 from core.ui_boundary import UiCommandFacade
+from core.providers import GroundedSearchProvider
+from core.providers.google import GoogleGroundedSearchProvider
 from core.permissions import (
     ExecutionContext, InputSource, PermissionLevel, PermissionPolicy, PermissionStore,
     build_preview,
@@ -865,10 +867,18 @@ TOOL_DECLARATIONS = [
 
 class JarvisLive:
 
-    def __init__(self, ui: JarvisUI):
+    def __init__(
+        self,
+        ui: JarvisUI,
+        search_provider: GroundedSearchProvider | None = None,
+    ):
         _load_action_dependencies()
         self.ui             = ui
         self.ui_tools       = UiCommandFacade(self.ui)
+        self.search_provider = search_provider or GoogleGroundedSearchProvider.from_api_key(
+            _get_api_key(),
+            log=self.ui_tools.write_log,
+        )
         self._runtime       = RuntimeServices()
         self.session              = None
         self.audio_in_queue       = None
@@ -923,7 +933,11 @@ class JarvisLive:
                 speak=self.speak,
                 cancellation_token=cancellation_token,
             ),
-            "web_search": lambda args: web_search_action(parameters=args, player=self.ui_tools),
+            "web_search": lambda args: web_search_action(
+                parameters=args,
+                player=self.ui_tools,
+                provider=self.search_provider,
+            ),
             "file_processor": self._run_file_processor,
             "computer_control": lambda args: computer_control(parameters=args, player=self.ui_tools),
             "game_updater": lambda args: game_updater(
@@ -1802,7 +1816,14 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 result = r or "Done."
 
             elif name == "web_search":
-                r = await loop.run_in_executor(None, lambda: web_search_action(parameters=args, player=self.ui_tools))
+                r = await loop.run_in_executor(
+                    None,
+                    lambda: web_search_action(
+                        parameters=args,
+                        player=self.ui_tools,
+                        provider=self.search_provider,
+                    ),
+                )
                 result = r or "Done."
                 # Mirror results to the on-screen content panel
                 _mode = args.get("mode", "search")

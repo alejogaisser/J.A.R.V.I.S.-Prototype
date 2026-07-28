@@ -17,7 +17,7 @@ sin añadir una fila y declarar sus límites.
 | Tool | Risk | Policy actual | Preview | Retorno actual | Verificación | Rollback | Timeout s | Route | Cobertura | Migración pendiente |
 | --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- |
 | `open_app` | local_change | FREE | No | Texto legacy | Sin contrato | Cierre manual | 30 | executor | Seguridad estática | Evidencia de proceso/ventana |
-| `web_search` | read_only | FREE | No | Texto legacy | Fuentes en texto | No aplica | 30 | executor | Clock parcial | Provider + citas tipadas |
+| `web_search` | read_only | FREE | No | Texto legacy | Fuentes en texto | No aplica | 30 | executor | Clock + provider fakes/fallback | Citas tipadas |
 | `system_status` | read_only | FREE | No | Texto legacy | Lectura puntual | No aplica | 30 | executor | Policy | Resultado estructurado |
 | `weather_report` | read_only | FREE | No | Texto legacy | Fuente en texto | No aplica | 30 | executor | Indirecta | Provider inyectable |
 | `send_message` | external_effect | CONFIRM_ALWAYS | Sí | Texto legacy | Sin contrato | No disponible | 30 | executor | Policy/preview | ID remoto + estado de entrega |

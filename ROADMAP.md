@@ -180,6 +180,7 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 9 - Adaptadores de proveedores
 
+- **Estado:** implementada en `codex/10-provider-adapters`; pendiente de merge.
 - **Objetivo:** separar Live, texto, visión y búsqueda; inyectar interfaces en acciones.
 - **Archivos previstos:** `core/model_fallback.py`, nuevos adapters, acciones piloto, `main.py`.
 - **Riesgo:** medio-alto.
@@ -187,6 +188,11 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Criterio de aceptación:** la acción piloto no importa `google.genai`, no elige modelos ni lee secretos.
 - **Pruebas:** fake providers, timeouts, fallback, error permanente/transitorio y cuota.
 - **Rollback:** adapter que envuelve las llamadas actuales.
+- **Evidencia de rama:** `core/providers` declara puertos estables para las
+  cuatro capacidades y un adaptador Google de búsqueda. `web_search` es el
+  piloto: recibe el provider desde `JarvisLive`, conserva DDG como fallback y
+  no conoce SDK, clave ni modelos. Las migraciones concretas de Live, texto y
+  visión quedan como lotes posteriores sobre los contratos ya definidos.
 
 ### Fase 10 - Configuración, observabilidad y calidad continuas
 
