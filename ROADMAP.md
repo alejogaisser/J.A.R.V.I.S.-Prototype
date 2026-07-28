@@ -72,8 +72,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 3 - Persistencia atómica de permisos
 
-- **Estado:** implementación y baseline completos el 2026-07-28 en
-  `codex/04-atomic-permission-store`; pendiente de integración y publicación.
+- **Estado:** completada e integrada en `main` el 2026-07-28 desde
+  `codex/04-atomic-permission-store`.
 - **Objetivo:** evitar JSON parcial y fallar cerrado.
 - **Archivos previstos:** `core/permissions/store.py`, tests de permisos y fault injection.
 - **Riesgo:** medio; afecta preferencias de seguridad.
@@ -85,7 +85,7 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   validación antes de `os.replace`; backup sólo de un primario válido y
   recuperación primaria/backup/defaults. Lock compartido por ruta para
   concurrencia entre instancias del proceso. Baseline: 247 tests y 102 subtests
-  aprobados.
+  aprobados antes y después del merge `f4fe895`.
 
 ### Fase 4 - `ToolResult` v2 compatible
 
