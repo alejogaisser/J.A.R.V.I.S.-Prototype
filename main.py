@@ -60,6 +60,7 @@ from services.runtime import RuntimeServices
 from core.runtime_state import update_runtime_state
 from core.request_audit import RequestAuditSink
 from core.request_context import RequestContext
+from core.ui_boundary import UiCommandFacade
 from core.permissions import (
     ExecutionContext, InputSource, PermissionLevel, PermissionPolicy, PermissionStore,
     build_preview,
@@ -867,6 +868,7 @@ class JarvisLive:
     def __init__(self, ui: JarvisUI):
         _load_action_dependencies()
         self.ui             = ui
+        self.ui_tools       = UiCommandFacade(self.ui)
         self._runtime       = RuntimeServices()
         self.session              = None
         self.audio_in_queue       = None
@@ -899,35 +901,35 @@ class JarvisLive:
         self._active_input_source = self._default_source()
         self._input_source_locked = False
         handlers = {
-            "open_app": lambda args: open_app(parameters=args, response=None, player=self.ui),
-            "weather_report": lambda args: weather_action(parameters=args, player=self.ui),
-            "browser_control": lambda args: browser_control(parameters=args, player=self.ui),
-            "file_controller": lambda args: file_controller(parameters=args, player=self.ui),
+            "open_app": lambda args: open_app(parameters=args, response=None, player=self.ui_tools),
+            "weather_report": lambda args: weather_action(parameters=args, player=self.ui_tools),
+            "browser_control": lambda args: browser_control(parameters=args, player=self.ui_tools),
+            "file_controller": lambda args: file_controller(parameters=args, player=self.ui_tools),
             "send_message": lambda args: send_message(
-                parameters=args, response=None, player=self.ui, session_memory=None
+                parameters=args, response=None, player=self.ui_tools, session_memory=None
             ),
-            "reminder": lambda args: reminder(parameters=args, response=None, player=self.ui),
-            "youtube_video": lambda args: youtube_video(parameters=args, response=None, player=self.ui),
+            "reminder": lambda args: reminder(parameters=args, response=None, player=self.ui_tools),
+            "youtube_video": lambda args: youtube_video(parameters=args, response=None, player=self.ui_tools),
             "computer_settings": lambda args: computer_settings(
-                parameters=args, response=None, player=self.ui
+                parameters=args, response=None, player=self.ui_tools
             ),
-            "desktop_control": lambda args: desktop_control(parameters=args, player=self.ui),
+            "desktop_control": lambda args: desktop_control(parameters=args, player=self.ui_tools),
             "code_helper": lambda args: code_helper(
-                parameters=args, player=self.ui, speak=self.speak
+                parameters=args, player=self.ui_tools, speak=self.speak
             ),
             "dev_agent": lambda args, cancellation_token=None: dev_agent(
                 parameters=args,
-                player=self.ui,
+                player=self.ui_tools,
                 speak=self.speak,
                 cancellation_token=cancellation_token,
             ),
-            "web_search": lambda args: web_search_action(parameters=args, player=self.ui),
+            "web_search": lambda args: web_search_action(parameters=args, player=self.ui_tools),
             "file_processor": self._run_file_processor,
-            "computer_control": lambda args: computer_control(parameters=args, player=self.ui),
+            "computer_control": lambda args: computer_control(parameters=args, player=self.ui_tools),
             "game_updater": lambda args: game_updater(
-                parameters=args, player=self.ui, speak=self.speak
+                parameters=args, player=self.ui_tools, speak=self.speak
             ),
-            "flight_finder": lambda args: flight_finder(parameters=args, player=self.ui),
+            "flight_finder": lambda args: flight_finder(parameters=args, player=self.ui_tools),
             "system_status": lambda args: str(get_system_status()),
             "memory_list": lambda args: list_memories(args.get("category"), args.get("status", "active")),
             "memory_search": lambda args: search_memories(args.get("query", ""), args.get("category")),
@@ -938,14 +940,14 @@ class JarvisLive:
             "memory_restore": lambda args: restore_memory(args["memory_id"]),
             "memory_graph": self._open_memory_graph,
             "geo_map": self._run_geo_map,
-            "math_engine": lambda args: study_engine(parameters=args, player=self.ui),
-            "study_engine": lambda args: study_engine(parameters=args, player=self.ui),
-            "account_connector": lambda args: account_connector(parameters=args, player=self.ui),
-            "obsidian_connector": lambda args: obsidian_connector(parameters=args, player=self.ui),
-            "pet_mode": lambda args: self.ui.enter_pet_mode(
+            "math_engine": lambda args: study_engine(parameters=args, player=self.ui_tools),
+            "study_engine": lambda args: study_engine(parameters=args, player=self.ui_tools),
+            "account_connector": lambda args: account_connector(parameters=args, player=self.ui_tools),
+            "obsidian_connector": lambda args: obsidian_connector(parameters=args, player=self.ui_tools),
+            "pet_mode": lambda args: self.ui_tools.enter_pet_mode(
                 "LISTENING", "Pet Mode active."
             ) or "Pet Mode activated; the voice session remains active.",
-            "interface_control": lambda args: self.ui.control_interface(
+            "interface_control": lambda args: self.ui_tools.control_interface(
                 args.get("action", "open"),
                 args.get("target", "status"),
                 args.get("mode", ""),
@@ -961,31 +963,31 @@ class JarvisLive:
         )
 
     def _open_memory_graph(self, _args: dict):
-        self.ui.show_memory_graph()
+        self.ui_tools.show_memory_graph()
         return "Interactive local memory graph opened and reindexed."
 
     def _run_geo_map(self, args: dict):
         action = str(args.get("action", "open")).lower()
         if action == "open":
-            self.ui.show_geo()
+            self.ui_tools.show_geo()
             return "Holographic geographic workspace opened in local mode."
         result = open_geo(args)
         if action in {"focus", "place"}:
-            self.ui.show_geo(result)
+            self.ui_tools.show_geo(result)
         elif action == "route":
             route_view = dict(result.get("destination") or {})
             route_view["path"] = result.get("path", [])
-            self.ui.show_geo(route_view)
+            self.ui_tools.show_geo(route_view)
             distance = float(result.get("distance_meters", 0)) / 1000
-            self.ui.show_content(
+            self.ui_tools.show_content(
                 "ROUTE / OPEN DATA",
                 f"{result['origin'].get('name')}  →  {result['destination'].get('name')}\n"
                 f"DISTANCE  {distance:.1f} km\nDURATION  {result.get('duration', 'N/A')}\n"
                 f"MODE      {result.get('travel_mode', 'DRIVE')}",
             )
         elif action == "weather":
-            self.ui.show_geo(result.get("place"))
-            self.ui.show_content(
+            self.ui_tools.show_geo(result.get("place"))
+            self.ui_tools.show_content(
                 "WEATHER / OPEN-METEO",
                 json.dumps(result, ensure_ascii=False, indent=2)[:4000],
             )
@@ -993,9 +995,9 @@ class JarvisLive:
 
     def _run_file_processor(self, args: dict):
         args = dict(args)
-        if not args.get("file_path") and self.ui.current_file:
-            args["file_path"] = self.ui.current_file
-        return file_processor(parameters=args, player=self.ui, speak=self.speak)
+        if not args.get("file_path") and self.ui_tools.current_file:
+            args["file_path"] = self.ui_tools.current_file
+        return file_processor(parameters=args, player=self.ui_tools, speak=self.speak)
 
     def _manage_permission(self, args: dict) -> str:
         action = str(args.get("action", "status")).lower().strip()
@@ -1670,27 +1672,27 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         self.ui.show_content(label, raw_result)
 
             elif name == "weather_report":
-                r = await loop.run_in_executor(None, lambda: weather_action(parameters=args, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: weather_action(parameters=args, player=self.ui_tools))
                 result = r or "Weather delivered."
 
             elif name == "browser_control":
-                r = await loop.run_in_executor(None, lambda: browser_control(parameters=args, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: browser_control(parameters=args, player=self.ui_tools))
                 result = r or "Done."
 
             elif name == "file_controller":
-                r = await loop.run_in_executor(None, lambda: file_controller(parameters=args, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: file_controller(parameters=args, player=self.ui_tools))
                 result = r or "Done."
 
             elif name == "send_message":
-                r = await loop.run_in_executor(None, lambda: send_message(parameters=args, response=None, player=self.ui, session_memory=None))
+                r = await loop.run_in_executor(None, lambda: send_message(parameters=args, response=None, player=self.ui_tools, session_memory=None))
                 result = r or f"Message sent to {args.get('receiver')}."
 
             elif name == "reminder":
-                r = await loop.run_in_executor(None, lambda: reminder(parameters=args, response=None, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: reminder(parameters=args, response=None, player=self.ui_tools))
                 result = r or "Reminder set."
 
             elif name == "youtube_video":
-                r = await loop.run_in_executor(None, lambda: youtube_video(parameters=args, response=None, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: youtube_video(parameters=args, response=None, player=self.ui_tools))
                 result = r or "Done."
 
             elif name == "screen_process":
@@ -1738,7 +1740,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     "description": args.get("description", ""),
                 }
                 r = await loop.run_in_executor(
-                    None, lambda: computer_control(parameters=mouse_args, player=self.ui)
+                    None, lambda: computer_control(parameters=mouse_args, player=self.ui_tools)
                 )
                 result = r or "Visual mouse action completed."
 
@@ -1784,23 +1786,23 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 result = saved
 
             elif name == "computer_settings":
-                r = await loop.run_in_executor(None, lambda: computer_settings(parameters=args, response=None, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: computer_settings(parameters=args, response=None, player=self.ui_tools))
                 result = r or "Done."
 
             elif name == "desktop_control":
-                r = await loop.run_in_executor(None, lambda: desktop_control(parameters=args, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: desktop_control(parameters=args, player=self.ui_tools))
                 result = r or "Done."
 
             elif name == "code_helper":
-                r = await loop.run_in_executor(None, lambda: code_helper(parameters=args, player=self.ui, speak=self.speak))
+                r = await loop.run_in_executor(None, lambda: code_helper(parameters=args, player=self.ui_tools, speak=self.speak))
                 result = r or "Done."
 
             elif name == "dev_agent":
-                r = await loop.run_in_executor(None, lambda: dev_agent(parameters=args, player=self.ui, speak=self.speak))
+                r = await loop.run_in_executor(None, lambda: dev_agent(parameters=args, player=self.ui_tools, speak=self.speak))
                 result = r or "Done."
 
             elif name == "web_search":
-                r = await loop.run_in_executor(None, lambda: web_search_action(parameters=args, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: web_search_action(parameters=args, player=self.ui_tools))
                 result = r or "Done."
                 # Mirror results to the on-screen content panel
                 _mode = args.get("mode", "search")
@@ -1809,24 +1811,24 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     _label = f"{_mode.upper()} — {_query[:38]}" if _query else _mode.upper()
                     self.ui.show_content(_label, r)
             elif name == "file_processor":
-                if not args.get("file_path") and self.ui.current_file:
-                    args["file_path"] = self.ui.current_file
+                if not args.get("file_path") and self.ui_tools.current_file:
+                    args["file_path"] = self.ui_tools.current_file
                 r = await loop.run_in_executor(
                     None,
-                    lambda: file_processor(parameters=args, player=self.ui, speak=self.speak)
+                    lambda: file_processor(parameters=args, player=self.ui_tools, speak=self.speak)
                 )
                 result = r or "Done."
 
             elif name == "computer_control":
-                r = await loop.run_in_executor(None, lambda: computer_control(parameters=args, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: computer_control(parameters=args, player=self.ui_tools))
                 result = r or "Done."
 
             elif name == "game_updater":
-                r = await loop.run_in_executor(None, lambda: game_updater(parameters=args, player=self.ui, speak=self.speak))
+                r = await loop.run_in_executor(None, lambda: game_updater(parameters=args, player=self.ui_tools, speak=self.speak))
                 result = r or "Done."
 
             elif name == "flight_finder":
-                r = await loop.run_in_executor(None, lambda: flight_finder(parameters=args, player=self.ui))
+                r = await loop.run_in_executor(None, lambda: flight_finder(parameters=args, player=self.ui_tools))
                 result = r or "Done."
 
             elif name == "system_status":

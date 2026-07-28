@@ -2179,6 +2179,7 @@ class MainWindow(QMainWindow):
     _interface_sig = pyqtSignal(object)
     _study_sig = pyqtSignal(object)
     _main_mode_sig = pyqtSignal()
+    _phone_connected_sig = pyqtSignal()
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -2199,6 +2200,7 @@ class MainWindow(QMainWindow):
         self.on_text_command   = None
         self.on_remote_clicked = None   # callable: () -> (url, key) | None
         self.on_interrupt      = None   # callable: () -> None — stop JARVIS mid-speech
+        self._tool_state_lock  = threading.RLock()
         self._muted            = False
         self._listen_mode       = "always"   # toggle | always
         self._talk_enabled      = True
@@ -2332,6 +2334,7 @@ class MainWindow(QMainWindow):
         self._workspace_sig.connect(self._show_workspace_request)
         self._interface_sig.connect(self._execute_interface_request)
         self._study_sig.connect(self._show_study_request)
+        self._phone_connected_sig.connect(self.notify_phone_connected)
         self._cam_stop = threading.Event()
         self._cam_lock = threading.Lock()
         self._cam_generation = 0
@@ -2517,7 +2520,9 @@ class MainWindow(QMainWindow):
                             QImage.Format.Format_BGR888,
                         ).copy()
                         self._cam_frame_sig.emit(image)
-                    if self._camera_frame_callback and now - self._last_camera_ai_frame >= 1.0:
+                    with self._cam_lock:
+                        callback = self._camera_frame_callback
+                    if callback and now - self._last_camera_ai_frame >= 1.0:
                         self._last_camera_ai_frame = now
                         try:
                             ok, buf = cv2.imencode(
@@ -2526,7 +2531,7 @@ class MainWindow(QMainWindow):
                                 [cv2.IMWRITE_JPEG_QUALITY, profile.jpeg_quality],
                             )
                             if ok:
-                                self._camera_frame_callback(buf.tobytes())
+                                callback(buf.tobytes())
                         except Exception as exc:
                             print(f"[Camera] AI frame callback failed: {exc}")
         except Exception as e:
@@ -2549,11 +2554,13 @@ class MainWindow(QMainWindow):
 
     def stop_camera_stream(self) -> None:
         self._cam_stop.set()
-        self._camera_frame_callback = None
+        with self._cam_lock:
+            self._camera_frame_callback = None
         self._cam_stream_sig.emit(False)
 
     def set_camera_frame_callback(self, callback) -> None:
-        self._camera_frame_callback = callback
+        with self._cam_lock:
+            self._camera_frame_callback = callback
 
     def set_camera_mode(self, mode: str) -> None:
         self._camera_mode_sig.emit(mode)
@@ -3129,7 +3136,12 @@ class MainWindow(QMainWindow):
         event = request.get("event")
         try:
             artifact = request.get("artifact")
-            opening = bool(request.get("open", False))
+            automatic = bool(request.get("automatic", True))
+            opening = not automatic or (
+                request.get("surface_mode") == "main"
+                and self.isVisible()
+                and not self.isMinimized()
+            )
             if isinstance(artifact, dict):
                 self._study_workspace.set_artifact(artifact, pending=not opening)
             if opening:
@@ -4038,7 +4050,8 @@ class MainWindow(QMainWindow):
         return w
 
     def _on_file_selected(self, path: str):
-        self._current_file = path
+        with self._tool_state_lock:
+            self._current_file = path
         p    = Path(path)
         cat  = _file_category(p)
         icon, _ = _FILE_ICONS.get(cat, _FILE_ICONS["unknown"])
@@ -4059,6 +4072,18 @@ class MainWindow(QMainWindow):
     def notify_phone_connected(self) -> None:
         if self._remote_overlay and self._remote_overlay.isVisible():
             self._remote_overlay.mark_connected()
+
+    def tool_snapshot(self) -> dict:
+        """Return worker-readable state without touching any QWidget."""
+        with self._tool_state_lock:
+            return {
+                "current_file": self._current_file,
+                "listen_mode": self._listen_mode,
+                "microphone_enabled": (
+                    self._listen_mode == "always" or self._talk_enabled
+                ),
+                "muted": self._muted,
+            }
 
     def _open_remote(self):
         if not self.on_remote_clicked:
@@ -4115,7 +4140,8 @@ class MainWindow(QMainWindow):
             self._log.append_log("SYS: \\ ignored — Always Listening is active.")
             return
 
-        self._talk_enabled = not self._talk_enabled
+        with self._tool_state_lock:
+            self._talk_enabled = not self._talk_enabled
         self.hud.muted = not self._talk_enabled
         self._style_mute_btn()
 
@@ -4129,14 +4155,16 @@ class MainWindow(QMainWindow):
     def _toggle_listen_mode(self):
         """Switch between Toggle to Speak and Always Listening."""
         if self._listen_mode == "toggle":
-            self._listen_mode = "always"
-            self._talk_enabled = True
+            with self._tool_state_lock:
+                self._listen_mode = "always"
+                self._talk_enabled = True
             self.hud.muted = False
             self._apply_state("LISTENING")
             self._log.append_log("SYS: Listening mode changed to Always Listening.")
         else:
-            self._listen_mode = "toggle"
-            self._talk_enabled = False
+            with self._tool_state_lock:
+                self._listen_mode = "toggle"
+                self._talk_enabled = False
             self.hud.muted = True
             self._apply_state("STANDBY")
             self._log.append_log("SYS: Listening mode changed to Toggle to Speak. Press \\ to talk.")
@@ -4145,7 +4173,8 @@ class MainWindow(QMainWindow):
 
     def _toggle_mute(self):
         """Compatibility path; the physical mute hotkey is F9 on Windows."""
-        self._talk_enabled = not self._talk_enabled
+        with self._tool_state_lock:
+            self._talk_enabled = not self._talk_enabled
         self.hud.muted = not self.microphone_enabled
         self._style_mute_btn()
 
@@ -4271,6 +4300,7 @@ class JarvisUI:
         self._win._pet_mode_sig.connect(self._apply_pet_mode)
         self._win._main_mode_sig.connect(self._open_from_pet)
         self._start_in_pet_mode = bool(start_in_pet_mode and self._win._ready)
+        self._surface_lock = threading.RLock()
         self._surface_mode = "pet" if self._start_in_pet_mode else "main"
 
         if self._start_in_pet_mode:
@@ -4334,7 +4364,8 @@ class JarvisUI:
         """Complete the desktop-pet to application handoff on the Qt thread."""
         if self._surface_mode == "main" and self._win.isVisible():
             return
-        self._surface_mode = "main"
+        with self._surface_lock:
+            self._surface_mode = "main"
         self._pet.hide_pet()
         self._bring_main_window_to_front()
 
@@ -4342,14 +4373,23 @@ class JarvisUI:
         """Thread-safe App → Pet request used by voice tools and other workers."""
         self._win._pet_mode_sig.emit(state, message)
 
+    def _surface_mode_snapshot(self) -> str:
+        """Copy coordinator state; tolerate minimal test adapters without a lock."""
+        lock = getattr(self, "_surface_lock", None)
+        if lock is None:
+            return self._surface_mode
+        with lock:
+            return self._surface_mode
+
     def control_interface(self, action: str, target: str, mode: str = ""):
         """Run a JARVIS UI command on Qt's thread and return its confirmed result."""
         completed = threading.Event()
+        surface_mode = self._surface_mode_snapshot()
         request = {
             "action": action,
             "target": target,
             "mode": mode,
-            "surface_mode": self._surface_mode,
+            "surface_mode": surface_mode,
             "event": completed,
         }
         self._win._interface_sig.emit(request)
@@ -4368,7 +4408,8 @@ class JarvisUI:
         if self._surface_mode == "pet" and self._pet.isVisible():
             self._pet.set_state(state)
             return
-        self._surface_mode = "pet"
+        with self._surface_lock:
+            self._surface_mode = "pet"
         # A hidden UI must not keep decoding, scaling and uploading webcam
         # frames. Stop the capture before the App -> Pet handoff.
         self._win.stop_camera_stream()
@@ -4402,7 +4443,7 @@ class JarvisUI:
             self._win.activateWindow()
     @property
     def muted(self) -> bool:
-        return self._win._muted
+        return bool(self._win.tool_snapshot()["muted"])
 
     @muted.setter
     def muted(self, v: bool):
@@ -4411,15 +4452,16 @@ class JarvisUI:
 
     @property
     def microphone_enabled(self) -> bool:
-        return self._win._listen_mode == "always" or self._win._talk_enabled
+        return bool(self._win.tool_snapshot()["microphone_enabled"])
 
     @property
     def listen_mode(self) -> str:
-        return self._win._listen_mode
+        return str(self._win.tool_snapshot()["listen_mode"])
 
     @property
     def current_file(self) -> str | None:
-        return self._win._drop_zone.current_file()
+        value = self._win.tool_snapshot()["current_file"]
+        return str(value) if value is not None else None
 
     @property
     def on_text_command(self):
@@ -4446,7 +4488,7 @@ class JarvisUI:
         self._win.on_interrupt = cb
 
     def notify_phone_connected(self) -> None:
-        self._win.notify_phone_connected()
+        self._win._phone_connected_sig.emit()
 
     def set_state(self, state: str):
         self._win._state_sig.emit(state)
@@ -4485,13 +4527,14 @@ class JarvisUI:
 
     def show_study_result(self, artifact: dict | None, automatic: bool = True) -> str:
         """Store a Study result; auto-open only while the main app is already visible."""
-        opening = not automatic or (
-            self._surface_mode == "main"
-            and self._win.isVisible()
-            and not self._win.isMinimized()
-        )
+        surface_mode = self._surface_mode_snapshot()
         completed = threading.Event()
-        request = {"artifact": artifact, "open": opening, "event": completed}
+        request = {
+            "artifact": artifact,
+            "automatic": automatic,
+            "surface_mode": surface_mode,
+            "event": completed,
+        }
         self._win._study_sig.emit(request)
         if not completed.wait(timeout=3.0):
             raise RuntimeError("Study display timed out; the result was not confirmed.")

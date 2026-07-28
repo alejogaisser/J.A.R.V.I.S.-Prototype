@@ -162,6 +162,7 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 8 - Frontera de UI
 
+- **Estado:** implementada en `codex/09-ui-thread-boundary`; pendiente de merge.
 - **Objetivo:** todas las mutaciones de widgets en el hilo Qt; UI emite comandos y consume snapshots.
 - **Archivos previstos:** `ui.py`, `ui_mk2/*`, presenters/ViewModels y workers.
 - **Riesgo:** alto.
@@ -169,6 +170,11 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Criterio de aceptación:** ningún handler de `ToolExecutor` muta widgets desde `to_thread`; filesystem/red/subprocess salen de la capa visual.
 - **Pruebas:** Qt offscreen, afinidad de thread, cierre de cámara, cambios rápidos de panel y Pet/Main.
 - **Rollback:** señales/facades compatibles con métodos actuales.
+- **Evidencia de rama:** `core/ui_boundary.py` define una fachada mínima para
+  handlers; `main.py` deja de entregar `JarvisUI` a las tools; teléfono, Study,
+  archivo seleccionado y cámara cruzan el límite mediante señales, snapshots o
+  locks. `tests/test_ui_thread_boundary.py` cubre superficie pública, afinidad
+  Qt real y regresiones estáticas, junto con las suites Mk II/Mk III.
 
 ### Fase 9 - Adaptadores de proveedores
 
