@@ -926,7 +926,12 @@ class JarvisLive:
             "code_helper": lambda args: code_helper(
                 parameters=args, player=self.ui, speak=self.speak
             ),
-            "dev_agent": lambda args: dev_agent(parameters=args, player=self.ui, speak=self.speak),
+            "dev_agent": lambda args, cancellation_token=None: dev_agent(
+                parameters=args,
+                player=self.ui,
+                speak=self.speak,
+                cancellation_token=cancellation_token,
+            ),
             "web_search": lambda args: web_search_action(parameters=args, player=self.ui),
             "file_processor": self._run_file_processor,
             "computer_control": lambda args: computer_control(parameters=args, player=self.ui),

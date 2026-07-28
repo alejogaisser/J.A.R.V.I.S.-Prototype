@@ -30,7 +30,7 @@ sin añadir una fila y declarar sus límites.
 | `file_controller` | sensitive | Por acción | Sí | `ToolResult` v2 en create/copy/move de archivos; resto legacy | Ruta, tamaño y SHA-256; ausencia de origen en move | Papelera para create/copy; movimiento inverso para move | 30 | executor | Seguridad + verifier piloto | Verificación recursiva y migrar operaciones restantes |
 | `desktop_control` | sensitive | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Sin prueba directa | Clasificación por operación |
 | `code_helper` | sensitive | explain FREE; write/edit/optimize ONCE; resto ALWAYS | No | Texto legacy | Sin contrato | VCS/manual | 120 | executor | Policy/scripts | Sandbox y evidencia |
-| `dev_agent` | sensitive | CONFIRM_ONCE | No | Texto legacy | Sin contrato | VCS/manual | 120 | executor | Policy | Límite de workspace + evidencia |
+| `dev_agent` | sensitive | CONFIRM_ONCE | No | Texto legacy; cancelación v2 en executor | Checkpoints y proceso terminado; efecto parcial tipado | Proyecto/VCS manual declarado disponible | 120 | executor | Policy + cancelación/proceso | Cancelar provider/instalación; límite de workspace + evidencia |
 | `computer_control` | sensitive | Acciones comunes FREE; resto ONCE | No | Texto legacy | UIA/imagen parcial | No disponible | 30 | executor | Seguridad parcial | Riesgo por acción + límites |
 | `game_updater` | external_effect | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Gestor externo | 120 | executor | Seguridad estática | Estado de instalación verificable |
 | `flight_finder` | read_only | FREE | No | Texto legacy | Fuentes en texto | No aplica | 30 | executor | Sin prueba directa | Provider + esquema de resultados |

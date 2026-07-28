@@ -87,12 +87,21 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### H-01 - Timeout no cancela handlers síncronos
 
+- **Estado:** mitigado en Fase 6 para handlers cooperativos y el proceso de
+  ejecución de `dev_agent`; abierto para handlers legacy y transportes que no
+  aceptan señal.
 - **Descripción:** `asyncio.wait_for()` deja de esperar, pero el trabajo iniciado con `asyncio.to_thread()` puede continuar.
 - **Evidencia:** `core/tools/executor.py:88-102`.
 - **Impacto:** una tool puede seguir escribiendo, automatizando o ejecutando después de reportar timeout.
 - **Solución recomendada:** token cooperativo, subprocess groups, cleanup y estado `TIMED_OUT_EFFECT_UNKNOWN`.
 - **Esfuerzo:** alto.
 - **Prioridad:** P0/P1.
+- **Resolución parcial:** el executor registra tokens por `request_id`, señala
+  timeout/cancelación y espera cleanup acotado. El handler puede declarar efecto
+  parcial y rollback mediante `ToolCancelled`; si no reconoce la señal se
+  conserva `effect=unknown`. El runner piloto termina y recolecta el árbol de
+  procesos de `dev_agent`, sin asumir que llamadas de modelo o instalación ya
+  sean cancelables.
 
 ### H-02 - `PermissionStore.save()` no es atómico
 

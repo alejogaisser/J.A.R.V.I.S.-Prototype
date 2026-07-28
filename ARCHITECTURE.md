@@ -183,7 +183,14 @@ Problemas actuales del flujo:
   escritura o ejecución libres por omisión.
 - Fase 2 correlaciona rutas normales y especiales con un `request_id` y registra
   sólo metadata enumerada en un sink que falla sin interrumpir ejecución.
-- `ToolExecutor` aplica timeout a la espera, pero un handler síncrono en `to_thread` puede seguir ejecutándose.
+- `ToolExecutor` entrega `CancellationToken` sólo a handlers que lo aceptan,
+  permite señalarlos por `request_id` y espera cleanup durante una gracia
+  acotada. Un handler legacy no cooperativo todavía puede continuar tras
+  timeout y queda explícitamente `effect=unknown`.
+- El piloto `dev_agent` comprueba checkpoints entre etapas y ejecuta el proceso
+  del proyecto mediante un runner que termina y recolecta su árbol en timeout o
+  cancelación. Instalación de dependencias y llamadas de modelo aún no tienen
+  transporte cancelable.
 - `ToolResult` v2 separa ejecución, efecto, verificación, rollback, duración y
   evidencia; las tools heredadas permanecen `effect=unknown` hasta migrarse.
 - El piloto de `file_controller` captura ruta resuelta, tamaño y SHA-256 después
@@ -247,7 +254,8 @@ La configuración no está centralizada: `api_keys.json` y los nombres de modelo
 2. Clasificación de riesgo incompleta para herramientas con escritura o ejecución.
 3. `main.py` combina composición, estado, transporte, policy y casos de uso.
 4. UI grande y mutaciones potenciales fuera del hilo Qt.
-5. Timeout sin cancelación cooperativa del efecto real.
+5. Cancelación cooperativa disponible sólo en el piloto `dev_agent`; handlers
+   heredados y transportes bloqueantes siguen pendientes.
 6. Persistencia de permisos no atómica.
 7. Sin correlación extremo a extremo ni auditoría común de tool calls.
 8. `ToolResult` insuficiente para afirmar efectos externos.
