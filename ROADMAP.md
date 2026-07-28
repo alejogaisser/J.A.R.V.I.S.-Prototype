@@ -89,8 +89,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 4 - `ToolResult` v2 compatible
 
-- **Estado:** implementación y baseline completos el 2026-07-28 en
-  `codex/05-tool-result-v2`; pendiente de integración y publicación.
+- **Estado:** completada e integrada en `main` el 2026-07-28 desde
+  `codex/05-tool-result-v2`.
 - **Objetivo:** separar ejecución, efecto y verificación.
 - **Archivos previstos:** `core/tools/definitions.py`, `executor.py`, adapters de normalización, tests; sin migrar las 37 tools.
 - **Riesgo:** alto; contrato transversal.
@@ -102,7 +102,7 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   rollback; duración y evidencia serializables; adaptadores de texto, bool,
   mapping, `None` y v2. Timeout declara efecto desconocido, rechazo previo
   declara no aplicado y las 37 tools conservan campos legacy. Baseline: 257
-  tests y 102 subtests aprobados.
+  tests y 102 subtests aprobados antes y después del merge `d150a2a`.
 
 ### Fase 5 - Piloto de verificación
 
