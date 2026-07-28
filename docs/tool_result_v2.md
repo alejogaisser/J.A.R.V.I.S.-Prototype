@@ -46,5 +46,11 @@ Una solicitud rechazada antes de invocar el handler usa
 
 Las rutas normal y especial incluyen metadata v2 en `FunctionResponse` y en el
 evento `completed` del audit sink. No se serializa `data` dentro de esa metadata
-de respuesta. La Fase 5 añadirá verificadores concretos para que operaciones
-piloto puedan afirmar `applied/verified` con evidencia real.
+de respuesta.
+
+La Fase 5 incorpora el primer verifier concreto: `create_file`, `copy` y
+`move` de archivos regulares capturan ruta resuelta, tamaño y SHA-256. Una copia
+o movimiento sólo queda `applied/verified` si la evidencia de destino coincide
+con la fuente; `move` exige además que el origen ya no exista. Si el efecto no
+se observa, el mensaje no lo presenta como verificado. Las operaciones de
+directorios conservan temporalmente el adaptador legacy.
