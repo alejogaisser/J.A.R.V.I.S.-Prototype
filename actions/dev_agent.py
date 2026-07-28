@@ -5,6 +5,14 @@ import re
 import time
 from pathlib import Path
 
+from core.tools import (
+    CancellationToken,
+    EffectStatus,
+    RollbackStatus,
+    ToolCancelled,
+    run_cancellable_process,
+)
+
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -292,16 +300,24 @@ def _open_vscode(project_dir: Path) -> bool:
             continue
     return False
 
-def _run_project(run_command: str, project_dir: Path, timeout: int = 30) -> str:
+def _run_project(
+    run_command: str,
+    project_dir: Path,
+    timeout: int = 30,
+    cancellation_token: CancellationToken | None = None,
+) -> str:
     print(f"[DevAgent] 🚀 Running: {run_command}")
     try:
         parts = run_command.split()
         if parts[0].lower() == "python":
             parts[0] = sys.executable
 
-        result = subprocess.run(
+        result = run_cancellable_process(
             parts,
-            capture_output=True, text=True,
+            cancellation_token=cancellation_token or CancellationToken(),
+            cancellation_effect=EffectStatus.PARTIAL,
+            cancellation_rollback=RollbackStatus.AVAILABLE,
+            text=True,
             encoding="utf-8", errors="replace",
             timeout=timeout,
             cwd=str(project_dir)
@@ -318,8 +334,10 @@ def _run_project(run_command: str, project_dir: Path, timeout: int = 30) -> str:
 
         return "\n\n".join(combined_parts) if combined_parts else "Ran with no output."
 
-    except subprocess.TimeoutExpired:
-        return f"Timed out after {timeout}s — long-running app (server/GUI) is likely working."
+    except ToolCancelled:
+        raise
+    except TimeoutError:
+        return f"Timed out after {timeout}s; the process tree was terminated."
     except FileNotFoundError as e:
         return f"Command not found: {e}"
     except Exception as e:
@@ -443,6 +461,7 @@ def _build_project(
     timeout: int,
     speak=None,
     player=None,
+    cancellation_token: CancellationToken | None = None,
 ) -> str:
 
     def log(msg: str):
@@ -450,9 +469,34 @@ def _build_project(
         if player:
             player.write_log(f"[DevAgent] {msg}")
 
+    def checkpoint(*, started: bool = False) -> None:
+        if cancellation_token is None:
+            return
+        cancellation_token.raise_if_cancelled(
+            effect_status=(
+                EffectStatus.PARTIAL if started else EffectStatus.NOT_APPLIED
+            ),
+            rollback_status=(
+                RollbackStatus.AVAILABLE
+                if started
+                else RollbackStatus.NOT_NEEDED
+            ),
+            evidence=("dev_agent_checkpoint",),
+        )
+
+    def cooperative_wait(seconds: float) -> None:
+        if cancellation_token is None:
+            time.sleep(seconds)
+        elif cancellation_token.wait(seconds):
+            checkpoint(started=True)
+
+    checkpoint()
     log("Planning project structure...")
     try:
         plan = _plan_project(description, language)
+        checkpoint()
+    except ToolCancelled:
+        raise
     except RateLimitError:
         msg = "Rate limit reached, sir. Please try again in a moment."
         if speak: speak(msg)
@@ -466,6 +510,7 @@ def _build_project(
     proj_name    = re.sub(r"[^\w\-]", "_", proj_name)
     project_dir  = PROJECTS_DIR / proj_name
     project_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint(started=True)
 
     files        = plan.get("files", [])
     entry_point  = plan.get("entry_point", "main.py")
@@ -482,6 +527,7 @@ def _build_project(
     file_codes: dict[str, str] = {}
 
     for file_info in sorted_files:
+        checkpoint(started=True)
         file_path = file_info.get("path", "")
         if not file_path:
             continue
@@ -498,12 +544,14 @@ def _build_project(
                     already_written=file_codes,
                 )
                 file_codes[file_path] = code
-                time.sleep(0.4)
+                cooperative_wait(0.4)
                 break
+            except ToolCancelled:
+                raise
             except RateLimitError:
                 if attempt == 0:
                     log("Rate limit — waiting 20s...")
-                    time.sleep(20)
+                    cooperative_wait(20)
                 else:
                     log(f"Rate limit retry failed for {file_path}, skipping.")
             except Exception as e:
@@ -517,16 +565,24 @@ def _build_project(
 
     if dependencies:
         install_result = _install_dependencies(dependencies, project_dir)
+        checkpoint(started=True)
         log(install_result)
 
     _open_vscode(project_dir)
+    checkpoint(started=True)
 
     last_output   = ""
     auto_installs = 0  
 
     for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
+        checkpoint(started=True)
         log(f"Running project (attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
-        last_output = _run_project(run_command, project_dir, timeout)
+        last_output = _run_project(
+            run_command,
+            project_dir,
+            timeout,
+            cancellation_token=cancellation_token,
+        )
         log(f"Output preview: {last_output[:150]}")
 
         if not _has_error(last_output, run_command):
@@ -547,7 +603,7 @@ def _build_project(
             if installed:
                 auto_installs += 1
                 log("Missing dependency installed, retrying...")
-                time.sleep(1)
+                cooperative_wait(1)
                 continue
 
         log(f"Fixing errors (type: {error_type})...")
@@ -562,7 +618,9 @@ def _build_project(
                 entry_point=entry_point,
             )
             file_codes.update(updated)
-            time.sleep(1)
+            cooperative_wait(1)
+        except ToolCancelled:
+            raise
         except RateLimitError:
             msg = "Rate limit reached during fix. Project saved, check it manually in VSCode."
             if speak: speak(msg)
@@ -584,6 +642,7 @@ def dev_agent(
     player=None,
     session_memory=None,
     speak=None,
+    cancellation_token: CancellationToken | None = None,
 ) -> str:
     p            = parameters or {}
     description  = p.get("description", "").strip()
@@ -601,4 +660,5 @@ def dev_agent(
         timeout      = timeout,
         speak        = speak,
         player       = player,
+        cancellation_token = cancellation_token,
     )

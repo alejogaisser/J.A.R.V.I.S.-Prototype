@@ -34,10 +34,15 @@ la migración por lotes de las 37 tools.
 
 ## Timeout y errores
 
-Un timeout se representa como `execution_status=timed_out`,
-`effect_status=unknown` y `verification_status=unknown`. Esto es deliberado:
-`asyncio.wait_for()` deja de esperar, pero un handler síncrono enviado a un
-thread puede seguir ejecutándose.
+Un timeout siempre se representa como `execution_status=timed_out`. Para un
+handler legacy no cooperativo conserva `effect_status=unknown` y evidencia
+`cancellation_unacknowledged`, porque el thread puede seguir ejecutándose.
+
+Un handler opt-in recibe `CancellationToken`. Si reconoce la señal dentro de la
+gracia del executor, `ToolCancelled` conserva el efecto, verificación, rollback
+y evidencia realmente observados y añade `cancellation_acknowledged`. Una
+cancelación explícita usa `execution_status=cancelled`; se localiza por el
+`request_id` activo.
 
 Una solicitud rechazada antes de invocar el handler usa
 `rejected/not_applied`. Una excepción durante el handler usa `failed/unknown`.

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import threading
 import time
 from collections.abc import Mapping
 from dataclasses import replace
 
 from core.request_context import RequestContext
+from .cancellation import CancellationToken, ToolCancelled
 from .definitions import (
     EffectStatus,
     ExecutionStatus,
@@ -127,9 +129,148 @@ def normalize_tool_output(
 
 
 class ToolExecutor:
-    def __init__(self, registry: ToolRegistry, audit_sink=None) -> None:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        audit_sink=None,
+        *,
+        cancellation_grace: float = 1.0,
+    ) -> None:
+        if cancellation_grace <= 0:
+            raise ValueError("Cancellation grace must be positive")
         self.registry = registry
         self.audit_sink = audit_sink
+        self.cancellation_grace = cancellation_grace
+        self._active_lock = threading.Lock()
+        self._active_tokens: dict[str, CancellationToken] = {}
+
+    def cancel(self, request_id: str) -> bool:
+        """Signal an active cooperative execution by its request ID."""
+        with self._active_lock:
+            token = self._active_tokens.get(str(request_id))
+        return token.cancel("requested") if token is not None else False
+
+    @staticmethod
+    def _supports_cancellation(handler) -> bool:
+        try:
+            parameters = inspect.signature(handler).parameters.values()
+        except (TypeError, ValueError):
+            return False
+        return any(
+            parameter.name == "cancellation_token"
+            or parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+
+    def _register_active(
+        self,
+        supports_cancellation: bool,
+        context: RequestContext | None,
+        token: CancellationToken,
+    ) -> str | None:
+        if not supports_cancellation or context is None:
+            return None
+        request_id = context.request_id
+        with self._active_lock:
+            self._active_tokens[request_id] = token
+        return request_id
+
+    def _unregister_active(
+        self,
+        request_id: str | None,
+        token: CancellationToken,
+    ) -> None:
+        if request_id is None:
+            return
+        with self._active_lock:
+            if self._active_tokens.get(request_id) is token:
+                self._active_tokens.pop(request_id, None)
+
+    @staticmethod
+    def _consume_background_result(task: asyncio.Task) -> None:
+        try:
+            task.result()
+        except BaseException:
+            pass
+
+    async def _await_cancellation_cleanup(
+        self,
+        task: asyncio.Task,
+        definition,
+        name: str,
+    ) -> tuple[bool, ToolCancelled | ToolResult | None]:
+        try:
+            value = await asyncio.wait_for(
+                asyncio.shield(task),
+                timeout=self.cancellation_grace,
+            )
+        except asyncio.TimeoutError:
+            task.add_done_callback(self._consume_background_result)
+            return False, None
+        except ToolCancelled as exc:
+            return True, exc
+        except Exception:
+            return True, None
+        return True, normalize_tool_output(
+            name,
+            value,
+            definition.default_result,
+            risk=definition.risk,
+        )
+
+    @staticmethod
+    def _interrupted_result(
+        name: str,
+        *,
+        timed_out: bool,
+        acknowledged: bool,
+        outcome: ToolCancelled | ToolResult | None,
+        timeout: float,
+    ) -> ToolResult:
+        if isinstance(outcome, ToolCancelled):
+            effect = outcome.effect_status
+            verification = outcome.verification_status
+            rollback = outcome.rollback_status
+            evidence = outcome.evidence
+        elif isinstance(outcome, ToolResult):
+            effect = outcome.effect_status
+            verification = outcome.verification_status
+            rollback = outcome.rollback_status
+            evidence = outcome.evidence
+        else:
+            effect = EffectStatus.UNKNOWN
+            verification = VerificationStatus.UNKNOWN
+            rollback = RollbackStatus.UNKNOWN
+            evidence = ()
+        acknowledgement = (
+            "cancellation_acknowledged"
+            if acknowledged
+            else "cancellation_unacknowledged"
+        )
+        if timed_out:
+            message = (
+                f"Tool '{name}' timed out after {timeout:g} seconds; "
+                f"cancellation was {'acknowledged' if acknowledged else 'not acknowledged'}."
+            )
+            execution = ExecutionStatus.TIMED_OUT
+            error_code = "timeout"
+        else:
+            message = (
+                f"Tool '{name}' was cancelled; cleanup was "
+                f"{'acknowledged' if acknowledged else 'not acknowledged'}."
+            )
+            execution = ExecutionStatus.CANCELLED
+            error_code = "cancelled"
+        return ToolResult(
+            False,
+            message,
+            error_code=error_code,
+            execution_status=execution,
+            effect_status=effect,
+            verification_status=verification,
+            rollback_status=rollback,
+            evidence=tuple(evidence) + (acknowledgement,),
+        )
 
     def _audit(self, context: RequestContext | None, event: str, name: str, **metadata) -> None:
         if context is None or self.audit_sink is None:
@@ -205,13 +346,56 @@ class ToolExecutor:
                 started_at,
             )
 
-        async def invoke():
-            if inspect.iscoroutinefunction(definition.handler):
-                return await definition.handler(args)
-            return await asyncio.to_thread(definition.handler, args)
+        token = CancellationToken()
+        supports_cancellation = (
+            definition.cancellable
+            and self._supports_cancellation(definition.handler)
+        )
+        active_request_id = self._register_active(
+            supports_cancellation,
+            context,
+            token,
+        )
 
+        async def invoke():
+            call_kwargs = (
+                {"cancellation_token": token}
+                if supports_cancellation
+                else {}
+            )
+            if inspect.iscoroutinefunction(definition.handler):
+                return await definition.handler(args, **call_kwargs)
+            return await asyncio.to_thread(
+                definition.handler,
+                args,
+                **call_kwargs,
+            )
+
+        task = asyncio.create_task(invoke())
         try:
-            value = await asyncio.wait_for(invoke(), timeout=definition.timeout)
+            value = await asyncio.wait_for(
+                asyncio.shield(task),
+                timeout=definition.timeout,
+            )
+            if token.cancelled:
+                normalized = normalize_tool_output(
+                    name,
+                    value,
+                    definition.default_result,
+                    risk=definition.risk,
+                )
+                return self._completed(
+                    self._interrupted_result(
+                        name,
+                        timed_out=False,
+                        acknowledged=True,
+                        outcome=normalized,
+                        timeout=definition.timeout,
+                    ),
+                    context,
+                    name,
+                    started_at,
+                )
             return self._completed(
                 normalize_tool_output(
                     name,
@@ -224,14 +408,55 @@ class ToolExecutor:
                 started_at,
             )
         except asyncio.TimeoutError:
+            if supports_cancellation:
+                token.cancel("timeout")
+                acknowledged, outcome = await self._await_cancellation_cleanup(
+                    task,
+                    definition,
+                    name,
+                )
+            else:
+                task.add_done_callback(self._consume_background_result)
+                acknowledged, outcome = False, None
             return self._completed(
-                ToolResult(
-                    False,
-                    f"Tool '{name}' timed out after {definition.timeout:g} seconds.",
-                    error_code="timeout",
-                    execution_status=ExecutionStatus.TIMED_OUT,
-                    effect_status=EffectStatus.UNKNOWN,
-                    verification_status=VerificationStatus.UNKNOWN,
+                self._interrupted_result(
+                    name,
+                    timed_out=True,
+                    acknowledged=acknowledged,
+                    outcome=outcome,
+                    timeout=definition.timeout,
+                ),
+                context,
+                name,
+                started_at,
+            )
+        except ToolCancelled as exc:
+            return self._completed(
+                self._interrupted_result(
+                    name,
+                    timed_out=token.reason == "timeout",
+                    acknowledged=True,
+                    outcome=exc,
+                    timeout=definition.timeout,
+                ),
+                context,
+                name,
+                started_at,
+            )
+        except asyncio.CancelledError:
+            token.cancel("caller_cancelled")
+            acknowledged, outcome = await self._await_cancellation_cleanup(
+                task,
+                definition,
+                name,
+            )
+            return self._completed(
+                self._interrupted_result(
+                    name,
+                    timed_out=False,
+                    acknowledged=acknowledged,
+                    outcome=outcome,
+                    timeout=definition.timeout,
                 ),
                 context,
                 name,
@@ -251,3 +476,5 @@ class ToolExecutor:
                 name,
                 started_at,
             )
+        finally:
+            self._unregister_active(active_request_id, token)
