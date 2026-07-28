@@ -62,6 +62,10 @@ class RequestContextTests(unittest.TestCase):
                 operation="default",
                 policy="confirm_always",
                 outcome="confirmation_required",
+                execution_status="rejected",
+                effect_status="not_applied",
+                verification_status="not_requested",
+                rollback_status="not_available",
             )
 
             self.assertTrue(written)
@@ -70,6 +74,8 @@ class RequestContextTests(unittest.TestCase):
             self.assertEqual(event["source"], "ui")
             self.assertEqual(event["tool"], "send_message")
             self.assertEqual(event["operation"], "default")
+            self.assertEqual(event["execution_status"], "rejected")
+            self.assertEqual(event["effect_status"], "not_applied")
             self.assertNotIn("arguments", event)
             self.assertNotIn("message", event)
             self.assertNotIn("token", event)
@@ -169,6 +175,14 @@ class RequestContextTests(unittest.TestCase):
 
         request_id = response.response["request_id"]
         self.assertEqual(
+            response.response["tool_result"]["execution_status"],
+            "succeeded",
+        )
+        self.assertEqual(
+            response.response["tool_result"]["effect_status"],
+            "none",
+        )
+        self.assertEqual(
             [event["event"] for event in sink.events],
             [
                 "requested",
@@ -243,6 +257,14 @@ class RequestContextTests(unittest.TestCase):
             )
 
         request_id = response.response["request_id"]
+        self.assertEqual(
+            response.response["tool_result"]["execution_status"],
+            "succeeded",
+        )
+        self.assertEqual(
+            response.response["tool_result"]["effect_status"],
+            "unknown",
+        )
         self.assertEqual(
             [event["event"] for event in sink.events],
             [

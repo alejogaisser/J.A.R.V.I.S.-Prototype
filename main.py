@@ -24,6 +24,7 @@ import json
 import sys
 import traceback
 import faulthandler
+from dataclasses import replace
 from datetime import datetime
 from core.clock import local_now, prompt_datetime
 from pathlib import Path
@@ -63,7 +64,14 @@ from core.permissions import (
     ExecutionContext, InputSource, PermissionLevel, PermissionPolicy, PermissionStore,
     build_preview,
 )
-from core.tools import ToolExecutor, normalize_tool_output
+from core.tools import (
+    EffectStatus,
+    ExecutionStatus,
+    ToolExecutor,
+    ToolResult,
+    VerificationStatus,
+    normalize_tool_output,
+)
 from core.tools.builtins import SPECIAL_TOOLS, build_builtin_registry
 from memory.memory_manager import (
     load_memory, create_memory, list_memories, search_memories,
@@ -1475,6 +1483,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         result = "Done."
         result_success = True
         result_error = None
+        result_contract: ToolResult | None = None
 
         try:
             definition = self.tool_registry.validate_for_execution(name)
@@ -1636,6 +1645,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 result = execution.message
                 result_success = execution.success
                 result_error = execution.error_code
+                result_contract = execution
                 if name == "account_connector" and execution.success:
                     provider = str(args.get("provider", "")).casefold()
                     action = str(args.get("action", "")).casefold()
@@ -1853,19 +1863,42 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             traceback.print_exc()
             self.speak_error(name, e)
 
-        if name in SPECIAL_TOOLS and result_success:
-            normalized = normalize_tool_output(name, result, "Done.")
-            result = normalized.message
-            result_success = normalized.success
-            result_error = normalized.error_code
         if name in SPECIAL_TOOLS:
+            if result_success:
+                normalized = normalize_tool_output(
+                    name,
+                    result,
+                    "Done.",
+                    risk=definition.risk,
+                )
+            else:
+                normalized = ToolResult(
+                    False,
+                    str(result),
+                    error_code=result_error,
+                    execution_status=ExecutionStatus.FAILED,
+                    effect_status=EffectStatus.UNKNOWN,
+                    verification_status=VerificationStatus.UNKNOWN,
+                )
+            result_contract = replace(
+                normalized,
+                request_id=request_context.request_id,
+                duration_ms=(time.monotonic() - request_started_at) * 1000,
+            )
+            result = result_contract.message
+            result_success = result_contract.success
+            result_error = result_contract.error_code
             self._audit_request(
                 request_context,
                 "completed",
                 name,
                 outcome="success" if result_success else "error",
                 error_code=result_error,
-                duration_ms=(time.monotonic() - request_started_at) * 1000,
+                duration_ms=result_contract.duration_ms,
+                execution_status=result_contract.execution_status.value,
+                effect_status=result_contract.effect_status.value,
+                verification_status=result_contract.verification_status.value,
+                rollback_status=result_contract.rollback_status.value,
             )
 
         if self.ui.microphone_enabled:
@@ -1879,6 +1912,11 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 "result": result,
                 "success": result_success,
                 "error": result_error,
+                "tool_result": (
+                    result_contract.to_dict(include_data=False)
+                    if result_contract is not None
+                    else None
+                ),
             },
             outcome="success" if result_success else "error",
         )

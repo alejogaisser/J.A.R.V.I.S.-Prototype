@@ -57,6 +57,10 @@ class RequestAuditSink:
         policy: str | None = None,
         error_code: str | None = None,
         duration_ms: float | None = None,
+        execution_status: str | None = None,
+        effect_status: str | None = None,
+        verification_status: str | None = None,
+        rollback_status: str | None = None,
     ) -> bool:
         if not self.enabled:
             return False
@@ -82,6 +86,14 @@ class RequestAuditSink:
             payload["error_code"] = _label(error_code)
         if duration_ms is not None:
             payload["duration_ms"] = max(0.0, round(float(duration_ms), 3))
+        if execution_status is not None:
+            payload["execution_status"] = _label(execution_status)
+        if effect_status is not None:
+            payload["effect_status"] = _label(effect_status)
+        if verification_status is not None:
+            payload["verification_status"] = _label(verification_status)
+        if rollback_status is not None:
+            payload["rollback_status"] = _label(rollback_status)
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True)

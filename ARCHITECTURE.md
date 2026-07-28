@@ -69,7 +69,7 @@ flowchart TD
 | `main.py` / `JarvisLive` | Composition root, Gemini Live, audio, visión, dashboard, permisos, tool dispatch, reconexión y shutdown | casi todos los subsistemas | Funcional, muy acoplado |
 | `ui.py` | Ventana, widgets, cámara, archivos, configuración, accesos directos, telemetría y callbacks | PyQt6, filesystem, subprocess, threads | Funcional, monolítico |
 | `ui_mk2/*` | Estado visual, Core/Pet y workspaces Memory/Study/GEO | PyQt6 y WebEngine | Modularización parcial |
-| `core/tools/*` | Definiciones, registro, validación básica, timeout y normalización | biblioteca estándar | Buen núcleo inicial |
+| `core/tools/*` | Definiciones, registro, ToolResult v2, timeout y adaptación legacy | biblioteca estándar | Contrato v2 integrado; tools aún heredadas |
 | `core/request_context.py` / `request_audit.py` | Correlación por solicitud y eventos JSONL sanitizados | biblioteca estándar | Integrado en rutas normal y especial |
 | `core/permissions/*` | Mínimos, preferencias, simulación y decisión contextual | `core.tools` | Implementado con huecos de integración |
 | `core/permissions/store.py` | Preferencias v1/v2, publicación atómica, backup y recuperación | filesystem, lock por ruta | Atómico dentro del proceso |
@@ -184,8 +184,8 @@ Problemas actuales del flujo:
 - Fase 2 correlaciona rutas normales y especiales con un `request_id` y registra
   sólo metadata enumerada en un sink que falla sin interrumpir ejecución.
 - `ToolExecutor` aplica timeout a la espera, pero un handler síncrono en `to_thread` puede seguir ejecutándose.
-- `ToolResult` ya expone correlación; todavía no expresa efecto, evidencia,
-  verificación ni rollback.
+- `ToolResult` v2 separa ejecución, efecto, verificación, rollback, duración y
+  evidencia; las tools heredadas permanecen `effect=unknown` hasta migrarse.
 - La normalización todavía infiere fallos a partir de prefijos de texto.
 - Varios branches heredados bajo `elif name == ...` son inalcanzables porque esas herramientas ya pasaron por el branch normal.
 
