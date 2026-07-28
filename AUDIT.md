@@ -264,12 +264,19 @@ No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs
 
 ### M-06 - `ui.py` y `main.py` siguen concentrando responsabilidades
 
+- **Estado:** mitigado parcialmente en Fase 7 para estado de sesión, audio,
+  visión y shutdown; transporte, IO y casos de uso siguen en `main.py`.
 - **Descripción:** 4.535 y 2.331 líneas respectivamente, con estado, IO y lifecycle mezclados.
 - **Evidencia:** recuento directo y outlines de clases/métodos.
 - **Impacto:** cambios de UI/audio tienen amplio radio de regresión.
 - **Solución recomendada:** extraer servicios/presenters por ownership, no por traslado mecánico.
 - **Esfuerzo:** muy alto.
 - **Prioridad:** P2 tras P0/P1.
+- **Resolución parcial:** `RuntimeServices` compone cuatro owners con
+  transiciones explícitas, locks donde cruzan threads, snapshots inmutables y
+  métricas. Se eliminaron flags duplicados de `JarvisLive` sin cambiar el
+  protocolo Gemini ni mover UI/hardware. Colas, streams y providers continúan
+  pendientes.
 
 ### M-07 - Colas y tareas sin política única
 

@@ -74,6 +74,7 @@ flowchart TD
 | `core/permissions/*` | Mínimos, preferencias, simulación y decisión contextual | `core.tools` | Implementado con huecos de integración |
 | `core/permissions/store.py` | Preferencias v1/v2, publicación atómica, backup y recuperación | filesystem, lock por ruta | Atómico dentro del proceso |
 | `core/live_session.py` | Checkpoint resumible y watchdog de audio | biblioteca estándar | Aislado y probado |
+| `services/*` | Owners de identidad de sesión, interrupción/micrófono, visión/cámara y shutdown | `core.live_session`, locks estándar | Compuestos por `JarvisLive`; snapshots y métricas tipadas |
 | `core/runtime_state.py` | Estado observable por proceso mediante JSON reemplazado | filesystem | Atómico por reemplazo; errores silenciosos deliberados |
 | `actions/*` | SO, navegador, archivos, visión, web, recordatorios, estudio y desarrollo | heterogéneas; varias importan Gemini | Amplio, contratos desiguales |
 | `memory/*` | Memoria v2, historial, expiración, sensibilidad, grafo y scripts | JSON, filesystem | Implementado; falta locking entre procesos |
@@ -150,7 +151,28 @@ Colas y defensas observadas:
 - `audio_in_queue` no tiene máximo explícito.
 - `_playback_generation` invalida escrituras antiguas después de una interrupción.
 - `_speaking_lock` protege parte del estado de reproducción.
-- `_vision_busy`, `_phone_active`, `_interrupted` y `session` no tienen un owner formal único.
+- `RuntimeServices` es owner de reanudación/generación de sesión,
+  interrupción/micrófono, cooldown/backpressure visual y shutdown.
+- `_phone_active`, las colas PCM y el stream físico todavía permanecen bajo
+  `JarvisLive`; sus límites y cierre completo siguen pendientes.
+
+## Ownership de runtime
+
+`JarvisLive` continúa como composition root y conserva la referencia de
+transporte necesaria para enviar/recibir el protocolo Gemini sin modificarlo.
+El estado mutable que antes eran flags dispersos se delega:
+
+| Owner | Estado exclusivo | Transición principal | Métricas/snapshot |
+| --- | --- | --- | --- |
+| `SessionService` | transporte observado, generación y checkpoint resumible | bind/unbind con guard de identidad | conexiones, reconexiones, updates |
+| `AudioService` | interrupción, generación, watchdog y heartbeat de micrófono | interrupt/release/reset | interrupciones y recuperaciones |
+| `VisionService` | análisis en vuelo, cooldown y frame pendiente | try/finally/reset | análisis, frames aceptados/descartados |
+| `LifecycleService` | solicitud, despedida, drenaje, deadline y cierre | request/observe/begin once | solicitudes y estado de cierre |
+
+`RuntimeServices.on_transport_connected()` reinicia sólo estado transitorio de
+audio/visión y conserva el checkpoint. Un disconnect atrasado no puede limpiar
+un transporte nuevo. Los snapshots son inmutables y no contienen audio,
+imágenes, prompts ni secretos.
 
 ## Flujo de herramientas
 
@@ -252,7 +274,8 @@ La configuración no está centralizada: `api_keys.json` y los nombres de modelo
 
 1. Origen remoto perdido antes de policy.
 2. Clasificación de riesgo incompleta para herramientas con escritura o ejecución.
-3. `main.py` combina composición, estado, transporte, policy y casos de uso.
+3. `main.py` aún combina transporte, policy y casos de uso; el estado de
+   sesión/audio/visión/lifecycle ya está extraído en owners.
 4. UI grande y mutaciones potenciales fuera del hilo Qt.
 5. Cancelación cooperativa disponible sólo en el piloto `dev_agent`; handlers
    heredados y transportes bloqueantes siguen pendientes.

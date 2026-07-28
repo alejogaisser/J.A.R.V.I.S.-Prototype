@@ -19,9 +19,9 @@ sin añadir una fila y declarar sus límites.
 | `send_message` | external_effect | CONFIRM_ALWAYS | Sí | Texto legacy | Sin contrato | No disponible | 30 | executor | Policy/preview | ID remoto + estado de entrega |
 | `reminder` | external_effect | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Manual | 30 | executor | Policy parametrizada | Verificar persistencia |
 | `youtube_video` | read_only | FREE | No | Texto legacy | Sin contrato | Cerrar navegador | 30 | executor | Sin prueba directa | Resultado y destino tipados |
-| `screen_process` | read_only | FREE | No | Ruta especial | Captura atómica parcial | No aplica | 30 | special | Seguridad estática | Envelope común + latencia |
-| `close_camera` | read_only | FREE | No | Ruta especial | Estado UI implícito | Reabrir cámara | 30 | special | Seguridad estática | Evento/verificación de cámara |
-| `camera_control` | read_only | FREE | No | Ruta especial | Estado UI implícito | Acción inversa | 30 | special | Cámara parcial | Riesgo por operación + evento |
+| `screen_process` | read_only | FREE | No | Ruta especial | Captura parcial + owner de cooldown | No aplica | 30 | special | Seguridad + runtime owner | Envelope común + latencia |
+| `close_camera` | read_only | FREE | No | Ruta especial | Owner libera frame pendiente; UI implícita | Reabrir cámara | 30 | special | Seguridad + runtime owner | Evento/verificación de cámara |
+| `camera_control` | read_only | FREE | No | Ruta especial | Owner de backpressure; estado UI implícito | Acción inversa | 30 | special | Cámara + runtime owner | Riesgo por operación + evento |
 | `pet_mode` | local_change | FREE | No | Texto legacy | Estado UI implícito | Salir de Pet | 30 | executor | UI | Señal Qt + resultado tipado |
 | `interface_control` | local_change | FREE | No | Texto legacy | Estado UI implícito | Acción inversa | 30 | executor | Interfaz | Señal Qt + afinidad de hilo |
 | `visual_mouse` | read_only | FREE | No | Ruta especial | UIA/imagen parcial | No disponible | 30 | special | Seguridad estática | Riesgo real + envelope común |
@@ -34,7 +34,7 @@ sin añadir una fila y declarar sus límites.
 | `computer_control` | sensitive | Acciones comunes FREE; resto ONCE | No | Texto legacy | UIA/imagen parcial | No disponible | 30 | executor | Seguridad parcial | Riesgo por acción + límites |
 | `game_updater` | external_effect | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Gestor externo | 120 | executor | Seguridad estática | Estado de instalación verificable |
 | `flight_finder` | read_only | FREE | No | Texto legacy | Fuentes en texto | No aplica | 30 | executor | Sin prueba directa | Provider + esquema de resultados |
-| `shutdown_jarvis` | sensitive | FREE | No | Ruta especial | Flags de shutdown | Reinicio manual | 30 | special | Policy | Policy sensible + lifecycle |
+| `shutdown_jarvis` | sensitive | FREE | No | Ruta especial | State machine idempotente con deadline | Reinicio manual | 30 | special | Policy + lifecycle owner | Policy sensible + envelope común |
 | `file_processor` | sensitive | Lectura FREE; escritura ONCE; ejecución ALWAYS | No | Texto/archivo legacy | Sin contrato | Según operación | 30 | executor | Policy parametrizada | Verificación de artefactos |
 | `save_memory` | local_change | Bypass de policy | No | Ruta especial | Lectura posterior no contractual | Forget/manual | 30 | special | Memoria indirecta | Pasar por policy y executor |
 | `memory_list` | read_only | FREE | No | Lista/dict legacy | Datos cargados | No aplica | 30 | executor | Memoria | Resultado paginado/tipado |

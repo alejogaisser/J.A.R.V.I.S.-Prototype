@@ -213,8 +213,15 @@ class AudioVisionRegressionTests(unittest.TestCase):
     def test_shutdown_waits_for_farewell_playback(self):
         source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn("[SHUTDOWN_SCHEDULED]", source)
-        self.assertIn("if self._shutdown_after_turn:", source)
-        self.assertIn("self._shutdown_farewell_audio_seen = True", source)
+        self.assertIn("self._runtime.lifecycle.request_shutdown()", source)
+        self.assertIn(
+            "self._runtime.lifecycle.observe_farewell_audio()",
+            source,
+        )
+        self.assertIn(
+            "self._runtime.lifecycle.observe_playback_drained()",
+            source,
+        )
         self.assertIn("_shutdown_fallback_timeout", source)
         self.assertIn("self._finish_shutdown_after_audio()", source)
         self.assertNotIn('self.speak("Goodbye, sir.")', source)
@@ -261,7 +268,10 @@ class AudioVisionRegressionTests(unittest.TestCase):
         source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn("asyncio.Queue(maxsize=25)", source)
         self.assertIn("self.out_queue.get_nowait()", source)
-        self.assertIn("if jarvis_speaking or self._interrupted:", source)
+        self.assertIn(
+            "if jarvis_speaking or self._runtime.audio.interrupted:",
+            source,
+        )
 
     def test_microphone_stream_recovers_without_reconnecting_session(self):
         tree = ast.parse(Path("main.py").read_text(encoding="utf-8"))
@@ -306,7 +316,10 @@ class AudioVisionRegressionTests(unittest.TestCase):
         )]
         self.assertIn("await asyncio.sleep(0.75)", interrupt)
         self.assertIn("self._release_interrupt(serial)", interrupt)
-        self.assertIn("serial != self._interrupt_serial", interrupt)
+        self.assertIn(
+            "self._runtime.audio.release_interrupt(serial)",
+            interrupt,
+        )
 
     def test_listening_defaults_on_and_escape_works_outside_jarvis(self):
         source = Path("ui.py").read_text(encoding="utf-8")
