@@ -72,6 +72,7 @@ flowchart TD
 | `core/tools/*` | Definiciones, registro, validación básica, timeout y normalización | biblioteca estándar | Buen núcleo inicial |
 | `core/request_context.py` / `request_audit.py` | Correlación por solicitud y eventos JSONL sanitizados | biblioteca estándar | Integrado en rutas normal y especial |
 | `core/permissions/*` | Mínimos, preferencias, simulación y decisión contextual | `core.tools` | Implementado con huecos de integración |
+| `core/permissions/store.py` | Preferencias v1/v2, publicación atómica, backup y recuperación | filesystem, lock por ruta | Atómico dentro del proceso |
 | `core/live_session.py` | Checkpoint resumible y watchdog de audio | biblioteca estándar | Aislado y probado |
 | `core/runtime_state.py` | Estado observable por proceso mediante JSON reemplazado | filesystem | Atómico por reemplazo; errores silenciosos deliberados |
 | `actions/*` | SO, navegador, archivos, visión, web, recordatorios, estudio y desarrollo | heterogéneas; varias importan Gemini | Amplio, contratos desiguales |
@@ -211,7 +212,7 @@ Límites:
 - el lock es sólo intra-proceso;
 - falta `fsync`/recuperación transaccional más fuerte;
 - no hay cifrado opcional de contenido sensible;
-- la memoria puede ser modificada por una ruta especial antes de policy;
+- `save_memory` ya atraviesa policy, pero continúa como ruta especial;
 - `script_memory.py` guarda código y puede ejecutarlo mediante intérpretes locales.
 
 ## Threads, tareas y colas
@@ -291,7 +292,7 @@ flowchart TD
 | Fuente remota eleva el mínimo | `InputSource` se propaga desde dashboard texto/audio y la policy falla cerrada para fuentes desconocidas | Cumplido en Fase 1 |
 | Todas las tool calls pasan por policy central | `save_memory` fue movida detrás de registro, policy y confirmación | Cumplido para las 37 tools; persisten branches especiales posteriores a policy |
 | ToolRegistry y ToolExecutor centralizan el flujo | Existen, pero siete tools son especiales y queda dispatch heredado inalcanzable | Parcial |
-| PermissionStore debe hacerse atómico | `save()` usa `write_text()` directo | Confirmado |
+| PermissionStore debe hacerse atómico | Temporal en mismo directorio, `fsync`, validación, backup y `os.replace` | Cumplido en Fase 3; lock interproceso pendiente |
 | Memoria usa escritura atómica | Temporal + `os.replace` presentes | Confirmado; falta fsync/lock interproceso |
 | 37 herramientas, 102 Python, 22 tests | Recuento directo coincide | Confirmado |
 | Suite 218/1/28 | Ejecución local coincide | Confirmado |

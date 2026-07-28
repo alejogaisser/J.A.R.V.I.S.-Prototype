@@ -2,6 +2,7 @@ config/api_keys.json
 config/wake_word.json
 config/certs/
 config/permissions.json
+config/permissions.json.bak
 config/google_oauth_client.json
 config/microsoft_oauth_client.json
 config/obsidian.json
