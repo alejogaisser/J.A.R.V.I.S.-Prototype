@@ -162,7 +162,7 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 8 - Frontera de UI
 
-- **Estado:** implementada en `codex/09-ui-thread-boundary`; pendiente de merge.
+- **Estado:** completada e integrada en `main`.
 - **Objetivo:** todas las mutaciones de widgets en el hilo Qt; UI emite comandos y consume snapshots.
 - **Archivos previstos:** `ui.py`, `ui_mk2/*`, presenters/ViewModels y workers.
 - **Riesgo:** alto.
@@ -174,7 +174,9 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   handlers; `main.py` deja de entregar `JarvisUI` a las tools; teléfono, Study,
   archivo seleccionado y cámara cruzan el límite mediante señales, snapshots o
   locks. `tests/test_ui_thread_boundary.py` cubre superficie pública, afinidad
-  Qt real y regresiones estáticas, junto con las suites Mk II/Mk III.
+  Qt real y regresiones estáticas, junto con las suites Mk II/Mk III. El commit
+  de implementación `10000db` se integró mediante `a7370bd`; el baseline previo
+  al merge aprobó 290 tests y 104 subtests.
 
 ### Fase 9 - Adaptadores de proveedores
 
