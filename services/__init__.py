@@ -5,6 +5,12 @@ from .lifecycle import LifecycleService, LifecycleSnapshot
 from .runtime import RuntimeServices, RuntimeSnapshot
 from .session import SessionService, SessionSnapshot
 from .vision import VisionService, VisionSnapshot
+from .workers import (
+    WorkerCloseReport,
+    WorkerHealth,
+    WorkerSpec,
+    WorkerSupervisor,
+)
 
 __all__ = [
     "AudioService",
@@ -17,4 +23,8 @@ __all__ = [
     "SessionSnapshot",
     "VisionService",
     "VisionSnapshot",
+    "WorkerCloseReport",
+    "WorkerHealth",
+    "WorkerSpec",
+    "WorkerSupervisor",
 ]

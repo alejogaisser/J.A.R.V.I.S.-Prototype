@@ -15,11 +15,13 @@ $QualityFiles = @(
     "services/runtime.py",
     "services/session.py",
     "services/vision.py",
+    "services/workers.py",
     "scripts/check_secrets.py",
     "tests/test_secret_scanner.py",
     "tests/test_settings.py",
     "tests/test_structured_logging.py",
-    "tests/test_runtime_events.py"
+    "tests/test_runtime_events.py",
+    "tests/test_worker_supervisor.py"
 )
 
 Write-Host "==> Ruff (migrated surface)"

@@ -18,6 +18,9 @@ from playwright.async_api import (
     Playwright,
     TimeoutError as PlaywrightTimeout,
 )
+from core.events import EventPublisher
+from services.workers import WorkerHealth, WorkerSpec, WorkerSupervisor
+
 _OS = platform.system()   # "Windows" | "Darwin" | "Linux"
 
 def _normalize_url(url: str) -> str:
@@ -378,41 +381,126 @@ class _BrowserSession:
         self._loop:    asyncio.AbstractEventLoop | None = None
         self._thread:  threading.Thread | None          = None
         self._ready    = threading.Event()
+        self._lock     = threading.RLock()
+        self._startup_error: BaseException | None = None
 
         self._pw:      Playwright     | None = None
         self._context: BrowserContext | None = None
         self._page:    Page           | None = None
 
-    def start(self):
-        if self._thread and self._thread.is_alive():
-            return
-        self._thread = threading.Thread(
-            target=self._run_loop,
-            daemon=True,
-            name=f"BrowserThread-{self.browser_name}",
-        )
-        self._thread.start()
-        self._ready.wait(timeout=20)
+    def start(self) -> None:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                return
+            self._ready.clear()
+            self._startup_error = None
+            self._thread = threading.Thread(
+                target=self._run_loop,
+                daemon=True,
+                name=f"BrowserThread-{self.browser_name}",
+            )
+            thread = self._thread
+            thread.start()
+        if not self._ready.wait(timeout=20):
+            self.stop()
+            raise RuntimeError(
+                f"Browser worker '{self.browser_name}' did not start within 20s."
+            )
+        if self._startup_error is not None:
+            error = self._startup_error
+            self.stop()
+            raise RuntimeError(
+                f"Browser worker '{self.browser_name}' failed to start."
+            ) from error
+        if not thread.is_alive():
+            raise RuntimeError(
+                f"Browser worker '{self.browser_name}' stopped during startup."
+            )
 
-    def _run_loop(self):
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_until_complete(self._async_init())
-        self._ready.set()
-        self._loop.run_forever()
+    def _run_loop(self) -> None:
+        loop = asyncio.new_event_loop()
+        with self._lock:
+            self._loop = loop
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._async_init())
+            loop.call_soon(self._ready.set)
+            loop.run_forever()
+        except BaseException as exc:
+            self._startup_error = exc
+            self._ready.set()
+        finally:
+            if not loop.is_closed():
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
+                loop.close()
+            with self._lock:
+                if self._loop is loop:
+                    self._loop = None
 
     async def _async_init(self):
         self._pw = await async_playwright().start()
 
     def run(self, coro, timeout: int = 60) -> str:
-        if not self._loop:
+        if not self.is_healthy() or self._loop is None:
             raise RuntimeError(f"Session for '{self.browser_name}' not started.")
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return future.result(timeout=timeout)
 
-    def close(self):
-        if self._loop:
-            asyncio.run_coroutine_threadsafe(self._async_close(), self._loop).result(10)
+    def close(self) -> None:
+        self.stop()
+
+    def stop(self, timeout: float = 10.0) -> None:
+        with self._lock:
+            loop = self._loop
+            thread = self._thread
+        close_error: BaseException | None = None
+        if loop is not None and loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(self._async_close(), loop)
+            try:
+                future.result(timeout=timeout)
+            except BaseException as exc:
+                close_error = exc
+            finally:
+                loop.call_soon_threadsafe(loop.stop)
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=timeout)
+            if thread.is_alive():
+                raise RuntimeError(
+                    f"Browser worker '{self.browser_name}' did not stop."
+                )
+        with self._lock:
+            self._thread = None
+            self._loop = None
+            self._ready.clear()
+        if close_error is not None:
+            raise RuntimeError(
+                f"Browser worker '{self.browser_name}' cleanup failed."
+            ) from close_error
+
+    def is_healthy(self, timeout: float = 0.25) -> bool:
+        with self._lock:
+            loop = self._loop
+            basic_health = bool(
+                self._thread
+                and self._thread.is_alive()
+                and loop
+                and loop.is_running()
+                and self._startup_error is None
+            )
+        if not basic_health or loop is None:
+            return False
+        responsive = threading.Event()
+        try:
+            loop.call_soon_threadsafe(responsive.set)
+        except RuntimeError:
+            return False
+        return responsive.wait(timeout=timeout)
 
     async def _async_close(self):
         if self._context:
@@ -763,14 +851,36 @@ class _SessionRegistry:
         self._sessions:       dict[str, _BrowserSession] = {}
         self._active_browser: str                        = ""
         self._lock            = threading.Lock()
+        self._supervisor = WorkerSupervisor()
+
+    @staticmethod
+    def _worker_name(browser_name: str) -> str:
+        return f"browser:{browser_name}"
 
     def _get_or_create(self, browser_name: str) -> _BrowserSession:
         with self._lock:
             if browser_name not in self._sessions:
                 sess = _BrowserSession(browser_name)
-                sess.start()
+                worker_name = self._worker_name(browser_name)
+                self._supervisor.register(
+                    WorkerSpec(
+                        name=worker_name,
+                        start=sess.start,
+                        stop=sess.stop,
+                        health=sess.is_healthy,
+                        max_restarts=2,
+                        restart_backoff_seconds=0.5,
+                    )
+                )
+                try:
+                    self._supervisor.start(worker_name)
+                except Exception:
+                    self._supervisor.unregister(worker_name)
+                    raise
                 self._sessions[browser_name] = sess
                 print(f"[Registry] New session: {browser_name}")
+            else:
+                self._supervisor.start(self._worker_name(browser_name))
             return self._sessions[browser_name]
 
     def get(self, browser_name: str | None = None) -> _BrowserSession:
@@ -789,9 +899,11 @@ class _SessionRegistry:
 
     def close_one(self, browser_name: str) -> str:
         with self._lock:
-            sess = self._sessions.pop(browser_name, None)
+            sess = self._sessions.get(browser_name)
         if sess:
-            sess.close()
+            self._supervisor.unregister(self._worker_name(browser_name))
+            with self._lock:
+                self._sessions.pop(browser_name, None)
             if self._active_browser == browser_name:
                 self._active_browser = ""
             return f"{browser_name} closed."
@@ -800,15 +912,39 @@ class _SessionRegistry:
     def close_all(self) -> str:
         with self._lock:
             names    = list(self._sessions.keys())
-            sessions = list(self._sessions.values())
-            self._sessions.clear()
-            self._active_browser = ""
-        for s in sessions:
+        closed: list[str] = []
+        failed: list[str] = []
+        for name in names:
             try:
-                s.close()
+                self._supervisor.unregister(self._worker_name(name))
+                with self._lock:
+                    self._sessions.pop(name, None)
+                closed.append(name)
             except Exception:
-                pass
-        return "All browsers closed: " + (", ".join(names) if names else "none")
+                failed.append(name)
+        with self._lock:
+            if self._active_browser in closed:
+                self._active_browser = ""
+        result = "All browsers closed: " + (
+            ", ".join(closed) if closed else "none"
+        )
+        if failed:
+            result += "; failed: " + ", ".join(failed)
+        return result
+
+    def set_event_publisher(self, events: EventPublisher) -> None:
+        self._supervisor.set_event_publisher(events)
+
+    def health(self) -> tuple[WorkerHealth, ...]:
+        return self._supervisor.snapshots()
+
+    def shutdown(self) -> None:
+        self.close_all()
+        report = self._supervisor.close()
+        if report.failed:
+            raise RuntimeError(
+                f"{report.failed} browser worker resources did not stop."
+            )
 
     def list_sessions(self) -> str:
         with self._lock:
@@ -822,6 +958,18 @@ class _SessionRegistry:
 
 
 _registry = _SessionRegistry()
+
+
+def configure_browser_worker_events(events: EventPublisher) -> None:
+    _registry.set_event_publisher(events)
+
+
+def browser_worker_health() -> tuple[WorkerHealth, ...]:
+    return _registry.health()
+
+
+def shutdown_browser_workers() -> None:
+    _registry.shutdown()
 
 def browser_control(
     parameters:    dict = None,

@@ -73,6 +73,16 @@ class InputModality(str, Enum):
     WAKE = "wake"
 
 
+class WorkerPhase(str, Enum):
+    STOPPED = "stopped"
+    STARTING = "starting"
+    RUNNING = "running"
+    DEGRADED = "degraded"
+    RESTARTING = "restarting"
+    STOPPING = "stopping"
+    FAILED = "failed"
+
+
 @dataclass(frozen=True, slots=True)
 class SessionStateChanged:
     header: EventHeader
@@ -229,6 +239,38 @@ class InputReceived:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class WorkerStateChanged:
+    header: EventHeader
+    worker: str
+    phase: WorkerPhase
+    starts: int
+    restarts: int
+    failures: int
+    healthy: bool
+
+    @property
+    def event_name(self) -> str:
+        return "worker_state_changed"
+
+    @property
+    def component(self) -> str:
+        return "workers"
+
+    def log_metadata(self) -> Mapping[str, object]:
+        return _event_metadata(
+            self.header,
+            {
+                "worker": self.worker,
+                "status": self.phase.value,
+                "starts": self.starts,
+                "restarts": self.restarts,
+                "failures": self.failures,
+                "healthy": self.healthy,
+            },
+        )
+
+
 RuntimeEvent: TypeAlias = (
     SessionStateChanged
     | AudioInterruptionChanged
@@ -236,6 +278,7 @@ RuntimeEvent: TypeAlias = (
     | ShutdownStateChanged
     | DashboardConnected
     | InputReceived
+    | WorkerStateChanged
 )
 RuntimeEventHandler: TypeAlias = Callable[[RuntimeEvent], None]
 _RUNTIME_EVENT_TYPES = (
@@ -245,6 +288,7 @@ _RUNTIME_EVENT_TYPES = (
     ShutdownStateChanged,
     DashboardConnected,
     InputReceived,
+    WorkerStateChanged,
 )
 
 

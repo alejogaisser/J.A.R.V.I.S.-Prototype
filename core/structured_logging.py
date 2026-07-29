@@ -28,7 +28,9 @@ _SAFE_METADATA_FIELDS = {
     "duration_ms",
     "event_id",
     "error_code",
+    "failures",
     "generation",
+    "healthy",
     "interrupted",
     "interrupts",
     "modality",
@@ -36,11 +38,14 @@ _SAFE_METADATA_FIELDS = {
     "occurred_at_monotonic",
     "occurred_at_utc",
     "reason",
+    "restarts",
     "reconnects",
     "shutdown_requests",
     "status",
+    "starts",
     "surface",
     "wake_supervised",
+    "worker",
 }
 _SAFE_NUMERIC_METADATA_FIELDS = {
     "analyses_started",
@@ -50,7 +55,10 @@ _SAFE_NUMERIC_METADATA_FIELDS = {
     "interrupts",
     "occurred_at_monotonic",
     "reconnects",
+    "restarts",
     "shutdown_requests",
+    "starts",
+    "failures",
 }
 
 

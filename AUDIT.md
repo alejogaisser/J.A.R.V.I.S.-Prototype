@@ -322,12 +322,18 @@ especializado de entropía.
 
 ### M-07 - Colas y tareas sin política única
 
+- **Estado:** mitigado parcialmente en Fase 12.
 - **Descripción:** `audio_in_queue` no tiene máximo; tareas dashboard se crean fuera de un lifecycle común.
 - **Evidencia:** `main.py:2184-2214`, `1043-1053`.
 - **Impacto:** memoria creciente o tareas huérfanas bajo fallos prolongados.
 - **Solución recomendada:** ownership, límites, métricas de profundidad y cierre explícito.
 - **Esfuerzo:** medio.
 - **Prioridad:** P1 con lifecycle.
+- **Resolución parcial:** `WorkerSupervisor` aporta start/cancel/close
+  idempotentes, health activo, backoff y restart limitado. Browser y visión son
+  pilotos: cierran loop/thread y fallan cerrado si cleanup no demuestra que el
+  worker anterior terminó. Colas Live, dashboard, monitor, proactividad y
+  workers restantes conservan lifecycle heredado.
 
 ### M-08 - Promesas multiplataforma superan la verificación
 

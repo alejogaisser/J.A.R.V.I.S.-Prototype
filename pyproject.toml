@@ -20,6 +20,7 @@ files = [
     "services/runtime.py",
     "services/session.py",
     "services/vision.py",
+    "services/workers.py",
 ]
 check_untyped_defs = true
 disallow_untyped_defs = true
