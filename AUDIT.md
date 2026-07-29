@@ -138,9 +138,9 @@ especializado de entropía.
 - **Prioridad:** P1.
 - **Resolución:** `UiCommandFacade` limita lo que un handler puede pedir a la
   presentación; `JarvisUI` traduce esas órdenes a señales y sólo expone
-  snapshots protegidos para archivo y micrófono. La conexión del teléfono ya no
-  toca el overlay desde el callback del dashboard y el callback de cámara se
-  publica/consume bajo el lock de la sesión.
+  snapshots protegidos para archivo y micrófono. Fase 11 reemplaza el callback
+  dashboard→runtime por `DashboardConnected`; la UI mantiene su señal Qt. El
+  callback de cámara se publica/consume bajo el lock de la sesión.
 
 ### H-04 - Trazabilidad común y verificación obligatoria
 
@@ -315,7 +315,10 @@ especializado de entropía.
   métricas. Se eliminaron flags duplicados de `JarvisLive` sin cambiar el
   protocolo Gemini ni mover UI/hardware. Colas, streams y providers continúan
   pendientes. `UiCommandFacade` reduce el acceso de handlers al contrato de
-  presentación sin intentar dividir mecánicamente `ui.py`.
+  presentación sin intentar dividir mecánicamente `ui.py`. Fase 11 añade un
+  `EventBus` tipado para hechos de sesión, interrupción, visión, shutdown y
+  dashboard; los observers corren fuera del lock del owner y sus fallos quedan
+  aislados. No reemplaza colas, comandos ni lifecycle de workers.
 
 ### M-07 - Colas y tareas sin política única
 

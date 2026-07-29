@@ -19,6 +19,17 @@ import string
 import time
 from pathlib import Path
 
+from core.events import (
+    DashboardConnected,
+    DashboardConnectionKind,
+    EventHeader,
+    EventPublisher,
+    InputModality,
+    InputReceived,
+    NullEventPublisher,
+    publish_safely,
+)
+from core.request_context import InputSource
 from config.settings import get_settings
 
 _DEPS_OK = False
@@ -375,7 +386,7 @@ def _read(name: str) -> str:
 
 class DashboardServer:
 
-    def __init__(self):
+    def __init__(self, events: EventPublisher | None = None):
         self._ip                          = _local_ip()
         self._tokens: set[str]            = set()
         self._token_keys: dict[str, str]  = {}   # auth_token → session_key
@@ -386,6 +397,7 @@ class DashboardServer:
         self._command_queue               = asyncio.Queue()
         self._wake_callback               = None
         self._connect_callback            = None
+        self._events                      = events or NullEventPublisher()
         self._pending_keys: dict[str, float] = {}
         self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
         self._login_attempts: dict[str, list[float]] = {}
@@ -466,6 +478,29 @@ class DashboardServer:
     def set_connect_callback(self, fn) -> None:
         self._connect_callback = fn
 
+    def _notify_connected(self, kind: DashboardConnectionKind) -> None:
+        publish_safely(
+            self._events,
+            DashboardConnected(
+                header=EventHeader.create(),
+                connection_kind=kind,
+            ),
+        )
+        if self._connect_callback:
+            self._connect_callback()
+
+    def _notify_input(self, modality: InputModality) -> None:
+        publish_safely(
+            self._events,
+            InputReceived(
+                header=EventHeader.create(),
+                source=InputSource.DASHBOARD_TEXT,
+                modality=modality,
+            ),
+        )
+        if self._wake_callback:
+            self._wake_callback()
+
     # ── broadcast ────────────────────────────────────────────────────────
 
     async def broadcast(self, msg: dict) -> None:
@@ -528,8 +563,7 @@ class DashboardServer:
                 self._login_attempts.pop(client_ip, None)
                 tok = self._issue_token(entered)
                 self._crypto_keys(entered)               # pre-derive & cache
-                if self._connect_callback:
-                    self._connect_callback()
+                self._notify_connected(DashboardConnectionKind.PIN)
                 asyncio.create_task(self.broadcast(
                     {"type": "sys", "text": "Remote connection established."}
                 ))
@@ -561,8 +595,7 @@ class DashboardServer:
             self._crypto_keys(key)
             self._device_sessions[dev_tok] = {"session_key": key}
 
-            if self._connect_callback:
-                self._connect_callback()
+            self._notify_connected(DashboardConnectionKind.QR)
             asyncio.create_task(self.broadcast(
                 {"type": "sys", "text": "Remote connection established via QR code."}
             ))
@@ -597,8 +630,7 @@ class DashboardServer:
             session_key = self._device_sessions[dev_tok]["session_key"]
             tok = self._issue_token(session_key)
             self._crypto_keys(session_key)
-            if self._connect_callback:
-                self._connect_callback()
+            self._notify_connected(DashboardConnectionKind.KNOWN_DEVICE)
             asyncio.create_task(self.broadcast(
                 {"type": "sys", "text": "Known device reconnected automatically."}
             ))
@@ -628,16 +660,14 @@ class DashboardServer:
                 text = (body.get("text") or "").strip()
             if text:
                 await self._command_queue.put(text)
-                if self._wake_callback:
-                    self._wake_callback()
+                self._notify_input(InputModality.TEXT)
             return JSONResponse({"ok": True})
 
         @app.post("/api/wake")
         async def wake_ep(req: Request):
             if not _auth(req):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
-            if self._wake_callback:
-                self._wake_callback()
+            self._notify_input(InputModality.WAKE)
             return JSONResponse({"ok": True})
 
         # ── Phone mic real-time audio → Gemini Live ──────────────────────────
@@ -777,8 +807,7 @@ class DashboardServer:
                         t   = self._decrypt(tok, enc) if enc else (data.get("text") or "").strip()
                         if t:
                             await self._command_queue.put(t)
-                            if self._wake_callback:
-                                self._wake_callback()
+                            self._notify_input(InputModality.TEXT)
             except WebSocketDisconnect:
                 pass
             finally:

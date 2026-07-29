@@ -20,9 +20,10 @@ modernización que fuercen refactors ajenos.
 ## Superficie
 
 `scripts/validate_quality.ps1` entrega a Ruff una lista explícita de módulos
-migrados y sus pruebas. Mypy usa la lista de seis módulos productivos declarada
-en `pyproject.toml`. No se inspeccionan `main.py`, `ui.py`, audio ni actions
-heredadas hasta migrarlas por frontera.
+migrados y sus pruebas. Mypy usaba inicialmente seis módulos productivos;
+Fase 11 amplía la lista a doce con `core.events` y los cinco
+módulos de owners. No se inspeccionan `main.py`, `ui.py`, hardware de audio ni
+actions heredadas hasta migrarlas por frontera.
 
 Ejecución:
 

@@ -10,7 +10,10 @@ class SessionServiceTests(unittest.TestCase):
     def test_main_composes_runtime_owners_without_duplicate_state_flags(self):
         source = Path("main.py").read_text(encoding="utf-8")
 
-        self.assertIn("self._runtime       = RuntimeServices()", source)
+        self.assertIn(
+            "self._runtime       = RuntimeServices(events=self._events)",
+            source,
+        )
         self.assertIn(
             "self._runtime.on_transport_connected",
             source,

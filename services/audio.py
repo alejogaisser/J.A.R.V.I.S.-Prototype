@@ -6,6 +6,13 @@ import time
 from dataclasses import dataclass, field
 from threading import RLock
 
+from core.events import (
+    AudioInterruptionChanged,
+    EventHeader,
+    EventPublisher,
+    NullEventPublisher,
+    publish_safely,
+)
 from core.live_session import AudioInactivityWatchdog
 
 
@@ -30,15 +37,26 @@ class AudioService:
     interrupts: int = 0
     microphone_callback_at: float = field(default_factory=time.monotonic)
     microphone_recoveries: int = 0
+    events: EventPublisher = field(default_factory=NullEventPublisher, repr=False)
     _lock: RLock = field(default_factory=RLock, repr=False)
 
     def begin_interrupt(self, *, now: float | None = None) -> int:
+        observed_at = time.monotonic() if now is None else now
         with self._lock:
             self.interrupt_generation += 1
             self.interrupts += 1
             self.interrupted = True
-            self.interrupted_at = time.monotonic() if now is None else now
-            return self.interrupt_generation
+            self.interrupted_at = observed_at
+            generation = self.interrupt_generation
+            event = AudioInterruptionChanged(
+                header=EventHeader.create(observed_at=observed_at),
+                interrupted=True,
+                generation=generation,
+                interrupts=self.interrupts,
+                reason="user_interrupt",
+            )
+        publish_safely(self.events, event)
+        return generation
 
     def release_interrupt(self, generation: int) -> bool:
         with self._lock:
@@ -46,7 +64,15 @@ class AudioService:
                 return False
             self.interrupted = False
             self.interrupted_at = 0.0
-            return True
+            event = AudioInterruptionChanged(
+                header=EventHeader.create(),
+                interrupted=False,
+                generation=self.interrupt_generation,
+                interrupts=self.interrupts,
+                reason="released",
+            )
+        publish_safely(self.events, event)
+        return True
 
     def mark_microphone_callback(self, *, now: float | None = None) -> None:
         with self._lock:
@@ -71,11 +97,21 @@ class AudioService:
     def reset_for_transport(self, *, now: float | None = None) -> None:
         observed_at = time.monotonic() if now is None else now
         with self._lock:
+            was_interrupted = self.interrupted
             self.interrupt_generation += 1
             self.interrupted = False
             self.interrupted_at = 0.0
             self.microphone_callback_at = observed_at
             self.watchdog.reset(now=observed_at)
+            event = AudioInterruptionChanged(
+                header=EventHeader.create(observed_at=observed_at),
+                interrupted=False,
+                generation=self.interrupt_generation,
+                interrupts=self.interrupts,
+                reason="transport_reset",
+            )
+        if was_interrupted:
+            publish_safely(self.events, event)
 
     def snapshot(self) -> AudioSnapshot:
         with self._lock:

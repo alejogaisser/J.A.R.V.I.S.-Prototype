@@ -6,13 +6,20 @@ $ErrorActionPreference = "Stop"
 $QualityFiles = @(
     "config/settings.py",
     "core/diagnostics.py",
+    "core/events.py",
     "core/request_audit.py",
     "core/request_context.py",
     "core/structured_logging.py",
+    "services/audio.py",
+    "services/lifecycle.py",
+    "services/runtime.py",
+    "services/session.py",
+    "services/vision.py",
     "scripts/check_secrets.py",
     "tests/test_secret_scanner.py",
     "tests/test_settings.py",
-    "tests/test_structured_logging.py"
+    "tests/test_structured_logging.py",
+    "tests/test_runtime_events.py"
 )
 
 Write-Host "==> Ruff (migrated surface)"

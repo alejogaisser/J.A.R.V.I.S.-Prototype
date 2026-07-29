@@ -59,6 +59,7 @@ faulthandler.enable(_CRASH_LOG_HANDLE, all_threads=True)
 from core.diagnostics import CrashReporter
 from core.security import VoiceConfirmationGate, confirmation_request, safe_tool_args
 from services.runtime import RuntimeServices
+from core.events import DashboardConnected, EventBus, RuntimeEvent
 from core.runtime_state import update_runtime_state
 from core.request_audit import RequestAuditSink
 from core.request_context import RequestContext
@@ -872,6 +873,7 @@ class JarvisLive:
         self,
         ui: JarvisUI,
         search_provider: GroundedSearchProvider | None = None,
+        runtime_events: EventBus | None = None,
     ):
         _load_action_dependencies()
         self.ui             = ui
@@ -880,7 +882,11 @@ class JarvisLive:
             _get_api_key(),
             log=self.ui_tools.write_log,
         )
-        self._runtime       = RuntimeServices()
+        self._events        = runtime_events or EventBus()
+        self._event_subscription = self._events.subscribe(
+            self._on_runtime_event
+        )
+        self._runtime       = RuntimeServices(events=self._events)
         self.session              = None
         self.audio_in_queue       = None
         self.out_queue            = None
@@ -1075,8 +1081,7 @@ class JarvisLive:
         if self._dashboard_tasks_started:
             return
         if self._dashboard is None:
-            self._dashboard = self._dashboard_factory()
-            self._dashboard.set_connect_callback(self._on_phone_connected)
+            self._dashboard = self._dashboard_factory(events=self._events)
         self._dashboard_tasks_started = True
         asyncio.create_task(self._dashboard.serve())
         asyncio.create_task(self._process_dashboard_commands())
@@ -1716,6 +1721,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 if not self._runtime.vision.try_begin_analysis(
                     now=_now,
                     cooldown=_cooldown,
+                    request_id=request_context.request_id,
                 ):
                     _wait = self._runtime.vision.cooldown_remaining(
                         now=_now,
@@ -1859,7 +1865,9 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
             elif name == "shutdown_jarvis":
                 self.ui.write_log("SYS: Shutdown requested.")
-                if self._runtime.lifecycle.request_shutdown():
+                if self._runtime.lifecycle.request_shutdown(
+                    request_id=request_context.request_id,
+                ):
                     asyncio.create_task(self._shutdown_fallback_timeout())
                 result = (
                     "[SHUTDOWN_SCHEDULED] Say one brief, natural goodbye in the user's "
@@ -2454,6 +2462,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         self.ui.write_log("SYS: Phone connected via Remote Dashboard.")
         self.ui.notify_phone_connected()
 
+    def _on_runtime_event(self, event: RuntimeEvent) -> None:
+        if isinstance(event, DashboardConnected):
+            self._on_phone_connected()
+
     # ── dashboard command relay ─────────────────────────────────────────────
 
     async def _process_dashboard_commands(self) -> None:
@@ -2612,6 +2624,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
 def main():
     runtime_log = StructuredRuntimeLog()
+    runtime_events = EventBus()
+    runtime_log_subscription = runtime_events.subscribe(
+        runtime_log.record_runtime_event
+    )
     wake_supervised = os.environ.get("JARVIS_WAKE_SUPERVISED") == "1"
     if not wake_supervised:
         # Direct execution of main.py must obey the same microphone lifecycle
@@ -2641,7 +2657,7 @@ def main():
 
     def runner():
         ui.wait_for_api_key()
-        jarvis = JarvisLive(ui)
+        jarvis = JarvisLive(ui, runtime_events=runtime_events)
         try:
             asyncio.run(jarvis.run())
         except KeyboardInterrupt:
@@ -2678,6 +2694,7 @@ def main():
             component="main",
             metadata={"reason": "application_exit"},
         )
+        runtime_log_subscription.close()
         runtime_log.close()
         # Normal entry points supervise this process themselves.  If main.py
         # was executed directly, restore the always-on wake listener here too.

@@ -213,7 +213,7 @@ class AudioVisionRegressionTests(unittest.TestCase):
     def test_shutdown_waits_for_farewell_playback(self):
         source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn("[SHUTDOWN_SCHEDULED]", source)
-        self.assertIn("self._runtime.lifecycle.request_shutdown()", source)
+        self.assertIn("self._runtime.lifecycle.request_shutdown(", source)
         self.assertIn(
             "self._runtime.lifecycle.observe_farewell_audio()",
             source,
@@ -295,7 +295,10 @@ class AudioVisionRegressionTests(unittest.TestCase):
     def test_heavy_actions_load_after_ui_construction(self):
         source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn("def _load_action_dependencies()", source)
-        self.assertLess(source.index('ui = JarvisUI("face.png")'), source.index("JarvisLive(ui)"))
+        self.assertLess(
+            source.index('ui = JarvisUI("face.png")'),
+            source.index("JarvisLive(ui,"),
+        )
 
     def test_escape_uses_thread_safe_playback_flush(self):
         tree = ast.parse(Path("main.py").read_text(encoding="utf-8"))
