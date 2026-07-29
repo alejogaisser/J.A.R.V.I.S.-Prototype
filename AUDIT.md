@@ -344,6 +344,20 @@ especializado de entropía.
   lectura. Ruff/mypy se restringen a módulos migrados para no convertir deuda
   histórica en falsos bloqueos.
 
+### M-09 - Comparación no canónica de rutas en el conector Obsidian
+
+- **Estado:** resuelto tras Fase 11.
+- **Descripción:** el destino de una nota se resolvía, pero podía compararse
+  contra una representación no normalizada de la raíz del vault.
+- **Impacto:** Windows CI rechazaba notas válidas; una comparación futura por
+  prefijo también habría sido vulnerable a vaults con nombres engañosos.
+- **Resolución:** resolver primero la raíz, aceptar sólo entradas relativas,
+  resolver el destino y usar `Path.relative_to()` para probar descendencia real.
+  La misma validación protege backups y bloquea traversal, rutas absolutas,
+  carpetas internas y symlinks que escapan.
+- **Pruebas:** lectura con/sin `.md`, escritura con backup, raíz no normalizada,
+  `..`, ruta absoluta, prefijo engañoso y symlink cuando Windows lo permite.
+
 ## Hallazgos bajos
 
 ### L-01 - Dependencia declarada sin uso de runtime observado

@@ -26,16 +26,23 @@ def _settings() -> tuple[Path, str]:
 
 
 def _note_path(relative: str, *, may_create: bool = False) -> tuple[Path, Path]:
-    root, _ = _settings()
+    configured_root, _ = _settings()
+    root = configured_root.resolve(strict=True)
     clean = str(relative or "").strip().replace("\\", "/")
     if not clean:
         raise ObsidianError("A note path is required.")
+    candidate = Path(clean)
+    if candidate.anchor or candidate.is_absolute():
+        raise ObsidianError("The note must stay inside the configured vault.")
     if not clean.lower().endswith(".md"):
         clean += ".md"
-    target = (root / clean).resolve()
-    if target != root and not target.is_relative_to(root):
-        raise ObsidianError("The note must stay inside the configured vault.")
-    relative_parts = target.relative_to(root).parts
+    target = (root / clean).resolve(strict=False)
+    try:
+        relative_parts = target.relative_to(root).parts
+    except ValueError:
+        raise ObsidianError(
+            "The note must stay inside the configured vault."
+        ) from None
     if any(part.lower() in EXCLUDED_DIRS or part.startswith(".") for part in relative_parts):
         raise ObsidianError("Hidden and internal Obsidian folders are protected.")
     if not may_create and not target.is_file():
@@ -83,7 +90,16 @@ def _search(query: str, limit: int) -> list[dict]:
 def _backup(root: Path, target: Path) -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     relative = target.relative_to(root)
-    backup = root / ".jarvis-backups" / relative.parent / f"{relative.stem}-{stamp}.md"
+    backup = (
+        root
+        / ".jarvis-backups"
+        / relative.parent
+        / f"{relative.stem}-{stamp}.md"
+    ).resolve(strict=False)
+    try:
+        backup.relative_to(root)
+    except ValueError as exc:
+        raise ObsidianError("The backup must stay inside the configured vault.") from exc
     backup.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(target, backup)
     return backup
@@ -95,7 +111,8 @@ def obsidian_connector(parameters: dict | None = None, player=None) -> str:
     if player:
         player.write_log(f"[obsidian] {action}")
     try:
-        root, vault_name = _settings()
+        configured_root, vault_name = _settings()
+        root = configured_root.resolve(strict=True)
         if action == "status":
             return json.dumps({"connected": True, "vault": vault_name, "path": str(root)}, ensure_ascii=False)
         if action == "search":

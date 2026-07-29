@@ -249,6 +249,15 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   metadata allowlisted y visión/shutdown preservan `request_id`. El baseline
   local aprobó 351 tests y 104 subtests.
 
+#### Estabilización posterior - rutas seguras de Obsidian
+
+- El conector interpreta notas como rutas relativas al vault canónico y añade
+  `.md` cuando la lectura no trae extensión.
+- La descendencia se verifica sobre rutas resueltas con `Path.relative_to()`;
+  no se usan prefijos de texto. Se conservan backups y bloqueos internos.
+- Las regresiones cubren rutas válidas, traversal, absolutas, vaults con
+  prefijos engañosos y symlinks externos cuando el sistema los soporta.
+
 ### Fase 12 - Supervisión y health de workers
 
 - **Estado:** pendiente.
