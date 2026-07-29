@@ -10,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 
-
 _SECRET_PATTERNS = (
     re.compile(r"AIza[0-9A-Za-z_-]{20,}"),
     re.compile(
@@ -75,13 +74,18 @@ class CrashReporter:
             return
         self._installed = True
 
-        def sys_hook(exc_type, exc_value, exc_traceback) -> None:
+        def sys_hook(
+            exc_type: type[BaseException],
+            exc_value: BaseException,
+            exc_traceback: TracebackType | None,
+        ) -> None:
             self.record("main thread", exc_type, exc_value, exc_traceback)
             self._previous_sys_hook(exc_type, exc_value, exc_traceback)
 
         def thread_hook(args: threading.ExceptHookArgs) -> None:
             name = args.thread.name if args.thread else "background thread"
-            self.record(name, args.exc_type, args.exc_value, args.exc_traceback)
+            if args.exc_value is not None:
+                self.record(name, args.exc_type, args.exc_value, args.exc_traceback)
             self._previous_thread_hook(args)
 
         sys.excepthook = sys_hook

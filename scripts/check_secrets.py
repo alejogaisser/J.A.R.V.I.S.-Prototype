@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
-
 _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
     (
@@ -176,14 +175,15 @@ def scan_repository(repo_root: Path) -> list[Finding]:
 
     findings: list[Finding] = []
     for path in tracked:
+        content: bytes | None
         if path in staged:
             content = _run_git(root, "show", f":{path}")
             source = "staged"
         else:
             content = _safe_worktree_blob(root, path)
             source = "working-tree"
-            if content is None:
-                continue
+        if content is None:
+            continue
         findings.extend(scan_blob(path, content, source=source))
     return findings
 

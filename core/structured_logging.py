@@ -14,7 +14,6 @@ from typing import IO, Mapping
 from .diagnostics import redact_diagnostic_text
 from .request_context import RequestContext
 
-
 DEFAULT_RUNTIME_LOG_FILE = (
     Path(__file__).resolve().parents[1] / "logs" / "runtime.jsonl"
 )
@@ -42,6 +41,8 @@ def _safe_metadata(metadata: Mapping[str, object] | None) -> dict[str, object]:
         if normalized_key not in _SAFE_METADATA_FIELDS:
             continue
         if normalized_key == "duration_ms":
+            if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+                continue
             try:
                 safe[normalized_key] = max(0.0, round(float(value), 3))
             except (TypeError, ValueError):

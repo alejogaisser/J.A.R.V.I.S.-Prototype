@@ -326,12 +326,18 @@ especializado de entropía.
 
 ### M-08 - Promesas multiplataforma superan la verificación
 
+- **Estado:** mitigado parcialmente en Fase 10 con CI reproducible sobre
+  Windows/Python 3.12; macOS/Linux y hardware continúan sin verificar.
 - **Descripción:** el proyecto anuncia Windows principal con soporte parcial macOS/Linux, pero no hay matriz CI/hardware para esas plataformas.
 - **Evidencia:** handlers con ramas por OS y dependencias condicionadas; suite ejecutada sólo en Windows.
 - **Impacto:** regresiones silenciosas fuera de Windows.
 - **Solución recomendada:** declarar capacidades por plataforma en la matriz y smoke CI donde sea realista.
 - **Esfuerzo:** medio.
 - **Prioridad:** P2.
+- **Resolución parcial:** `.github/workflows/quality.yml` instala manifests
+  versionados y ejecuta el baseline completo con timeout y permisos de sólo
+  lectura. Ruff/mypy se restringen a módulos migrados para no convertir deuda
+  histórica en falsos bloqueos.
 
 ## Hallazgos bajos
 

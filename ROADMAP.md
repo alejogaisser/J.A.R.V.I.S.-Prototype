@@ -201,8 +201,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Estado:** parcial. `codex/11-settings-bootstrap` implementó el bootstrap de
   settings y `codex/12-secret-scanning` agrega el chequeo preventivo de
   secretos. `codex/13-structured-logging` incorpora consola y archivo JSONL
-  rotativo; lint/type checking incremental, CI y lectores heredados siguen
-  pendientes.
+  rotativo. `codex/14-quality-ci` limita Ruff/mypy a la superficie migrada y
+  agrega CI Windows; los lectores heredados de configuración siguen pendientes.
 - **Objetivo:** configuración validada, logging estructurado, chequeos incrementales y CI.
 - **Archivos previstos:** nuevo módulo de settings, acciones migradas por lotes, logging, `pyproject.toml`, CI.
 - **Riesgo:** medio.
@@ -220,8 +220,10 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   imprimir el valor detectado; el baseline lo ejecuta antes de la suite.
   `StructuredRuntimeLog` conserva niveles, campos allowlisted y `request_id`
   opcional en consola + JSONL con rotación; `main.py` publica inicio, error fatal
-  y cierre sin reemplazar todavía los `print()` de diagnóstico. Esta fase no
-  debe marcarse completa todavía.
+  y cierre sin reemplazar todavía los `print()` de diagnóstico. Ruff y mypy
+  ejecutan una lista explícita, el baseline los incluye y GitHub Actions
+  reproduce ese baseline sobre Windows/Python 3.12 sin secretos ni hardware.
+  Esta fase no debe marcarse completa hasta consolidar los lectores heredados.
 
 ## Baseline y presupuestos iniciales
 
