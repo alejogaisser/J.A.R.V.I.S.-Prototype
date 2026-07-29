@@ -9,6 +9,8 @@ def test_type_checking_is_limited_to_migrated_production_surface():
     files = set(config["tool"]["mypy"]["files"])
 
     assert "core/structured_logging.py" in files
+    assert "core/events.py" in files
+    assert "services/runtime.py" in files
     assert "config/settings.py" in files
     assert "main.py" not in files
     assert all(not path.endswith("/*") for path in files)
@@ -18,6 +20,8 @@ def test_quality_script_names_the_incremental_surface():
     source = Path("scripts/validate_quality.ps1").read_text(encoding="utf-8")
 
     assert "core/structured_logging.py" in source
+    assert "core/events.py" in source
+    assert "tests/test_runtime_events.py" in source
     assert "tests/test_secret_scanner.py" in source
     assert "ruff check @QualityFiles" in source
     assert "python -m mypy" not in source

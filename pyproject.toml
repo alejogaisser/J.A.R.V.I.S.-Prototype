@@ -10,10 +10,16 @@ python_version = "3.12"
 files = [
     "config/settings.py",
     "core/diagnostics.py",
+    "core/events.py",
     "core/request_audit.py",
     "core/request_context.py",
     "core/structured_logging.py",
     "scripts/check_secrets.py",
+    "services/audio.py",
+    "services/lifecycle.py",
+    "services/runtime.py",
+    "services/session.py",
+    "services/vision.py",
 ]
 check_untyped_defs = true
 disallow_untyped_defs = true

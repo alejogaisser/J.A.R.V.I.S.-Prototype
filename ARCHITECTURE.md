@@ -71,6 +71,7 @@ flowchart TD
 | `ui_mk2/*` | Estado visual, Core/Pet y workspaces Memory/Study/GEO | PyQt6 y WebEngine | Modularización parcial |
 | `core/tools/*` | Definiciones, registro, ToolResult v2, timeout y adaptación legacy | biblioteca estándar | Contrato v2 integrado; tools aún heredadas |
 | `core/request_context.py` / `request_audit.py` | Correlación por solicitud y eventos JSONL sanitizados | biblioteca estándar | Integrado en rutas normal y especial |
+| `core/events.py` | Eventos tipados de fronteras, publicación thread-safe y aislamiento de observers | biblioteca estándar | Integrado en owners, dashboard y logging |
 | `core/permissions/*` | Mínimos, preferencias, simulación y decisión contextual | `core.tools` | Implementado con huecos de integración |
 | `core/permissions/store.py` | Preferencias v1/v2, publicación atómica, backup y recuperación | filesystem, lock por ruta | Atómico dentro del proceso |
 | `core/live_session.py` | Checkpoint resumible y watchdog de audio | biblioteca estándar | Aislado y probado |
@@ -174,6 +175,12 @@ audio/visión y conserva el checkpoint. Un disconnect atrasado no puede limpiar
 un transporte nuevo. Los snapshots son inmutables y no contienen audio,
 imágenes, prompts ni secretos.
 
+Los cuatro owners publican hechos inmutables mediante el `EventBus` compuesto
+en `main.py`. La publicación ocurre fuera de sus locks y un observer fallido no
+altera la transición. Sesión, interrupción, análisis visual y shutdown incluyen
+contadores allowlisted; visión y shutdown conservan `request_id` cuando la
+transición nace de una tool. El bus no transporta comandos ni payloads.
+
 ## Flujo de herramientas
 
 ```mermaid
@@ -236,8 +243,9 @@ Problemas actuales del flujo:
   el slot en el hilo gráfico.
 - Archivo seleccionado, modo de escucha y estado del micrófono se leen desde
   `MainWindow.tool_snapshot()` bajo `RLock`, nunca desde un widget.
-- La notificación del teléfono usa `_phone_connected_sig`; el callback de
-  cámara se intercambia bajo `_cam_lock` y se invoca fuera del lock.
+- El dashboard publica `DashboardConnected`; `JarvisLive` lo consume y la
+  notificación visual usa `_phone_connected_sig`. El callback de cámara se
+  intercambia bajo `_cam_lock` y se invoca fuera del lock.
 
 El contrato y sus invariantes están detallados en
 `docs/ui_thread_boundary.md`.
@@ -270,7 +278,7 @@ Límites:
 | `TaskGroup` Live | `JarvisLive.run()` | enviar, escuchar, recibir, reproducir, monitor y proactividad | mezcla lifecycle de servicios |
 | `audio_in_queue` | sesión Live | audio de salida | sin límite explícito |
 | `out_queue(maxsize=25)` | sesión Live | PCM de micrófono/teléfono | política de descarte local |
-| colas dashboard | `DashboardServer` | comandos, audio y broadcasts | origen no propagado |
+| colas dashboard | `DashboardServer` | comandos, audio y broadcasts | origen propagado; lifecycle todavía distribuido |
 | locks memoria/scripts | módulos de memoria | serialización local | no bloquean otros procesos |
 
 ## Configuración, secretos y dependencias
@@ -339,7 +347,7 @@ flowchart TD
     Services["services\nAudio + Vision + Memory + Telemetry"]
     Providers["adapters/providers\nLive + Text + Vision + Search"]
     Platform["adapters/platform\nWin32 + Browser + Filesystem + Google/Microsoft"]
-    Infra["infrastructure existente\nToolRegistry + PermissionPolicy + logging/events"]
+    Infra["infrastructure\nToolRegistry + PermissionPolicy + EventBus + logging"]
 
     Presentation --> Application
     Application --> Domain

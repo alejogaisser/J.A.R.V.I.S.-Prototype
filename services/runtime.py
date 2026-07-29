@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.events import EventBus, EventPublisher
+
 from .audio import AudioService, AudioSnapshot
 from .lifecycle import LifecycleService, LifecycleSnapshot
 from .session import SessionService, SessionSnapshot
@@ -21,10 +23,17 @@ class RuntimeSnapshot:
 
 @dataclass(slots=True)
 class RuntimeServices:
-    session: SessionService = field(default_factory=SessionService)
-    audio: AudioService = field(default_factory=AudioService)
-    vision: VisionService = field(default_factory=VisionService)
-    lifecycle: LifecycleService = field(default_factory=LifecycleService)
+    events: EventPublisher = field(default_factory=EventBus, repr=False)
+    session: SessionService = field(init=False)
+    audio: AudioService = field(init=False)
+    vision: VisionService = field(init=False)
+    lifecycle: LifecycleService = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.session = SessionService(events=self.events)
+        self.audio = AudioService(events=self.events)
+        self.vision = VisionService(events=self.events)
+        self.lifecycle = LifecycleService(events=self.events)
 
     def on_transport_connected(
         self,

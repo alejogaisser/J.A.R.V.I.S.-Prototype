@@ -227,6 +227,70 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   reproduce ese baseline sobre Windows/Python 3.12 sin secretos ni hardware.
   El cierre local aprobó 343 tests y 104 subtests.
 
+### Fase 11 - Eventos tipados limitados a fronteras
+
+- **Estado:** completada en `codex/16-typed-runtime-events`.
+- **Objetivo:** disminuir callbacks cruzados y hacer probables los hechos de
+  sesión, audio, visión, lifecycle y dashboard sin eventizar lógica local.
+- **Archivos:** `core/events.py`, `services/*`, `dashboard/server.py`,
+  `core/structured_logging.py`, `main.py`, tests y documentación.
+- **Riesgo:** medio; cruza threads, pero no cambia transporte, audio físico ni UI visual.
+- **Dependencias:** owners de Fase 7, frontera UI de Fase 8 y logging de Fase 10.
+- **Criterio de aceptación:** eventos inmutables/sanitizados; publicación fuera
+  del lock; orden y desuscripción probados; observers fallidos no cambian
+  estado; conexión dashboard sin callback directo en el composition root.
+- **Pruebas:** concurrencia, reentrancia, fallo de subscriber, correlación,
+  compatibilidad del dashboard, logging allowlisted y suite completa.
+- **Rollback:** publishers nulos por default y setters heredados del dashboard.
+- **Evidencia de rama:** `EventBus` entrega hechos síncronos en orden, copia
+  subscribers bajo `RLock` y los invoca sin sostenerlo. Los owners publican
+  sesión, interrupción, análisis y shutdown; dashboard publica conexión e
+  ingreso remoto sin texto, token, audio, imagen o device ID. El logger consume
+  metadata allowlisted y visión/shutdown preservan `request_id`. El baseline
+  local aprobó 351 tests y 104 subtests.
+
+### Fase 12 - Supervisión y health de workers
+
+- **Estado:** pendiente.
+- **Objetivo:** workers reiniciables, cancelables y con health snapshot sin tumbar JARVIS.
+- **Archivos previstos:** nuevo supervisor en `services/`, browser/vision como
+  pilotos, `main.py`, tests de fault injection.
+- **Riesgo:** alto.
+- **Dependencias:** lifecycle y eventos tipados.
+- **Criterio de aceptación:** start/cancel/close idempotentes, restart acotado,
+  sin threads/procesos huérfanos y estado de health observable.
+- **Pruebas:** worker muerto/bloqueado, backoff, doble start, shutdown y cleanup.
+- **Rollback:** adaptador que conserve el lifecycle actual por worker.
+
+### Fase 13 - Contratos y contención de agentes
+
+- **Estado:** pendiente.
+- **Objetivo:** `AgentTask`/`AgentResult`, presupuesto, workspace y allowlist;
+  ningún agente evita `ToolRegistry`/`PermissionPolicy`.
+- **Archivos previstos:** `actions/dev_agent.py`, `memory/script_memory.py`,
+  contratos/supervisor de agentes y tests.
+- **Riesgo:** alto.
+- **Dependencias:** Fase 12, cancelación y policy.
+- **Criterio de aceptación:** sin instalación/comando arbitrario desde salida
+  del modelo; preview/confirmación; presupuesto y evidencia tipados.
+- **Pruebas:** prompt injection, dependencia no permitida, timeout, output
+  excesivo, workspace escape y rollback parcial.
+- **Rollback:** mantener el agente heredado bloqueado detrás de policy.
+
+### Fase 14 - Decisión QML por benchmark
+
+- **Estado:** pendiente y opcional.
+- **Objetivo:** decidir con una prueba aislada si QML reduce complejidad o mejora
+  rendimiento frente a PyQt Widgets.
+- **Archivos previstos:** benchmark/prototipo aislado y documentación; no
+  reemplazar `ui.py` durante la evaluación.
+- **Riesgo:** medio-alto si se adopta; bajo si sólo se mide.
+- **Dependencias:** presenters/workers estables y baseline de UI.
+- **Criterio de aceptación:** decisión documentada con métricas; adopción sólo
+  ante ventaja medible.
+- **Pruebas:** startup, memoria, frame pacing, interacción y packaging.
+- **Rollback:** descartar el prototipo sin tocar la UI productiva.
+
 ## Baseline y presupuestos iniciales
 
 Los siguientes valores del PDF son objetivos provisionales, no resultados medidos:

@@ -6,6 +6,15 @@ import time
 from dataclasses import dataclass, field
 from threading import RLock
 
+from core.events import (
+    EventHeader,
+    EventPublisher,
+    NullEventPublisher,
+    ShutdownPhase,
+    ShutdownStateChanged,
+    publish_safely,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class LifecycleSnapshot:
@@ -25,6 +34,8 @@ class LifecycleService:
     shutdown_started: bool = False
     shutdown_requests: int = 0
     deadline: float | None = None
+    events: EventPublisher = field(default_factory=NullEventPublisher, repr=False)
+    _request_id: str | None = field(default=None, repr=False)
     _lock: RLock = field(default_factory=RLock, repr=False)
 
     def request_shutdown(
@@ -32,6 +43,7 @@ class LifecycleService:
         *,
         now: float | None = None,
         fallback_seconds: float = 12.0,
+        request_id: str | None = None,
     ) -> bool:
         observed_at = time.monotonic() if now is None else now
         with self._lock:
@@ -42,7 +54,18 @@ class LifecycleService:
             self.playback_drained = False
             self.shutdown_requests += 1
             self.deadline = observed_at + fallback_seconds
-            return True
+            self._request_id = request_id
+            event = ShutdownStateChanged(
+                header=EventHeader.create(
+                    request_id=request_id,
+                    observed_at=observed_at,
+                ),
+                phase=ShutdownPhase.REQUESTED,
+                shutdown_requests=self.shutdown_requests,
+                deadline=self.deadline,
+            )
+        publish_safely(self.events, event)
+        return True
 
     def observe_farewell_audio(self) -> None:
         with self._lock:
@@ -73,7 +96,14 @@ class LifecycleService:
                 return False
             self.shutdown_started = True
             self.shutdown_requested = False
-            return True
+            event = ShutdownStateChanged(
+                header=EventHeader.create(request_id=self._request_id),
+                phase=ShutdownPhase.STARTED,
+                shutdown_requests=self.shutdown_requests,
+                deadline=self.deadline,
+            )
+        publish_safely(self.events, event)
+        return True
 
     def snapshot(self) -> LifecycleSnapshot:
         with self._lock:

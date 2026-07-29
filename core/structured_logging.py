@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import IO, Mapping
 
 from .diagnostics import redact_diagnostic_text
+from .events import RuntimeEvent
 from .request_context import RequestContext
 
 DEFAULT_RUNTIME_LOG_FILE = (
@@ -19,13 +20,37 @@ DEFAULT_RUNTIME_LOG_FILE = (
 )
 _SAFE_LABEL = re.compile(r"^[a-zA-Z0-9_.:-]{1,64}$")
 _SAFE_METADATA_FIELDS = {
+    "analyses_started",
+    "busy",
+    "connected",
+    "connections",
+    "deadline",
     "duration_ms",
+    "event_id",
     "error_code",
+    "generation",
+    "interrupted",
+    "interrupts",
+    "modality",
     "operation",
+    "occurred_at_monotonic",
+    "occurred_at_utc",
     "reason",
+    "reconnects",
+    "shutdown_requests",
     "status",
     "surface",
     "wake_supervised",
+}
+_SAFE_NUMERIC_METADATA_FIELDS = {
+    "analyses_started",
+    "connections",
+    "deadline",
+    "generation",
+    "interrupts",
+    "occurred_at_monotonic",
+    "reconnects",
+    "shutdown_requests",
 }
 
 
@@ -47,6 +72,15 @@ def _safe_metadata(metadata: Mapping[str, object] | None) -> dict[str, object]:
                 safe[normalized_key] = max(0.0, round(float(value), 3))
             except (TypeError, ValueError):
                 continue
+        elif normalized_key in _SAFE_NUMERIC_METADATA_FIELDS:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            normalized_value = max(0, value)
+            safe[normalized_key] = (
+                normalized_value
+                if isinstance(normalized_value, int)
+                else round(normalized_value, 6)
+            )
         elif isinstance(value, bool):
             safe[normalized_key] = value
         else:
@@ -108,6 +142,7 @@ class StructuredRuntimeLog:
         component: str = "runtime",
         message: str | None = None,
         context: RequestContext | None = None,
+        request_id: str | None = None,
         metadata: Mapping[str, object] | None = None,
     ) -> bool:
         if not self.available:
@@ -125,6 +160,8 @@ class StructuredRuntimeLog:
             payload["source"] = context.source_label
             if context.tool_call_id:
                 payload["tool_call_id"] = _label(context.tool_call_id)
+        elif request_id:
+            payload["request_id"] = _label(request_id)
         payload.update(_safe_metadata(metadata))
         try:
             encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True)
@@ -132,6 +169,14 @@ class StructuredRuntimeLog:
             return True
         except (OSError, TypeError, ValueError):
             return False
+
+    def record_runtime_event(self, event: RuntimeEvent) -> None:
+        self.record(
+            event.event_name,
+            component=event.component,
+            request_id=event.header.request_id,
+            metadata=event.log_metadata(),
+        )
 
     def close(self) -> None:
         for handler in tuple(self._logger.handlers):
