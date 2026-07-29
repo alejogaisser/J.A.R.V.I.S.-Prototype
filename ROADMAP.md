@@ -325,6 +325,34 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   de al menos 15% introduce regresiones mayores al 10%; el resultado es
   `defer`. `ui.py` y `ui_mk2/*` no se modificaron.
 
+### Fase 15 - Gate de aceptación global
+
+- **Estado:** completada en `codex/20-global-acceptance`.
+- **Objetivo:** convertir los criterios globales de la sección 15 del PDF en
+  evidencia versionada y fail-closed, sin declarar completas las brechas que
+  todavía son parciales o requieren hardware.
+- **Archivos:** `docs/global_acceptance.*`,
+  `scripts/check_global_acceptance.py`, persistencia de memoria/runtime state,
+  tests y gates de calidad.
+- **Riesgo:** medio; endurece persistencia local y el baseline, sin iniciar
+  audio, cámara, Gemini, dashboard ni cuentas.
+- **Dependencias:** fases 0-14 y su evidencia documental/automatizada.
+- **Criterio de aceptación:** inventario exacto de los 19 criterios; evidencia
+  existente y contenida en el repositorio; cierre estricto bloqueado mientras
+  haya estados no verificados; memoria y runtime state publican documentos
+  validados y durables sin exponer parciales ante fault injection.
+- **Pruebas:** integridad/strict mode del gate, escritura y reemplazo fallidos,
+  recuperación de memoria, detalles no serializables, suite completa y
+  baseline.
+- **Rollback:** revertir el gate no modifica runtime; para memoria conservar
+  primario/backup válidos y restaurar con JARVIS detenido.
+- **Evidencia de rama:** matriz inicial con 6 criterios verificados, 11
+  parciales y 2 manuales. El modo `--require-complete` devuelve código 2 hasta
+  resolver los pendientes. Memoria y runtime state usan temporales del mismo
+  directorio, `flush`/`fsync`, validación previa, `os.replace` y cleanup; la
+  memoria preserva y recupera el último backup válido. El baseline completo
+  aprobó 398 tests, omitió 2 y aprobó 106 subtests.
+
 ## Baseline y presupuestos iniciales
 
 Los siguientes valores del PDF son objetivos provisionales, no resultados medidos:

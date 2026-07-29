@@ -8,8 +8,8 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import sys
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -59,21 +59,98 @@ def _empty_store() -> dict[str, Any]:
     return {"schema_version": SCHEMA_VERSION, "records": [], "history": []}
 
 
+def _decode_store(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise TypeError("Memory store must be an object")
+    if payload.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("Unsupported memory store version")
+    if not isinstance(payload.get("records"), list):
+        raise TypeError("Memory records must be a list")
+    if not isinstance(payload.get("history", []), list):
+        raise TypeError("Memory history must be a list")
+    if not all(isinstance(record, dict) for record in payload["records"]):
+        raise TypeError("Memory records must contain objects")
+    payload.setdefault("history", [])
+    return payload
+
+
+def _read_store(path: Path) -> tuple[bytes, dict[str, Any]]:
+    raw = path.read_bytes()
+    payload = json.loads(raw.decode("utf-8"))
+    return raw, _decode_store(payload)
+
+
+def _serialize_store(data: dict[str, Any]) -> bytes:
+    _decode_store(data)
+    content = (
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+    _decode_store(json.loads(content.decode("utf-8")))
+    return content
+
+
+def _fsync_directory(directory: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    try:
+        descriptor = os.open(directory, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        # Windows and some filesystems do not support directory fsync.
+        pass
+    finally:
+        os.close(descriptor)
+
+
+def _atomic_publish(target: Path, content: bytes, *, memory_store: bool = True) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        raw = temporary_path.read_bytes()
+        decoded = json.loads(raw.decode("utf-8"))
+        if memory_store:
+            _decode_store(decoded)
+        elif not isinstance(decoded, dict):
+            raise TypeError("Legacy memory backup must be an object")
+        os.replace(temporary_path, target)
+        temporary_path = None
+        _fsync_directory(target.parent)
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
 def _parse_time(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         return parsed.replace(tzinfo=JARVIS_TIMEZONE) if parsed.tzinfo is None else parsed.astimezone(JARVIS_TIMEZONE)
-    except (TypeError, ValueError):
-        raise ValueError("expires_at must be an ISO-8601 date/time with an optional timezone")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "expires_at must be an ISO-8601 date/time with an optional timezone"
+        ) from exc
 
 
 def _atomic_write(data: dict[str, Any]) -> None:
-    MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temporary = MEMORY_PATH.with_suffix(MEMORY_PATH.suffix + ".tmp")
-    temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(temporary, MEMORY_PATH)
+    _atomic_publish(MEMORY_PATH, _serialize_store(data))
 
 
 def _migrate_legacy(data: dict[str, Any]) -> dict[str, Any]:
@@ -105,35 +182,53 @@ def _load_store() -> dict[str, Any]:
         if not MEMORY_PATH.exists():
             return _empty_store()
         try:
-            data = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and data.get("schema_version") == SCHEMA_VERSION and isinstance(data.get("records"), list):
-                data.setdefault("history", [])
-                return data
+            raw = MEMORY_PATH.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+            if isinstance(data, dict) and data.get("schema_version") == SCHEMA_VERSION:
+                return _decode_store(data)
             if isinstance(data, dict):
                 backup = MEMORY_PATH.with_suffix(MEMORY_PATH.suffix + ".legacy.bak")
                 if not backup.exists():
-                    shutil.copy2(MEMORY_PATH, backup)
+                    _atomic_publish(backup, raw, memory_store=False)
                 migrated = _migrate_legacy(data)
                 _atomic_write(migrated)
                 return migrated
-        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
             backup = MEMORY_PATH.with_suffix(MEMORY_PATH.suffix + ".bak")
-            if backup.exists():
-                try:
-                    recovered = json.loads(backup.read_text(encoding="utf-8"))
-                    if recovered.get("schema_version") == SCHEMA_VERSION:
-                        return recovered
-                except (OSError, json.JSONDecodeError, AttributeError):
-                    pass
+            try:
+                _, recovered = _read_store(backup)
+                return recovered
+            except (
+                OSError,
+                UnicodeError,
+                json.JSONDecodeError,
+                TypeError,
+                ValueError,
+            ):
+                pass
             print(f"[Memory] Load error: {exc}")
         return _empty_store()
 
 
 def _save_store(store: dict[str, Any]) -> None:
     with _lock:
-        if MEMORY_PATH.exists():
-            shutil.copy2(MEMORY_PATH, MEMORY_PATH.with_suffix(MEMORY_PATH.suffix + ".bak"))
-        _atomic_write(store)
+        content = _serialize_store(store)
+        try:
+            current, _ = _read_store(MEMORY_PATH)
+        except (
+            OSError,
+            UnicodeError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+        ):
+            current = None
+        if current is not None:
+            _atomic_publish(
+                MEMORY_PATH.with_suffix(MEMORY_PATH.suffix + ".bak"),
+                current,
+            )
+        _atomic_publish(MEMORY_PATH, content)
 
 
 def _is_expired(record: dict[str, Any], now: datetime | None = None) -> bool:

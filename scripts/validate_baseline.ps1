@@ -44,6 +44,9 @@ Invoke-Checked "Incremental lint and type checking" {
 Invoke-Checked "Tracked and staged secret scan" {
     & $Python scripts/check_secrets.py --repo-root .
 }
+Invoke-Checked "Global acceptance inventory" {
+    & $Python scripts/check_global_acceptance.py --repo-root .
+}
 Invoke-Checked "Tool inventory contract" {
     & $Python -m pytest -q tests/test_tool_inventory.py
 }

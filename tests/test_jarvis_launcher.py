@@ -255,7 +255,8 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertIn('update_runtime_state("wake_word", "listening"', source)
         self.assertIn('update_runtime_state("wake_word", "paused"', source)
         self.assertIn("model.reset()", source)
-        self.assertIn("temporary.replace(target)", runtime)
+        self.assertIn("os.replace(temporary_path, target)", runtime)
+        self.assertIn("os.fsync(handle.fileno())", runtime)
 
     def test_console_diagnostics_show_audio_text_scores_and_thresholds(self):
         launcher = Path("jarvis_launcher.py").read_text(encoding="utf-8")
