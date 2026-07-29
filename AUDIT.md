@@ -266,12 +266,20 @@ especializado de entropía.
 
 ### M-04 - Logging fragmentado
 
+- **Estado:** mitigado parcialmente en Fase 10 con un owner estructurado y
+  rotativo para runtime; la migración de `print()` heredados sigue pendiente.
 - **Descripción:** 303 `print()`; CrashReporter sólo cubre excepciones no manejadas y auditoría de conectores no cubre tools.
 - **Evidencia:** recuento AST y `core/diagnostics.py`.
 - **Impacto:** sin niveles, sesión, request ID ni latencia uniforme.
 - **Solución recomendada:** `logging` estructurado y rotativo, preservando consola de diagnóstico wake.
 - **Esfuerzo:** medio.
 - **Prioridad:** P1.
+- **Resolución parcial:** `StructuredRuntimeLog` emite JSON allowlisted a
+  consola y `RotatingFileHandler`, soporta correlación con `RequestContext` y
+  falla sin impedir el arranque. `main.py` registra los límites de inicio,
+  error fatal y cierre. El sanitizador común ahora cubre formas de credenciales
+  Google, GitHub, OpenAI, AWS y Slack, además de claves privadas. La auditoría
+  estructurada de tools continúa en `RequestAuditSink`.
 
 ### M-05 - Configuración duplicada y fallos ocultos
 

@@ -200,7 +200,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 - **Estado:** parcial. `codex/11-settings-bootstrap` implementó el bootstrap de
   settings y `codex/12-secret-scanning` agrega el chequeo preventivo de
-  secretos; logging estructurado, lint/type checking incremental y CI siguen
+  secretos. `codex/13-structured-logging` incorpora consola y archivo JSONL
+  rotativo; lint/type checking incremental, CI y lectores heredados siguen
   pendientes.
 - **Objetivo:** configuración validada, logging estructurado, chequeos incrementales y CI.
 - **Archivos previstos:** nuevo módulo de settings, acciones migradas por lotes, logging, `pyproject.toml`, CI.
@@ -216,8 +217,11 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   dashboard y memoria siguen pendientes para lotes de provider/configuración
   posteriores. `scripts/check_secrets.py` inspecciona el contenido versionado y
   el blob staged, rechaza rutas sensibles y credenciales de alta confianza sin
-  imprimir el valor detectado; el baseline lo ejecuta antes de la suite. Esta
-  fase no debe marcarse completa todavía.
+  imprimir el valor detectado; el baseline lo ejecuta antes de la suite.
+  `StructuredRuntimeLog` conserva niveles, campos allowlisted y `request_id`
+  opcional en consola + JSONL con rotación; `main.py` publica inicio, error fatal
+  y cierre sin reemplazar todavía los `print()` de diagnóstico. Esta fase no
+  debe marcarse completa todavía.
 
 ## Baseline y presupuestos iniciales
 

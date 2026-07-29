@@ -14,6 +14,16 @@ from types import TracebackType
 _SECRET_PATTERNS = (
     re.compile(r"AIza[0-9A-Za-z_-]{20,}"),
     re.compile(
+        r"\b(?:"
+        r"gh[pousr]_[0-9A-Za-z]{36,255}|"
+        r"github_pat_[0-9A-Za-z_]{20,255}|"
+        r"sk-(?:(?:proj|svcacct)-)?[0-9A-Za-z_-]{20,}|"
+        r"(?:AKIA|ASIA)[0-9A-Z]{16}|"
+        r"xox[baprs]-[0-9A-Za-z-]{20,}"
+        r")\b"
+    ),
+    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    re.compile(
         r"(?i)\b(api[_ -]?key|access[_ -]?token|authorization|secret|token)"
         r"(\s*[:=]\s*)([^\s,;]+)"
     ),
@@ -24,8 +34,10 @@ _SECRET_PATTERNS = (
 def redact_diagnostic_text(text: str) -> str:
     """Remove common credential shapes before a traceback reaches disk."""
     redacted = _SECRET_PATTERNS[0].sub("[REDACTED_API_KEY]", text)
-    redacted = _SECRET_PATTERNS[1].sub(r"\1\2[REDACTED]", redacted)
-    return _SECRET_PATTERNS[2].sub(r"\1[REDACTED]", redacted)
+    redacted = _SECRET_PATTERNS[1].sub("[REDACTED_CREDENTIAL]", redacted)
+    redacted = _SECRET_PATTERNS[2].sub("[REDACTED_PRIVATE_KEY]", redacted)
+    redacted = _SECRET_PATTERNS[3].sub(r"\1\2[REDACTED]", redacted)
+    return _SECRET_PATTERNS[4].sub(r"\1[REDACTED]", redacted)
 
 
 class CrashReporter:

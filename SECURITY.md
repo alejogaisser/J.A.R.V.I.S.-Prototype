@@ -40,6 +40,11 @@ Este control no revisa archivos no versionados ni demuestra que el historial
 completo esté limpio. Si una credencial llegó a un commit o remoto, revocala y
 rotala; eliminar solamente el archivo no es suficiente.
 
+Los eventos generales de runtime usan `StructuredRuntimeLog`: sólo aceptan
+metadata allowlisted, sanitizan mensajes y rotan `logs/runtime.jsonl`. Los
+eventos de tools continúan en `RequestAuditSink` y no aceptan argumentos ni
+cuerpos. Los logs reales permanecen fuera de Git.
+
 ## Alcance
 
 JARVIS ejecuta acciones locales y puede conectarse con servicios externos.

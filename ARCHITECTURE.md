@@ -293,6 +293,15 @@ informa ruta, línea y regla, nunca el valor encontrado. Los archivos no
 versionados quedan fuera de este gate y continúan protegidos por `.gitignore` y
 la revisión local.
 
+`core.structured_logging.StructuredRuntimeLog` es el owner de observabilidad
+general en el composition root. Emite el mismo JSON sanitizado a consola y a
+`logs/runtime.jsonl`, con rotación y backups acotados. Acepta
+`RequestContext` para correlación y sólo conserva metadata allowlisted; un fallo
+al abrir el archivo deja disponible la consola y nunca impide el arranque.
+`RequestAuditSink` sigue siendo el protocolo especializado para fases de tool.
+Los `print()` de wake y diagnósticos heredados permanecen por compatibilidad y
+se migrarán por frontera.
+
 `requirements.txt` permite iniciar la base actual en el entorno existente, pero no declara varias dependencias importadas por capacidades anunciadas: `python-docx`, `pandas`, `openpyxl`, `PyPDF2`/`pdfplumber`, `pydub`, `faster-whisper`, `kokoro`, `miniaudio` y `torch`. Algunas son opcionales o legado no conectado; esa distinción todavía no está documentada ni separada en extras.
 
 ## Problemas arquitectónicos principales
