@@ -468,3 +468,17 @@ Se verificaron sintaxis, imports, launcher `--help`, import offscreen de `main.p
 - `runtime_state` preserva el último JSON completo ante fallos, no permite que
   detalles reemplacen campos reservados y mantiene su contrato de telemetría
   best-effort que nunca impide el arranque.
+
+### 2026-07-29 - Fase 16
+
+- `docs/operational_change_control.json` es el registro estructurado de los 19
+  controles de la sección 16 y de cada fase completada desde la 15.
+- El gate exige ownership, policy, verificación, rollback,
+  cancelación/timeout/reconexión, compatibilidad, métricas y beneficio concreto
+  de abstracciones antes de aceptar el cierre documental.
+- Las referencias se resuelven dentro del repositorio y las rutas sensibles se
+  rechazan. Los actos externos —lectura de `AGENTS.md`, estado inicial y nota
+  Obsidian— permanecen explícitamente manuales.
+- El contrato no entra al runtime ni crea una segunda autoridad arquitectónica:
+  `ROADMAP.md` conserva el estado de fases y el script sólo comprueba
+  coherencia/evidencia.

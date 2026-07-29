@@ -15,6 +15,7 @@ files = [
     "core/request_context.py",
     "core/structured_logging.py",
     "scripts/check_global_acceptance.py",
+    "scripts/check_operational_change_control.py",
     "scripts/check_secrets.py",
     "services/agents.py",
     "services/audio.py",

@@ -353,6 +353,30 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   memoria preserva y recupera el último backup válido. El baseline completo
   aprobó 398 tests, omitió 2 y aprobó 106 subtests.
 
+### Fase 16 - Control operativo de cambios
+
+- **Estado:** completada en `codex/21-operational-change-control`.
+- **Objetivo:** hacer verificables las 11 instrucciones operativas y las 8
+  preguntas previas a refactorizar de la sección 16 del PDF.
+- **Archivos:** `docs/operational_change_control.*`,
+  `scripts/check_operational_change_control.py`, tests y gates de calidad.
+- **Riesgo:** bajo; sólo añade control documental/CI y no cambia runtime.
+- **Dependencias:** gate global de Fase 15 y evidencia de `ROADMAP.md`.
+- **Criterio de aceptación:** inventario exacto de 19 controles; un registro
+  único y secuencial por fase completada desde la 15; motivo, archivos, riesgos,
+  tests, métricas, rollback y preguntas arquitectónicas obligatorias; rutas
+  sensibles/externas bloqueadas; resultados y Obsidian cerrados antes del
+  estado completado.
+- **Pruebas:** inventario incompleto, fase ausente, path sensible/externo,
+  resultado pendiente, Obsidian pendiente, cambio destructivo sin controles y
+  abstracción sin beneficio permitido.
+- **Rollback:** retirar la llamada del baseline y revertir contrato/script/test;
+  no hay migración de datos ni cambio productivo.
+- **Evidencia de rama:** 7 tests dirigidos, Ruff limpio, mypy sin errores en 16
+  módulos y baseline con 405 tests aprobados, 2 omitidos y 106 subtests.
+  `AGENTS.md`, `git status` y la nota externa siguen siendo verificaciones
+  humanas explícitas: el gate no afirma observar lo que CI no puede demostrar.
+
 ## Baseline y presupuestos iniciales
 
 Los siguientes valores del PDF son objetivos provisionales, no resultados medidos:

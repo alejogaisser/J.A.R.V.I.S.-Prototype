@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "source": "JARVIS_Mark_LI_Arquitectura_y_Plan_de_Mejora_v1.1.pdf, section 16",
+  "enforcement_start_phase": 15,
+  "controls": [
+    {
+      "id": "OP-01",
+      "statement": "Read AGENTS.md and git status before broad changes; preserve local modifications.",
+      "verification": "manual",
+      "evidence": [".gitignore", "docs/operational_change_control.md"]
+    },
+    {
+      "id": "OP-02",
+      "statement": "Confirm capabilities in current code instead of trusting historical plans.",
+      "verification": "documented",
+      "evidence": ["ARCHITECTURE.md", "AUDIT.md", "docs/operational_change_control.md"]
+    },
+    {
+      "id": "OP-03",
+      "statement": "Reuse core/tools, core/permissions, and core/live_session.",
+      "verification": "automated",
+      "evidence": ["core/tools", "core/permissions", "core/live_session.py"]
+    },
+    {
+      "id": "OP-04",
+      "statement": "Keep main.py as the temporary composition root.",
+      "verification": "automated",
+      "evidence": ["main.py", "ARCHITECTURE.md"]
+    },
+    {
+      "id": "OP-05",
+      "statement": "Do not change Gemini protocol, audio, and UI in the same refactor.",
+      "verification": "documented",
+      "evidence": ["ROADMAP.md", "docs/operational_change_control.md"]
+    },
+    {
+      "id": "OP-06",
+      "statement": "Keep legacy adapters until functional equivalence is proven.",
+      "verification": "documented",
+      "evidence": ["ARCHITECTURE.md", "docs/tool_migration_matrix.md"]
+    },
+    {
+      "id": "OP-07",
+      "statement": "Do not expose secrets, OAuth material, certificates, memory, or sensitive logs.",
+      "verification": "automated",
+      "evidence": [".gitignore", "scripts/check_secrets.py", "tests/test_secret_scanner.py"]
+    },
+    {
+      "id": "OP-08",
+      "statement": "Require confirmation, preview, and rollback when possible for destructive operations.",
+      "verification": "automated",
+      "evidence": ["core/permissions/policy.py", "core/permissions/preview.py", "docs/operational_change_control.md"]
+    },
+    {
+      "id": "OP-09",
+      "statement": "Record motivation, files, risks, tests, metrics, and rollback for every change.",
+      "verification": "automated",
+      "evidence": ["docs/operational_change_control.json", "scripts/check_operational_change_control.py"]
+    },
+    {
+      "id": "OP-10",
+      "statement": "Update the Obsidian note and change log.",
+      "verification": "documented",
+      "evidence": ["docs/operational_change_control.md"]
+    },
+    {
+      "id": "OP-11",
+      "statement": "Do not mark work complete without verifying real behavior.",
+      "verification": "documented",
+      "evidence": ["docs/baseline.md", "docs/global_acceptance.md", "docs/operational_change_control.md"]
+    },
+    {
+      "id": "REF-01",
+      "statement": "Identify the unique owner of changed state.",
+      "verification": "automated",
+      "evidence": ["docs/runtime_ownership.md", "docs/operational_change_control.json"]
+    },
+    {
+      "id": "REF-02",
+      "statement": "State whether the route always passes through PermissionPolicy.",
+      "verification": "automated",
+      "evidence": ["core/permissions/policy.py", "docs/operational_change_control.json"]
+    },
+    {
+      "id": "REF-03",
+      "statement": "Describe how the real effect is verified.",
+      "verification": "automated",
+      "evidence": ["core/tools/definitions.py", "docs/operational_change_control.json"]
+    },
+    {
+      "id": "REF-04",
+      "statement": "Describe how the change is reverted.",
+      "verification": "automated",
+      "evidence": ["ROADMAP.md", "docs/operational_change_control.json"]
+    },
+    {
+      "id": "REF-05",
+      "statement": "Describe cancellation, timeout, expiry, and reconnection behavior.",
+      "verification": "automated",
+      "evidence": ["docs/tool_cancellation.md", "docs/operational_change_control.json"]
+    },
+    {
+      "id": "REF-06",
+      "statement": "State whether Gemini and UI compatibility is preserved.",
+      "verification": "automated",
+      "evidence": ["ARCHITECTURE.md", "docs/operational_change_control.json"]
+    },
+    {
+      "id": "REF-07",
+      "statement": "Record the metric that demonstrates improvement.",
+      "verification": "automated",
+      "evidence": ["docs/operational_change_control.json", "scripts/check_operational_change_control.py"]
+    },
+    {
+      "id": "REF-08",
+      "statement": "Justify every new abstraction by duplication, authority, effect verification, or testability.",
+      "verification": "automated",
+      "evidence": ["docs/operational_change_control.json", "scripts/check_operational_change_control.py"]
+    }
+  ],
+  "changes": [
+    {
+      "phase": 15,
+      "title": "Global acceptance gate",
+      "motivation": "Turn section 15 into a fail-closed evidence inventory and close the durable-persistence gap.",
+      "objective": "Track all global acceptance criteria without claiming unresolved work as verified.",
+      "files": [
+        "docs/global_acceptance.json",
+        "scripts/check_global_acceptance.py",
+        "memory/memory_manager.py",
+        "core/runtime_state.py"
+      ],
+      "risks": [
+        "Memory locking remains intra-process.",
+        "Hardware-only acceptance evidence remains manual."
+      ],
+      "tests": [
+        {
+          "scope": "directed",
+          "command": "python -m pytest -q tests/test_memory_manager.py tests/test_memory_atomic.py tests/test_runtime_state.py tests/test_global_acceptance.py",
+          "outcome": "passed",
+          "result": "18 passed"
+        },
+        {
+          "scope": "baseline",
+          "command": "scripts/validate_baseline.ps1",
+          "outcome": "passed",
+          "result": "398 passed, 2 skipped, 106 subtests passed"
+        }
+      ],
+      "metrics": [
+        "19 criteria inventoried: 6 verified, 11 partial, 2 manual.",
+        "Fault injection preserves the last complete primary or validated backup."
+      ],
+      "rollback": "Revert the phase commit; restore only a validated memory primary or backup while JARVIS is stopped.",
+      "owner": "Global acceptance inventory: scripts/check_global_acceptance.py; memory: memory.memory_manager; runtime telemetry: core.runtime_state.",
+      "policy_route": "not_applicable",
+      "effect_verification": "Matrix integrity and strict-mode exit codes plus filesystem fault-injection tests.",
+      "cancellation_timeout_reconnect": "No long-running work was introduced; atomic temporary cleanup is bounded by one local write.",
+      "compatibility": "Gemini protocol, audio, UI, and legacy adapters were unchanged.",
+      "abstraction_benefit": "verifies_effect",
+      "real_behavior": "automated_without_hardware",
+      "limitations": "No hardware, accounts, network, or interprocess memory writer was exercised.",
+      "destructive": false,
+      "confirmation": "not_applicable",
+      "preview": "not_applicable",
+      "obsidian_note": "updated"
+    },
+    {
+      "phase": 16,
+      "title": "Operational change control",
+      "motivation": "Make the PDF operational instructions and pre-refactor questions enforceable for future architectural phases.",
+      "objective": "Require structured evidence for every completed phase from phase 15 onward.",
+      "files": [
+        "docs/operational_change_control.json",
+        "docs/operational_change_control.md",
+        "scripts/check_operational_change_control.py",
+        "tests/test_operational_change_control.py"
+      ],
+      "risks": [
+        "A structured record can validate completeness but cannot prove that an operator actually read AGENTS.md.",
+        "The external Obsidian note remains a documented manual check in CI."
+      ],
+      "tests": [
+        {
+          "scope": "directed",
+          "command": "python -m pytest -q tests/test_operational_change_control.py",
+          "outcome": "passed",
+          "result": "7 passed"
+        },
+        {
+          "scope": "baseline",
+          "command": "scripts/validate_baseline.ps1",
+          "outcome": "passed",
+          "result": "405 passed, 2 skipped, 106 subtests passed"
+        }
+      ],
+      "metrics": [
+        "19 operational controls inventoried.",
+        "Completed phases from the enforcement floor must have exactly one structured change record."
+      ],
+      "rollback": "Remove the operational gate call and its files; runtime behavior is unaffected.",
+      "owner": "Operational contract: scripts/check_operational_change_control.py.",
+      "policy_route": "not_applicable",
+      "effect_verification": "The gate rejects missing controls, missing phase records, unsafe evidence paths, incomplete answers, and unjustified abstractions.",
+      "cancellation_timeout_reconnect": "The local read-only gate has no worker, retry, reconnect, or external timeout.",
+      "compatibility": "No production runtime, Gemini, audio, UI, or legacy adapter is modified.",
+      "abstraction_benefit": "simplifies_test",
+      "real_behavior": "automated_without_hardware",
+      "limitations": "Manual operator actions and the external Obsidian file cannot be proven by repository-only CI.",
+      "destructive": false,
+      "confirmation": "not_applicable",
+      "preview": "not_applicable",
+      "obsidian_note": "updated"
+    }
+  ]
+}
