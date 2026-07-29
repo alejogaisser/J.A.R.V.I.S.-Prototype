@@ -198,6 +198,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 10 - Configuración, observabilidad y calidad continuas
 
+- **Estado:** parcial en `codex/11-settings-bootstrap`: bootstrap de settings
+  implementado; logging estructurado, chequeos incrementales y CI pendientes.
 - **Objetivo:** configuración validada, logging estructurado, chequeos incrementales y CI.
 - **Archivos previstos:** nuevo módulo de settings, acciones migradas por lotes, logging, `pyproject.toml`, CI.
 - **Riesgo:** medio.
@@ -205,6 +207,12 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Criterio de aceptación:** lectura única de secretos/config por proceso; consola + archivo rotativo; lint/type checking sólo sobre superficie migrada; chequeo de secretos.
 - **Pruebas:** configuración ausente/malformada, redacción, rotación, import check y CI.
 - **Rollback:** adapters de configuración y logging con defaults compatibles.
+- **Evidencia de rama:** `config.settings.AppSettings` es inmutable, oculta la
+  clave en `repr`, valida tipos/OS y cachea una instancia por archivo.
+  `main.py` consume el snapshot y la UI ejecuta una recarga explícita sólo al
+  guardar una nueva configuración. Los lectores heredados en actions,
+  dashboard y memoria siguen pendientes para lotes de provider/configuración
+  posteriores; esta fase no debe marcarse completa todavía.
 
 ## Baseline y presupuestos iniciales
 
