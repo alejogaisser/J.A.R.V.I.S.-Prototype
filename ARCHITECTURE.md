@@ -277,12 +277,14 @@ Límites:
 
 Los archivos reales de API, OAuth, permisos, certificados, memoria y logs están ignorados por Git. La auditoría sólo comprobó su presencia, no leyó su contenido.
 
-La configuración todavía no está centralizada: `api_keys.json` y los nombres
-de modelos se consultan desde `main.py`, `config`, `memory`, `dashboard` y
-múltiples acciones. Fase 9 cerró ese ownership para el piloto `web_search`:
-`main.py` entrega la credencial al adaptador, mientras modelos, deadline y SDK
-quedan en `core/providers/google.py`. Algunos fallos del resto de acciones aún
-devuelven `{}` o valores por defecto sin diagnóstico suficiente.
+La configuración está centralizada parcialmente. `config.settings` carga y
+valida un `AppSettings` inmutable por ruta; `main.py` consume ese snapshot y la
+UI lo refresca explícitamente después de guardar una clave nueva. Fase 9 cerró
+además el ownership de modelos/deadline/SDK para `web_search`. Actions,
+dashboard y memoria aún contienen lectores heredados de `api_keys.json`, por
+lo que la lectura única por proceso todavía no puede considerarse completa.
+Algunos fallos de esos lectores siguen devolviendo `{}` o valores por defecto
+sin diagnóstico suficiente.
 
 `requirements.txt` permite iniciar la base actual en el entorno existente, pero no declara varias dependencias importadas por capacidades anunciadas: `python-docx`, `pandas`, `openpyxl`, `PyPDF2`/`pdfplumber`, `pydub`, `faster-whisper`, `kokoro`, `miniaudio` y `torch`. Algunas son opcionales o legado no conectado; esa distinción todavía no está documentada ni separada en extras.
 

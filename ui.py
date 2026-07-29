@@ -23,6 +23,7 @@ from ui_mk2.memory_workspace import MemoryGraphWorkspace
 from ui_mk2.study import StudyWorkspace
 from actions.open_geo import OpenGeoClient
 from core.runtime_state import update_runtime_state
+from config.settings import refresh_settings
 
 if platform.system() == "Windows":
     _WIN_HIDE: dict = {"creationflags": subprocess.CREATE_NO_WINDOW}
@@ -4259,6 +4260,7 @@ class MainWindow(QMainWindow):
             json.dumps({"gemini_api_key": key, "os_system": os_name}, indent=4),
             encoding="utf-8",
         )
+        refresh_settings(API_FILE)
         self._ready = True
         if self._overlay:
             self._overlay.hide()

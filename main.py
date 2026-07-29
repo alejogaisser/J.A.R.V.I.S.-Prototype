@@ -33,6 +33,7 @@ import sounddevice as sd
 from google import genai
 from google.genai import types
 from ui import JarvisUI
+from config.settings import get_settings
 
 
 def _configure_console_encoding() -> None:
@@ -131,7 +132,6 @@ def get_base_dir():
 
 
 BASE_DIR        = get_base_dir()
-API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
 LIVE_MODEL = "models/gemini-3.1-flash-live-preview"
 CHANNELS            = 1
@@ -140,8 +140,7 @@ RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE          = 640  # 40 ms at 16 kHz, within Gemini Live guidance
 
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    return get_settings().require_gemini_api_key()
 
 
 def _load_system_prompt() -> str:
@@ -2572,6 +2571,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     self.ui.prompt_reconfig()
                     while not self.ui._win._ready:
                         await asyncio.sleep(1)
+                    self.search_provider = GoogleGroundedSearchProvider.from_api_key(
+                        _get_api_key(),
+                        log=self.ui_tools.write_log,
+                    )
                     print("[JARVIS] New API key saved — reconnecting...")
                     _conn_backoff = 3
                     continue
