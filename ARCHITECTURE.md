@@ -76,6 +76,7 @@ flowchart TD
 | `core/permissions/store.py` | Preferencias v1/v2, publicación atómica, backup y recuperación | filesystem, lock por ruta | Atómico dentro del proceso |
 | `core/live_session.py` | Checkpoint resumible y watchdog de audio | biblioteca estándar | Aislado y probado |
 | `services/*` | Owners de identidad de sesión, interrupción/micrófono, visión/cámara y shutdown | `core.live_session`, locks estándar | Compuestos por `JarvisLive`; snapshots y métricas tipadas |
+| `services/workers.py` | Lifecycle, health y restart acotado de workers | callbacks tipados, EventBus | Pilotos browser/visión integrados |
 | `core/runtime_state.py` | Estado observable por proceso mediante JSON reemplazado | filesystem | Atómico por reemplazo; errores silenciosos deliberados |
 | `actions/*` | SO, navegador, archivos, visión, web, recordatorios, estudio y desarrollo | heterogéneas; varias importan Gemini | Amplio, contratos desiguales |
 | `memory/*` | Memoria v2, historial, expiración, sensibilidad, grafo y scripts | JSON, filesystem | Implementado; falta locking entre procesos |
@@ -181,6 +182,12 @@ altera la transición. Sesión, interrupción, análisis visual y shutdown inclu
 contadores allowlisted; visión y shutdown conservan `request_id` cuando la
 transición nace de una tool. El bus no transporta comandos ni payloads.
 
+`WorkerSupervisor` extiende ese ownership a recursos de background. Browser y
+visión registran `start/stop/health`, responden a un ping de event loop y sólo
+reinician después de demostrar el cierre anterior. Cleanup fallido queda
+`failed` y bloquea duplicados. Sus snapshots/eventos contienen estado y
+contadores, nunca URLs, imágenes, audio, prompts ni datos de sesión.
+
 ## Flujo de herramientas
 
 ```mermaid
@@ -274,7 +281,7 @@ Límites:
 | Thread del core | `main.main()` | `asyncio.run(JarvisLive.run())` | daemon; shutdown distribuido |
 | Thread de métricas | `ui.py` | CPU/GPU/temperatura | lifecycle propio no formalizado |
 | Thread de cámara | `ui.py` | captura continua | callbacks y generación guardada |
-| Threads de browser/acciones | acciones varias | automatización y procesos | cancelación desigual |
+| Threads browser/visión | `WorkerSupervisor` + adaptadores heredados | loops Playwright/visión | supervisados; otros workers de actions siguen heredados |
 | `TaskGroup` Live | `JarvisLive.run()` | enviar, escuchar, recibir, reproducir, monitor y proactividad | mezcla lifecycle de servicios |
 | `audio_in_queue` | sesión Live | audio de salida | sin límite explícito |
 | `out_queue(maxsize=25)` | sesión Live | PCM de micrófono/teléfono | política de descarte local |

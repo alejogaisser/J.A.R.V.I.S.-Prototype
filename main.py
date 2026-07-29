@@ -101,6 +101,8 @@ def _load_action_dependencies() -> None:
     global code_helper, dev_agent, web_search_action, computer_control
     global game_updater, SystemMonitor, get_system_status, ProactiveEngine
     global math_engine, study_engine, account_connector, obsidian_connector, open_geo
+    global configure_browser_worker_events, shutdown_browser_workers
+    global configure_vision_worker_events, shutdown_vision_worker
 
     from actions.file_processor import file_processor
     from actions.flight_finder import flight_finder
@@ -109,10 +111,18 @@ def _load_action_dependencies() -> None:
     from actions.send_message import send_message
     from actions.reminder import reminder
     from actions.computer_settings import computer_settings
-    from actions.screen_processor import analyze_visual
+    from actions.screen_processor import (
+        analyze_visual,
+        configure_vision_worker_events,
+        shutdown_vision_worker,
+    )
     from actions.youtube_video import youtube_video
     from actions.desktop import desktop_control
-    from actions.browser_control import browser_control
+    from actions.browser_control import (
+        browser_control,
+        configure_browser_worker_events,
+        shutdown_browser_workers,
+    )
     from actions.file_controller import file_controller
     from actions.code_helper import code_helper
     from actions.dev_agent import dev_agent
@@ -886,6 +896,8 @@ class JarvisLive:
         self._event_subscription = self._events.subscribe(
             self._on_runtime_event
         )
+        configure_browser_worker_events(self._events)
+        configure_vision_worker_events(self._events)
         self._runtime       = RuntimeServices(events=self._events)
         self.session              = None
         self.audio_in_queue       = None
@@ -2688,6 +2700,25 @@ def main():
     try:
         ui.root.mainloop()
     finally:
+        for worker_name, shutdown_name in (
+            ("browser", "shutdown_browser_workers"),
+            ("vision", "shutdown_vision_worker"),
+        ):
+            shutdown = globals().get(shutdown_name)
+            if not callable(shutdown):
+                continue
+            try:
+                shutdown()
+            except Exception as exc:
+                runtime_log.record(
+                    "worker_cleanup_failed",
+                    level=logging.ERROR,
+                    component="workers",
+                    metadata={
+                        "worker": worker_name,
+                        "error_code": type(exc).__name__,
+                    },
+                )
         update_runtime_state("jarvis", "off", reason="application_exit")
         runtime_log.record(
             "application_stopped",

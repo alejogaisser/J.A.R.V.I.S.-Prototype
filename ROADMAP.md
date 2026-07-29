@@ -260,7 +260,7 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 12 - Supervisión y health de workers
 
-- **Estado:** pendiente.
+- **Estado:** completada en `codex/17-worker-supervision`.
 - **Objetivo:** workers reiniciables, cancelables y con health snapshot sin tumbar JARVIS.
 - **Archivos previstos:** nuevo supervisor en `services/`, browser/vision como
   pilotos, `main.py`, tests de fault injection.
@@ -270,6 +270,12 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   sin threads/procesos huérfanos y estado de health observable.
 - **Pruebas:** worker muerto/bloqueado, backoff, doble start, shutdown y cleanup.
 - **Rollback:** adaptador que conserve el lifecycle actual por worker.
+- **Evidencia de rama:** `WorkerSupervisor` ofrece fases y snapshots
+  inmutables, eventos sanitizados, monitor, backoff y presupuesto. Un cleanup
+  fallido desactiva restart para impedir duplicados. Browser cierra
+  Playwright+loop+thread; visión cancela la tarea raíz y espera su thread. Los
+  tests usan fakes/event loops y no inician browser, cámara, audio, red ni
+  Gemini. El baseline local aprobó 369 tests y 104 subtests.
 
 ### Fase 13 - Contratos y contención de agentes
 

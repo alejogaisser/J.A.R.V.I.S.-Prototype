@@ -34,7 +34,9 @@ except ImportError:
 from google import genai
 from google.genai import types as gtypes
 from config.settings import get_settings, update_settings
+from core.events import EventPublisher
 from core.model_fallback import generate_with_model_fallback, is_transient_api_error
+from services.workers import WorkerHealth, WorkerSpec, WorkerSupervisor
 from utils.camera import configure_capture, profile_from_config
 
 def _base_dir() -> Path:
@@ -261,8 +263,11 @@ class _VisionSession:
         self._out_queue:  Optional[asyncio.Queue]             = None
         self._audio_in:   Optional[asyncio.Queue]             = None
         self._ready_evt:  threading.Event                     = threading.Event()
+        self._stop_evt:   threading.Event                     = threading.Event()
         self._player                                           = None
         self._lock:       threading.Lock                       = threading.Lock()
+        self._main_task:  asyncio.Task | None                  = None
+        self._startup_error: BaseException | None              = None
 
     def start(self, player=None, timeout: float = 25.0) -> None:
         with self._lock:
@@ -271,6 +276,9 @@ class _VisionSession:
                     self._player = player
                 return
             self._player = player
+            self._ready_evt.clear()
+            self._stop_evt.clear()
+            self._startup_error = None
             self._thread = threading.Thread(
                 target=self._run_event_loop,
                 daemon=True,
@@ -279,7 +287,12 @@ class _VisionSession:
             self._thread.start()
 
         if not self._ready_evt.wait(timeout=timeout):
+            self.stop()
             raise RuntimeError(f"Vision session did not connect within {timeout}s.")
+        if self._startup_error is not None:
+            error = self._startup_error
+            self.stop()
+            raise RuntimeError("Vision session worker failed during startup.") from error
         print("[Vision] ✅ Session ready")
 
     def analyze(self, image_bytes: bytes, mime_type: str, user_text: str) -> None:
@@ -294,10 +307,73 @@ class _VisionSession:
     def is_ready(self) -> bool:
         return self._session is not None
 
+    def is_healthy(self, timeout: float = 0.25) -> bool:
+        with self._lock:
+            loop = self._loop
+            basic_health = bool(
+                self._thread
+                and self._thread.is_alive()
+                and loop
+                and loop.is_running()
+                and self._startup_error is None
+            )
+        if not basic_health or loop is None:
+            return False
+        responsive = threading.Event()
+        try:
+            loop.call_soon_threadsafe(responsive.set)
+        except RuntimeError:
+            return False
+        return responsive.wait(timeout=timeout)
+
+    def stop(self, timeout: float = 10.0) -> None:
+        self._stop_evt.set()
+        with self._lock:
+            loop = self._loop
+            task = self._main_task
+            thread = self._thread
+        if loop is not None and loop.is_running() and task is not None:
+            loop.call_soon_threadsafe(task.cancel)
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=timeout)
+            if thread.is_alive():
+                raise RuntimeError("Vision session worker did not stop.")
+        with self._lock:
+            self._thread = None
+            self._loop = None
+            self._main_task = None
+            self._session = None
+            self._ready_evt.clear()
+
     def _run_event_loop(self) -> None:
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_until_complete(self._session_loop())
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        with self._lock:
+            self._loop = loop
+            self._main_task = loop.create_task(self._session_loop())
+            task = self._main_task
+        try:
+            loop.run_until_complete(task)
+        except asyncio.CancelledError:
+            pass
+        except BaseException as exc:
+            self._startup_error = exc
+            self._ready_evt.set()
+        finally:
+            pending = asyncio.all_tasks(loop)
+            for pending_task in pending:
+                pending_task.cancel()
+            if pending:
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+            loop.close()
+            with self._lock:
+                if self._loop is loop:
+                    self._loop = None
+                    self._main_task = None
+                self._session = None
+                self._ready_evt.clear()
 
     async def _session_loop(self) -> None:
         self._out_queue = asyncio.Queue(maxsize=30)
@@ -321,7 +397,7 @@ class _VisionSession:
         )
 
         backoff = 2.0
-        while True:
+        while not self._stop_evt.is_set():
             try:
                 print("[Vision] 🔌 Connecting...")
                 async with client.aio.live.connect(
@@ -347,7 +423,6 @@ class _VisionSession:
             print(f"[Vision] 🔄 Reconnecting in {backoff:.0f}s...")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 1.5, 30.0)
-            self._ready_evt.set()  
 
     async def _send_loop(self) -> None:
         while True:
@@ -432,16 +507,45 @@ class _VisionSession:
 _session      = _VisionSession()
 _session_lock = threading.Lock()
 _session_up   = False
+_vision_supervisor = WorkerSupervisor()
+_vision_supervisor.register(
+    WorkerSpec(
+        name="vision:live",
+        start=_session.start,
+        stop=_session.stop,
+        health=_session.is_healthy,
+        max_restarts=2,
+        restart_backoff_seconds=1.0,
+    )
+)
 
 
 def _ensure_session(player=None) -> None:
     global _session_up
     with _session_lock:
-        if not _session_up:
-            _session.start(player=player)
-            _session_up = True
-        elif player is not None:
+        if player is not None:
             _session._player = player
+        _vision_supervisor.start("vision:live")
+        _session_up = True
+
+
+def configure_vision_worker_events(events: EventPublisher) -> None:
+    _vision_supervisor.set_event_publisher(events)
+
+
+def vision_worker_health() -> tuple[WorkerHealth, ...]:
+    return _vision_supervisor.snapshots()
+
+
+def shutdown_vision_worker() -> None:
+    global _session_up
+    with _session_lock:
+        report = _vision_supervisor.close()
+        _session_up = False
+    if report.failed:
+        raise RuntimeError(
+            f"{report.failed} vision worker resources did not stop."
+        )
 
 
 def screen_process(

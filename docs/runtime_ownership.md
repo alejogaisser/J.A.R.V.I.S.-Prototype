@@ -13,6 +13,8 @@ que antes estaba distribuido en flags:
 - `VisionService`: análisis en vuelo, cooldown y backpressure de frames;
 - `LifecycleService`: solicitud de cierre, audio de despedida, drenaje,
   deadline de respaldo e inicio de shutdown exactamente una vez.
+- `WorkerSupervisor`: intención, health, restart acotado y cleanup de workers
+  registrados; browser y visión son los primeros adaptadores.
 
 Cada servicio expone transiciones, no requiere UI ni importa Gemini. Sus
 snapshots son dataclasses inmutables y contienen sólo contadores/estados.
@@ -30,6 +32,8 @@ snapshots son dataclasses inmutables y contienen sólo contadores/estados.
    excepción. Los frames concurrentes se descartan y contabilizan.
 5. Shutdown sólo avanza después de despedida+drenaje o del deadline. El inicio
    final es idempotente.
+6. Un worker sólo reinicia después de que `stop()` termine y health confirme
+   que la instancia anterior ya no vive; de lo contrario queda `failed`.
 
 ## Compatibilidad y rollback
 
@@ -43,7 +47,7 @@ flags de `JarvisLive`; `core/live_session.py` conserva sus tipos públicos.
 - `_phone_active`, `audio_in_queue`, `out_queue` y streams físicos no fueron
   extraídos.
 - No se ejecutaron micrófono, cámara ni una sesión Gemini real.
-- El lifecycle general de UI, dashboard, monitor y tareas proactivas continúa
-  distribuido.
+- El lifecycle de browser/visión ya tiene supervisor; UI, dashboard, monitor,
+  proactividad y otros workers continúan distribuidos.
 - Las métricas están disponibles en snapshots, pero todavía no se exportan a
   telemetría o UI.
