@@ -198,8 +198,10 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 10 - Configuración, observabilidad y calidad continuas
 
-- **Estado:** parcial en `codex/11-settings-bootstrap`: bootstrap de settings
-  implementado; logging estructurado, chequeos incrementales y CI pendientes.
+- **Estado:** parcial. `codex/11-settings-bootstrap` implementó el bootstrap de
+  settings y `codex/12-secret-scanning` agrega el chequeo preventivo de
+  secretos; logging estructurado, lint/type checking incremental y CI siguen
+  pendientes.
 - **Objetivo:** configuración validada, logging estructurado, chequeos incrementales y CI.
 - **Archivos previstos:** nuevo módulo de settings, acciones migradas por lotes, logging, `pyproject.toml`, CI.
 - **Riesgo:** medio.
@@ -212,7 +214,10 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   `main.py` consume el snapshot y la UI ejecuta una recarga explícita sólo al
   guardar una nueva configuración. Los lectores heredados en actions,
   dashboard y memoria siguen pendientes para lotes de provider/configuración
-  posteriores; esta fase no debe marcarse completa todavía.
+  posteriores. `scripts/check_secrets.py` inspecciona el contenido versionado y
+  el blob staged, rechaza rutas sensibles y credenciales de alta confianza sin
+  imprimir el valor detectado; el baseline lo ejecuta antes de la suite. Esta
+  fase no debe marcarse completa todavía.
 
 ## Baseline y presupuestos iniciales
 

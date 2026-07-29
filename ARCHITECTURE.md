@@ -286,6 +286,13 @@ lo que la lectura única por proceso todavía no puede considerarse completa.
 Algunos fallos de esos lectores siguen devolviendo `{}` o valores por defecto
 sin diagnóstico suficiente.
 
+La validación baseline ejecuta `scripts/check_secrets.py` sobre cada archivo
+versionado y sobre la versión exacta de todo blob staged. El control rechaza
+rutas privadas conocidas y formatos de credenciales de alta confianza; sólo
+informa ruta, línea y regla, nunca el valor encontrado. Los archivos no
+versionados quedan fuera de este gate y continúan protegidos por `.gitignore` y
+la revisión local.
+
 `requirements.txt` permite iniciar la base actual en el entorno existente, pero no declara varias dependencias importadas por capacidades anunciadas: `python-docx`, `pandas`, `openpyxl`, `PyPDF2`/`pdfplumber`, `pydub`, `faster-whisper`, `kokoro`, `miniaudio` y `torch`. Algunas son opcionales o legado no conectado; esa distinción todavía no está documentada ni separada en extras.
 
 ## Problemas arquitectónicos principales

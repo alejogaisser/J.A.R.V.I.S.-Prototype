@@ -12,6 +12,12 @@ Auditoría realizada el 2026-07-28 sobre el working tree local y contrastada con
 
 No se leyeron contenidos de claves, OAuth, certificados, memoria personal o logs. No se ejecutaron acciones reales del sistema, red externa, cuentas, Gemini Live, micrófono, cámara o dashboard LAN.
 
+Fase 10 incorporó un control preventivo reproducible sobre archivos
+versionados y blobs staged. El chequeo bloquea rutas sensibles y formas de
+credenciales de alta confianza sin mostrar el valor. No sustituye la revisión
+del historial remoto, la rotación de una credencial expuesta ni un detector
+especializado de entropía.
+
 ## Línea base verificada
 
 | Comprobación | Resultado |
