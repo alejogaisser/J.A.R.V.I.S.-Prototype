@@ -27,6 +27,10 @@ incorpora `services.agents` como contrato productivo número catorce. No se
 inspeccionan `main.py`, `ui.py`, hardware de audio ni actions heredadas hasta
 migrarlas por frontera.
 
+El benchmark aislado de Fase 14 y sus tests también pasan por Ruff. No se añade
+a mypy porque es instrumentación reproducible, no un contrato productivo. El
+baseline incluye `benchmarks/` en `compileall`.
+
 Ejecución:
 
 ```powershell

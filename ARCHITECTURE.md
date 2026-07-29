@@ -224,10 +224,10 @@ Problemas actuales del flujo:
   permite señalarlos por `request_id` y espera cleanup durante una gracia
   acotada. Un handler legacy no cooperativo todavía puede continuar tras
   timeout y queda explícitamente `effect=unknown`.
-- El piloto `dev_agent` comprueba checkpoints entre etapas y ejecuta el proceso
-  del proyecto mediante un runner que termina y recolecta su árbol en timeout o
-  cancelación. Instalación de dependencias y llamadas de modelo aún no tienen
-  transporte cancelable.
+- `dev_agent` comprueba checkpoints entre planificación y escritura, pero desde
+  Fase 13 sólo crea previews contenidos. No instala dependencias, no acepta
+  comandos del modelo y no ejecuta procesos; una llamada bloqueante al provider
+  aún depende de que el SDK retorne después de recibir la cancelación externa.
 - `ToolResult` v2 separa ejecución, efecto, verificación, rollback, duración y
   evidencia; las tools heredadas permanecen `effect=unknown` hasta migrarse.
 - El piloto de `file_controller` captura ruta resuelta, tamaño y SHA-256 después
@@ -258,6 +258,14 @@ Problemas actuales del flujo:
 El contrato y sus invariantes están detallados en
 `docs/ui_thread_boundary.md`.
 
+Fase 14 evaluó QML sin conectarlo al runtime. En cinco procesos por variante,
+el prototipo QML mejoró 16,3% el pacing p95, pero consumió 58,8% más RSS y su
+startup frío fue 239,6% más lento. Los guardrails exigían una ventaja de al
+menos 15% sin regresiones mayores al 10%, por lo que la arquitectura de
+presentación continúa en PyQt Widgets. El resultado offscreen/software no
+sustituye una prueba GPU, visual o de packaging; esas tres evidencias serían
+obligatorias antes de reabrir la decisión.
+
 ## Flujo de memoria
 
 1. `memory_manager.py` carga `memory/long_term.json`.
@@ -273,7 +281,8 @@ Límites:
 - falta `fsync`/recuperación transaccional más fuerte;
 - no hay cifrado opcional de contenido sensible;
 - `save_memory` ya atraviesa policy, pero continúa como ruta especial;
-- `script_memory.py` guarda código y puede ejecutarlo mediante intérpretes locales.
+- `script_memory.py` conserva previews de código, pero su ejecución cruda está
+  bloqueada hasta migrar cada rutina a acciones declarativas allowlisted.
 
 ## Threads, tareas y colas
 
@@ -434,3 +443,13 @@ Se verificaron sintaxis, imports, launcher `--help`, import offscreen de `main.p
 - Las pruebas cubren prompt injection, dependencias, tiempo, salida excesiva,
   escapes, symlinks cuando están disponibles y rollback parcial sin usar
   Gemini, red, cuentas, hardware ni procesos reales.
+
+### 2026-07-29 - Fase 14
+
+- Un benchmark en procesos aislados comparó prototipos equivalentes de Widgets
+  y QML sin importar `ui.py`, `main.py` ni servicios del runtime.
+- QML mostró mejor pacing p95, pero regresiones amplias de startup y memoria;
+  la decisión automática y arquitectónica es diferir su adopción.
+- PyQt Widgets sigue siendo la presentación productiva. El benchmark, sus
+  umbrales, límites y condiciones de reapertura están documentados en
+  `docs/ui_qml_benchmark.md`.
