@@ -279,7 +279,7 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 13 - Contratos y contención de agentes
 
-- **Estado:** pendiente.
+- **Estado:** completada en `codex/18-agent-containment`.
 - **Objetivo:** `AgentTask`/`AgentResult`, presupuesto, workspace y allowlist;
   ningún agente evita `ToolRegistry`/`PermissionPolicy`.
 - **Archivos previstos:** `actions/dev_agent.py`, `memory/script_memory.py`,
@@ -291,6 +291,17 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Pruebas:** prompt injection, dependencia no permitida, timeout, output
   excesivo, workspace escape y rollback parcial.
 - **Rollback:** mantener el agente heredado bloqueado detrás de policy.
+- **Evidencia de rama:** `services/agents.py` define `AgentTask`,
+  `AgentBudget`, `AgentResult` y `AgentSupervisor`; resuelve el workspace y
+  cada destino antes de escribir, limita archivos/bytes/tiempo/salida, rechaza
+  overwrite, traversal, absolutas, symlinks externos, comandos y dependencias
+  del modelo, y revierte únicamente archivos creados por la tarea.
+  `dev_agent` genera una vista previa nueva sin `pip`, `subprocess`, apertura
+  de IDE ni ejecución automática. Las rutinas de `script_memory` conservan
+  catálogo y compatibilidad, pero el código crudo queda bloqueado y ya no
+  reduce policy a `FREE`. La ejecución manual futura exige otra tool call
+  confirmada y un sandbox de sistema operativo; no se presenta `cwd` como
+  aislamiento suficiente.
 
 ### Fase 14 - Decisión QML por benchmark
 

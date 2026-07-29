@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 
 import psutil
 
-from actions.dev_agent import _build_project, _run_project
+from actions.dev_agent import _build_project
 from core.request_context import InputSource, RequestContext
 from core.tools import (
     CancellationToken,
@@ -22,7 +22,6 @@ from core.tools import (
     VerificationStatus,
 )
 from core.tools.process_runner import run_cancellable_process
-
 
 SCHEMA = {"type": "OBJECT", "properties": {}}
 
@@ -208,23 +207,6 @@ class ToolCancellationTests(unittest.TestCase):
 
             pid = int(pid_file.read_text(encoding="utf-8"))
             self.assertFalse(psutil.pid_exists(pid))
-
-    def test_dev_agent_project_runner_terminates_instead_of_detaching(self):
-        with TemporaryDirectory() as directory:
-            root = Path(directory)
-            pid_file = root / "dev-agent.pid"
-            (root / "worker.py").write_text(
-                "import os,time,pathlib\n"
-                f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid()))\n"
-                "time.sleep(30)\n",
-                encoding="utf-8",
-            )
-
-            result = _run_project("python worker.py", root, timeout=0.2)
-
-            pid = int(pid_file.read_text(encoding="utf-8"))
-            self.assertFalse(psutil.pid_exists(pid))
-            self.assertIn("process tree was terminated", result)
 
     def test_dev_agent_checks_cancellation_before_creating_project(self):
         token = CancellationToken()

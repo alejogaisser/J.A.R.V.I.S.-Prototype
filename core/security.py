@@ -67,8 +67,11 @@ def confirmation_request(tool_name: str, args: dict) -> tuple[str, str] | None:
 
     if tool_name == "dev_agent":
         return (
-            "Allow the developer agent to run?",
-            "It may create files, install packages, and execute code.",
+            "Allow the developer agent to create a contained preview?",
+            (
+                "It may create new files in an isolated project workspace. "
+                "It will not install packages, overwrite projects, or execute code."
+            ),
         )
 
     if tool_name == "game_updater" and (

@@ -10,6 +10,7 @@ $QualityFiles = @(
     "core/request_audit.py",
     "core/request_context.py",
     "core/structured_logging.py",
+    "services/agents.py",
     "services/audio.py",
     "services/lifecycle.py",
     "services/runtime.py",
@@ -21,6 +22,7 @@ $QualityFiles = @(
     "tests/test_settings.py",
     "tests/test_structured_logging.py",
     "tests/test_runtime_events.py",
+    "tests/test_agent_supervisor.py",
     "tests/test_worker_supervisor.py"
 )
 

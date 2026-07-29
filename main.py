@@ -504,7 +504,10 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "dev_agent",
-        "description": "Builds complete multi-file projects from scratch: plans, writes files, installs deps, opens VSCode, runs and fixes errors.",
+        "description": (
+            "Creates a contained multi-file project preview in a new isolated "
+            "workspace. It does not install dependencies or execute generated code."
+        ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
