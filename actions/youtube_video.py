@@ -1,6 +1,5 @@
 #youtube_video.py
 import os
-import json
 import re
 import sys
 import time
@@ -9,6 +8,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import quote_plus
+from config.settings import get_settings
 
 try:
     import pyautogui
@@ -44,7 +44,6 @@ def _get_base_dir() -> Path:
 
 
 BASE_DIR        = _get_base_dir()
-API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 
 HEADERS = {
     "User-Agent": (
@@ -59,8 +58,7 @@ _YT_VIDEO_FILTER = "EgIQAQ%3D%3D"
 
 
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    return get_settings().require_gemini_api_key()
 
 
 def _open_url(url: str) -> None:

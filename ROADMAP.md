@@ -198,11 +198,12 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 10 - Configuración, observabilidad y calidad continuas
 
-- **Estado:** parcial. `codex/11-settings-bootstrap` implementó el bootstrap de
+- **Estado:** completada. `codex/11-settings-bootstrap` implementó el bootstrap de
   settings y `codex/12-secret-scanning` agrega el chequeo preventivo de
   secretos. `codex/13-structured-logging` incorpora consola y archivo JSONL
   rotativo. `codex/14-quality-ci` limita Ruff/mypy a la superficie migrada y
-  agrega CI Windows; los lectores heredados de configuración siguen pendientes.
+  agrega CI Windows y `codex/15-settings-consumers` consolida todos los
+  consumidores y escritores heredados.
 - **Objetivo:** configuración validada, logging estructurado, chequeos incrementales y CI.
 - **Archivos previstos:** nuevo módulo de settings, acciones migradas por lotes, logging, `pyproject.toml`, CI.
 - **Riesgo:** medio.
@@ -212,10 +213,11 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 - **Rollback:** adapters de configuración y logging con defaults compatibles.
 - **Evidencia de rama:** `config.settings.AppSettings` es inmutable, oculta la
   clave en `repr`, valida tipos/OS y cachea una instancia por archivo.
-  `main.py` consume el snapshot y la UI ejecuta una recarga explícita sólo al
-  guardar una nueva configuración. Los lectores heredados en actions,
-  dashboard y memoria siguen pendientes para lotes de provider/configuración
-  posteriores. `scripts/check_secrets.py` inspecciona el contenido versionado y
+  `main.py`, UI, actions, dashboard, memoria y el cliente LLM consumen el mismo
+  snapshot cacheado. `update_settings()` valida, preserva extras y publica por
+  temporal + `fsync` + `os.replace`; UI, visión y memoria ya no escriben el
+  archivo directamente. Una prueba de ownership impide reintroducir lectores
+  paralelos. `scripts/check_secrets.py` inspecciona el contenido versionado y
   el blob staged, rechaza rutas sensibles y credenciales de alta confianza sin
   imprimir el valor detectado; el baseline lo ejecuta antes de la suite.
   `StructuredRuntimeLog` conserva niveles, campos allowlisted y `request_id`
@@ -223,7 +225,7 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   y cierre sin reemplazar todavía los `print()` de diagnóstico. Ruff y mypy
   ejecutan una lista explícita, el baseline los incluye y GitHub Actions
   reproduce ese baseline sobre Windows/Python 3.12 sin secretos ni hardware.
-  Esta fase no debe marcarse completa hasta consolidar los lectores heredados.
+  El cierre local aprobó 343 tests y 104 subtests.
 
 ## Baseline y presupuestos iniciales
 

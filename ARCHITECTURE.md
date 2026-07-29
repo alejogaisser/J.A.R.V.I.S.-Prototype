@@ -277,14 +277,14 @@ Límites:
 
 Los archivos reales de API, OAuth, permisos, certificados, memoria y logs están ignorados por Git. La auditoría sólo comprobó su presencia, no leyó su contenido.
 
-La configuración está centralizada parcialmente. `config.settings` carga y
-valida un `AppSettings` inmutable por ruta; `main.py` consume ese snapshot y la
-UI lo refresca explícitamente después de guardar una clave nueva. Fase 9 cerró
-además el ownership de modelos/deadline/SDK para `web_search`. Actions,
-dashboard y memoria aún contienen lectores heredados de `api_keys.json`, por
-lo que la lectura única por proceso todavía no puede considerarse completa.
-Algunos fallos de esos lectores siguen devolviendo `{}` o valores por defecto
-sin diagnóstico suficiente.
+La configuración tiene un único owner en `config.settings`. El módulo carga y
+valida un `AppSettings` inmutable por ruta, lo cachea para que cada proceso lea
+el documento una sola vez y publica cambios mediante `update_settings()`: merge
+compatible, validación previa, temporal en el mismo directorio, `fsync` y
+`os.replace`. `main.py`, UI, actions, dashboard, memoria y clientes locales
+consumen ese snapshot o su vista compatible; ninguno abre el archivo privado
+directamente. Fase 9 cerró además el ownership de modelos/deadline/SDK para
+`web_search`.
 
 La validación baseline ejecuta `scripts/check_secrets.py` sobre cada archivo
 versionado y sobre la versión exacta de todo blob staged. El control rechaza
@@ -375,7 +375,7 @@ flowchart TD
 | Suite 218/1/28 | Ejecución local coincide | Confirmado |
 | UI tiene 4.535 líneas y main 2.331 | Recuento directo coincide | Confirmado |
 | Acceso a Gemini distribuido | `main.py` y al menos diez acciones importan el SDK directamente | Confirmado |
-| Configuración/secrets protegidos | `.gitignore`, `keyring` y sanitización existen | Confirmado; lectura/configuración sigue distribuida |
+| Configuración/secrets protegidos | `.gitignore`, gate de secretos, sanitización y owner cacheado/atómico | Cumplido en Fase 10; historial y archivos no versionados quedan fuera del gate |
 
 ## Límites de validación de esta auditoría
 

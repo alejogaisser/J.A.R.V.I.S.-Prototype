@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import json
 import re
 import sys
 import threading
@@ -34,6 +33,7 @@ except ImportError:
 
 from google import genai
 from google.genai import types as gtypes
+from config.settings import get_settings, update_settings
 from core.model_fallback import generate_with_model_fallback, is_transient_api_error
 from utils.camera import configure_capture, profile_from_config
 
@@ -43,38 +43,29 @@ def _base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-_BASE        = _base_dir()
-_CONFIG_PATH = _BASE / "config" / "api_keys.json"
+_BASE = _base_dir()
 _DEFAULT_VISION_MODEL = "gemini-3.5-flash"
 _DEFAULT_VISION_FALLBACK_MODEL = "gemini-3.1-flash-lite"
 _RETIRED_VISION_MODELS = {"gemini-2.5-flash"}
 
 
 def _load_config() -> dict:
-    try:
-        return json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return get_settings().as_legacy_dict()
 
 
 def _save_config_key(key: str, value) -> None:
     try:
-        cfg = _load_config()
-        cfg[key] = value
-        _CONFIG_PATH.write_text(json.dumps(cfg, indent=4), encoding="utf-8")
+        update_settings({key: value})
     except Exception as e:
         print(f"[Vision] ⚠️  Could not save config key '{key}': {e}")
 
 
 def _get_api_key() -> str:
-    key = _load_config().get("gemini_api_key", "")
-    if not key:
-        raise RuntimeError("gemini_api_key not found in config.")
-    return key
+    return get_settings().require_gemini_api_key()
 
 
 def _get_os() -> str:
-    return _load_config().get("os_system", "windows").lower()
+    return get_settings().os_system
 
 
 def _vision_models() -> tuple[str, ...]:

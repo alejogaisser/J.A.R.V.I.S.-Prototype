@@ -9,6 +9,7 @@ from config.settings import (
     SettingsError,
     get_settings,
     refresh_settings,
+    update_settings,
 )
 
 
@@ -95,10 +96,76 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaisesRegex(SettingsError, "gemini_api_key"):
             settings.require_gemini_api_key()
 
+    def test_update_is_atomic_validated_and_refreshes_cache(self):
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "nested" / "config.json"
+            first = update_settings(
+                {
+                    "gemini_api_key": "first-secret",
+                    "os_system": "windows",
+                    "camera_index": 2,
+                },
+                path,
+            )
+            second = update_settings({"camera_index": 3}, path)
+            on_disk = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(first.extras["camera_index"], 2)
+        self.assertIs(get_settings(path), second)
+        self.assertEqual(second.extras["camera_index"], 3)
+        self.assertEqual(on_disk["gemini_api_key"], "first-secret")
+        self.assertEqual(on_disk["camera_index"], 3)
+
+    def test_invalid_update_does_not_replace_existing_document(self):
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "config.json"
+            update_settings({"os_system": "linux", "camera_index": 1}, path)
+
+            with self.assertRaisesRegex(SettingsError, "os_system"):
+                update_settings({"os_system": "unsupported"}, path)
+
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8"))["camera_index"],
+                1,
+            )
+
+    def test_non_json_update_does_not_replace_existing_document(self):
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "config.json"
+            update_settings({"os_system": "linux", "camera_index": 1}, path)
+
+            with self.assertRaisesRegex(SettingsError, "JSON serializable"):
+                update_settings({"camera_index": object()}, path)
+
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8"))["camera_index"],
+                1,
+            )
+
     def test_main_uses_settings_owner_instead_of_reading_config_json(self):
         source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn("get_settings().require_gemini_api_key()", source)
         self.assertNotIn('API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"', source)
+
+    def test_production_modules_do_not_read_or_write_secret_config_directly(self):
+        roots = ("actions", "core", "dashboard", "memory")
+        allowed = {
+            Path("actions/file_controller.py"),
+            Path("config/settings.py"),
+        }
+        candidates = [Path("ui.py")]
+        for root in roots:
+            candidates.extend(Path(root).rglob("*.py"))
+
+        for path in candidates:
+            if path in allowed:
+                continue
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "api_keys.json",
+                source,
+                f"{path} bypasses config.settings",
+            )
 
 
 if __name__ == "__main__":
