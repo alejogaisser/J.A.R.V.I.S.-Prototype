@@ -373,6 +373,21 @@ especializado de entropía.
 - **Pruebas:** lectura con/sin `.md`, escritura con backup, raíz no normalizada,
   `..`, ruta absoluta, prefijo engañoso y symlink cuando Windows lo permite.
 
+### M-10 - QML no demuestra una ventaja neta para la UI actual
+
+- **Estado:** decisión cerrada en Fase 14; conservar PyQt Widgets.
+- **Descripción:** el PDF permite considerar QML sólo mediante un prototipo
+  aislado y una ventaja medible, no como reescritura asumida.
+- **Evidencia:** cinco procesos por variante, 45 frames por proceso,
+  Windows/Python 3.14.6/Qt 6.11 offscreen con backend software. QML mejoró
+  pacing p95 16,3%, pero empeoró startup frío 239,6% y RSS incremental 58,8%.
+- **Impacto:** migrar ahora agregaría costo y riesgo de paridad sin evidencia
+  de mejora global.
+- **Resolución:** mantener `ui.py`/`ui_mk2` en Widgets. Reabrir sólo con pantalla
+  real, GPU visible, paridad funcional/visual/accesible y packaging congelado
+  que cumpla el umbral de 15% sin regresiones mayores al 10%.
+- **Rollback:** el benchmark es independiente; retirarlo no cambia runtime.
+
 ## Hallazgos bajos
 
 ### L-01 - Dependencia declarada sin uso de runtime observado

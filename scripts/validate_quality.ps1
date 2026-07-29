@@ -4,6 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $QualityFiles = @(
+    "benchmarks/ui_qml_decision.py",
     "config/settings.py",
     "core/diagnostics.py",
     "core/events.py",
@@ -23,6 +24,7 @@ $QualityFiles = @(
     "tests/test_structured_logging.py",
     "tests/test_runtime_events.py",
     "tests/test_agent_supervisor.py",
+    "tests/test_ui_qml_benchmark.py",
     "tests/test_worker_supervisor.py"
 )
 

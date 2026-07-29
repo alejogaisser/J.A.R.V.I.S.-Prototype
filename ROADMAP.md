@@ -305,7 +305,8 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
 
 ### Fase 14 - Decisión QML por benchmark
 
-- **Estado:** pendiente y opcional.
+- **Estado:** completada en `codex/19-qml-benchmark`; decisión: conservar
+  PyQt Widgets y diferir QML.
 - **Objetivo:** decidir con una prueba aislada si QML reduce complejidad o mejora
   rendimiento frente a PyQt Widgets.
 - **Archivos previstos:** benchmark/prototipo aislado y documentación; no
@@ -316,6 +317,13 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   ante ventaja medible.
 - **Pruebas:** startup, memoria, frame pacing, interacción y packaging.
 - **Rollback:** descartar el prototipo sin tocar la UI productiva.
+- **Evidencia de rama:** cinco procesos aislados por variante, 45 frames por
+  proceso, Qt 6.11/offscreen/software. QML mejoró frame pacing p95 de 16,14 a
+  13,52 ms, pero elevó startup frío de 63,93 a 217,07 ms y RSS incremental de
+  20,62 a 32,74 MiB. Ambos tuvieron 0% jank y la diferencia de interacción no
+  fue material. Los guardrails predefinidos rechazan adopción si una ventaja
+  de al menos 15% introduce regresiones mayores al 10%; el resultado es
+  `defer`. `ui.py` y `ui_mk2/*` no se modificaron.
 
 ## Baseline y presupuestos iniciales
 

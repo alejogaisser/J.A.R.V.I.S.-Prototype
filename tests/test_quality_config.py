@@ -25,10 +25,14 @@ def test_quality_script_names_the_incremental_surface():
     assert "core/events.py" in source
     assert "tests/test_runtime_events.py" in source
     assert "tests/test_agent_supervisor.py" in source
+    assert "benchmarks/ui_qml_decision.py" in source
+    assert "tests/test_ui_qml_benchmark.py" in source
     assert "tests/test_worker_supervisor.py" in source
     assert "tests/test_secret_scanner.py" in source
     assert "ruff check @QualityFiles" in source
     assert "python -m mypy" not in source
+    baseline = Path("scripts/validate_baseline.ps1").read_text(encoding="utf-8")
+    assert "compileall -q actions benchmarks config" in baseline
 
 
 def test_ci_is_bounded_and_uses_the_reproducible_baseline():

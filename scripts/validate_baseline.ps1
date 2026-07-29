@@ -36,7 +36,7 @@ Invoke-Checked "Main import and tool count (Qt offscreen)" {
     & $Python -c $mainImport
 }
 Invoke-Checked "Python syntax" {
-    & $Python -m compileall -q actions config connectors core dashboard memory tests ui_mk2 utils main.py ui.py wake_word.py jarvis_launcher.py
+    & $Python -m compileall -q actions benchmarks config connectors core dashboard memory tests ui_mk2 utils main.py ui.py wake_word.py jarvis_launcher.py
 }
 Invoke-Checked "Incremental lint and type checking" {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/validate_quality.ps1 -Python $Python
