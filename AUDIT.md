@@ -399,6 +399,23 @@ especializado de entropía.
 
 ## Hallazgos bajos
 
+### L-00 - Instrucciones operativas sin gate estructurado
+
+- **Estado:** resuelto en Fase 16 desde la fase de enforcement 15.
+- **Descripción:** la sección 16 y `AGENTS.md` exigían motivo, archivos,
+  riesgos, pruebas, métricas, rollback y preguntas arquitectónicas, pero su
+  cumplimiento dependía sólo de texto libre.
+- **Impacto:** una fase podía declararse completa omitiendo evidencia o
+  confundiendo mocks con comportamiento real.
+- **Resolución:** contrato de 19 controles y un registro secuencial por fase;
+  validación de evidencia contenida, rutas sensibles, resultados, Obsidian,
+  destructividad y beneficio de abstracciones.
+- **Límite:** CI no puede demostrar acciones humanas ni leer de forma portable
+  la nota Obsidian externa. Esos puntos siguen documentados para revisión de
+  handoff y no se marcan como automatizados.
+- **Rollback:** retirar el gate del baseline y revertir sus artefactos no cambia
+  runtime.
+
 ### L-01 - Dependencia declarada sin uso de runtime observado
 
 - **Descripción:** `beautifulsoup4` sólo figura en el instalador y requirements; no hay import/uso en código funcional.
