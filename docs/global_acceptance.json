@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "source": "JARVIS_Mark_LI_Arquitectura_y_Plan_de_Mejora_v1.1.pdf, section 15",
+  "criteria": [
+    {
+      "id": "SEC-01",
+      "category": "tools_security",
+      "statement": "Every execution route passes through central policy.",
+      "status": "partial",
+      "evidence": ["docs/tool_migration_matrix.md", "tests/test_security_hardening.py"],
+      "gap": "Special routes still need the common execution envelope."
+    },
+    {
+      "id": "SEC-02",
+      "category": "tools_security",
+      "statement": "ToolResult distinguishes execution, effect, verification, and rollback.",
+      "status": "partial",
+      "evidence": ["core/tools/definitions.py", "docs/tool_migration_matrix.md"],
+      "gap": "The v2 contract exists, but several tools still use legacy normalization."
+    },
+    {
+      "id": "SEC-03",
+      "category": "tools_security",
+      "statement": "Sensitive actions respect the immutable permission floor and request origin.",
+      "status": "verified",
+      "evidence": ["core/permissions/policy.py", "tests/test_permissions.py", "tests/test_request_context.py"],
+      "gap": ""
+    },
+    {
+      "id": "SEC-04",
+      "category": "tools_security",
+      "statement": "PermissionStore, memory, and runtime state publish atomically and fail closed.",
+      "status": "verified",
+      "evidence": ["core/permissions/store.py", "memory/memory_manager.py", "core/runtime_state.py", "tests/test_permission_store_atomic.py", "tests/test_memory_atomic.py", "tests/test_runtime_state.py"],
+      "gap": ""
+    },
+    {
+      "id": "LIFE-01",
+      "category": "state_lifecycle",
+      "statement": "Audio, session, vision, dashboard, and shutdown have a documented owner.",
+      "status": "partial",
+      "evidence": ["docs/runtime_ownership.md", "ARCHITECTURE.md"],
+      "gap": "Dashboard and global shutdown ownership remain distributed."
+    },
+    {
+      "id": "LIFE-02",
+      "category": "state_lifecycle",
+      "statement": "Workers start, cancel, stop, and restart without leaking resources.",
+      "status": "partial",
+      "evidence": ["services/workers.py", "tests/test_worker_supervisor.py", "docs/worker_supervision.md"],
+      "gap": "Browser and vision are supervised pilots; other action workers remain legacy."
+    },
+    {
+      "id": "LIFE-03",
+      "category": "state_lifecycle",
+      "statement": "Critical flags have one writer or a single mutation API.",
+      "status": "partial",
+      "evidence": ["services/runtime.py", "docs/runtime_ownership.md", "ARCHITECTURE.md"],
+      "gap": "The extracted owners are covered, but the remaining legacy flags are not fully inventoried."
+    },
+    {
+      "id": "LIFE-04",
+      "category": "state_lifecycle",
+      "statement": "Wake preserves a single instance and microphone recovery.",
+      "status": "manual",
+      "evidence": ["wake_word.py", "tests/test_jarvis_launcher.py", "docs/baseline.md"],
+      "gap": "Static and mocked checks pass; acoustic hardware recovery still needs observation."
+    },
+    {
+      "id": "OBS-01",
+      "category": "observability",
+      "statement": "Every entry receives a request_id.",
+      "status": "partial",
+      "evidence": ["core/request_context.py", "docs/request_lifecycle.md", "tests/test_request_context.py"],
+      "gap": "The central tool path is correlated; non-tool and remaining special entries need a complete inventory."
+    },
+    {
+      "id": "OBS-02",
+      "category": "observability",
+      "statement": "Every tool records policy, duration, result, evidence, and verification.",
+      "status": "partial",
+      "evidence": ["core/tools/executor.py", "core/request_audit.py", "docs/tool_migration_matrix.md"],
+      "gap": "Legacy-normalized tools do not all produce observed evidence and verification."
+    },
+    {
+      "id": "OBS-03",
+      "category": "observability",
+      "statement": "Logs sanitize secrets and omit sensitive bodies.",
+      "status": "verified",
+      "evidence": ["core/request_audit.py", "core/structured_logging.py", "tests/test_request_context.py", "tests/test_structured_logging.py"],
+      "gap": ""
+    },
+    {
+      "id": "OBS-04",
+      "category": "observability",
+      "statement": "Logging failure does not prevent startup.",
+      "status": "verified",
+      "evidence": ["core/request_audit.py", "core/structured_logging.py", "tests/test_request_context.py", "tests/test_structured_logging.py"],
+      "gap": ""
+    },
+    {
+      "id": "UI-01",
+      "category": "ui_providers",
+      "statement": "The UI emits commands and consumes snapshots.",
+      "status": "partial",
+      "evidence": ["core/ui_boundary.py", "docs/ui_thread_boundary.md", "tests/test_ui_thread_boundary.py"],
+      "gap": "The migrated tool boundary is covered; remaining legacy UI flows need inventory."
+    },
+    {
+      "id": "UI-02",
+      "category": "ui_providers",
+      "statement": "AI actions depend on provider interfaces.",
+      "status": "partial",
+      "evidence": ["core/providers", "docs/provider_adapters.md", "tests/test_provider_adapters.py"],
+      "gap": "Web search is the pilot; text, Live, and vision actions still need migration."
+    },
+    {
+      "id": "UI-03",
+      "category": "ui_providers",
+      "statement": "QML is adopted only after a passing benchmark.",
+      "status": "verified",
+      "evidence": ["docs/ui_qml_benchmark.md", "benchmarks/ui_qml_decision.py", "tests/test_ui_qml_benchmark.py"],
+      "gap": ""
+    },
+    {
+      "id": "TEST-01",
+      "category": "tests_performance",
+      "statement": "Changes include unit, integration, and smoke coverage.",
+      "status": "verified",
+      "evidence": ["scripts/validate_baseline.ps1", "docs/quality_gates.md", "tests"],
+      "gap": ""
+    },
+    {
+      "id": "TEST-02",
+      "category": "tests_performance",
+      "statement": "Latency stays within the agreed baseline.",
+      "status": "manual",
+      "evidence": ["docs/baseline.md", "ROADMAP.md", "docs/ui_qml_benchmark.md"],
+      "gap": "Wake, audio interruption, local-tool, reconnect, and shutdown targets still need real runtime measurements."
+    },
+    {
+      "id": "TEST-03",
+      "category": "tests_performance",
+      "statement": "Every sensitive change documents rollback.",
+      "status": "partial",
+      "evidence": ["ROADMAP.md", "AUDIT.md"],
+      "gap": "Phased changes document rollback, but there is no repository-wide enforcement for every future sensitive change."
+    },
+    {
+      "id": "TEST-04",
+      "category": "tests_performance",
+      "statement": "Priority fault injection is validated before legacy removal.",
+      "status": "partial",
+      "evidence": ["tests/test_permission_store_atomic.py", "tests/test_worker_supervisor.py", "tests/test_tool_cancellation.py", "docs/tool_migration_matrix.md"],
+      "gap": "Priority pilots have fault injection; legacy adapters have not all reached removal criteria."
+    }
+  ]
+}

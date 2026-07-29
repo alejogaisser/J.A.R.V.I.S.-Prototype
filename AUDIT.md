@@ -219,12 +219,21 @@ especializado de entropía.
 
 ### H-09 - Memoria atómica sólo dentro de un proceso
 
-- **Descripción:** usa `RLock`, temporal y `os.replace`, pero no lock entre procesos ni fsync.
+- **Estado:** mitigado en Fase 15 para durabilidad, validación, backup y
+  recuperación; locking interproceso y cifrado opcional siguen pendientes.
+- **Descripción original:** usaba `RLock`, temporal y `os.replace`, pero no
+  lock entre procesos ni `fsync`.
 - **Evidencia:** `memory/memory_manager.py:25-36,76-80,102-135`.
 - **Impacto:** dos procesos/escritores o un corte pueden perder la última actualización; la privacidad sensible sigue en texto plano.
 - **Solución recomendada:** locking interproceso, fsync, recuperación probada y cifrado opcional.
 - **Esfuerzo:** medio-alto.
 - **Prioridad:** P1.
+- **Resolución parcial:** el temporal vive en el mismo directorio, se valida
+  antes de publicar, usa `flush`/`fsync` y `os.replace`, y se limpia ante
+  fallos. Sólo un primario validado reemplaza el backup; un primario corrupto
+  recupera el último backup válido. Las pruebas inyectan fallos de escritura y
+  publicación. El riesgo restante es actualización perdida entre procesos y
+  almacenamiento sensible sin cifrado.
 
 ### H-10 - Ejecución e instalación generada tienen autoridad amplia
 

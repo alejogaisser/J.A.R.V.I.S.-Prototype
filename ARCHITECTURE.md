@@ -78,7 +78,7 @@ flowchart TD
 | `services/*` | Owners de identidad de sesión, interrupción/micrófono, visión/cámara y shutdown | `core.live_session`, locks estándar | Compuestos por `JarvisLive`; snapshots y métricas tipadas |
 | `services/workers.py` | Lifecycle, health y restart acotado de workers | callbacks tipados, EventBus | Pilotos browser/visión integrados |
 | `services/agents.py` | Contratos, budget, workspace canónico y rollback de agentes | `pathlib`, contratos tipados | Integrado en `dev_agent`; ejecución generada bloqueada |
-| `core/runtime_state.py` | Estado observable por proceso mediante JSON reemplazado | filesystem | Atómico por reemplazo; errores silenciosos deliberados |
+| `core/runtime_state.py` | Estado observable por proceso mediante JSON durable y reemplazado | filesystem | Temporal validado, `fsync` y reemplazo; errores silenciosos deliberados |
 | `actions/*` | SO, navegador, archivos, visión, web, recordatorios, estudio y desarrollo | heterogéneas; varias importan Gemini | Amplio, contratos desiguales |
 | `memory/*` | Memoria v2, historial, expiración, sensibilidad, grafo y scripts | JSON, filesystem | Implementado; falta locking entre procesos |
 | `connectors/*` | Gmail, Calendar, Drive y Outlook | SDK Google/Microsoft, `keyring` | Implementado con capacidades desiguales |
@@ -271,14 +271,16 @@ obligatorias antes de reabrir la decisión.
 1. `memory_manager.py` carga `memory/long_term.json`.
 2. Migra formatos anteriores a esquema v2 y conserva backup.
 3. CRUD usa IDs, historial, categorías, sensibilidad, expiración y borrado lógico.
-4. `_atomic_write()` escribe un temporal y usa `os.replace`.
+4. `_atomic_write()` valida bytes, escribe un temporal en el mismo directorio,
+   ejecuta `flush`/`fsync` y publica con `os.replace`.
 5. El prompt recibe una vista limitada y las memorias sensibles se redactan en listados.
 6. El grafo se construye sólo con registros reales y relaciones explícitas.
 
 Límites:
 
 - el lock es sólo intra-proceso;
-- falta `fsync`/recuperación transaccional más fuerte;
+- el lock sigue siendo intra-proceso y no evita actualizaciones perdidas entre
+  procesos;
 - no hay cifrado opcional de contenido sensible;
 - `save_memory` ya atraviesa policy, pero continúa como ruta especial;
 - `script_memory.py` conserva previews de código, pero su ejecución cruda está
@@ -404,7 +406,7 @@ flowchart TD
 | Todas las tool calls pasan por policy central | `save_memory` fue movida detrás de registro, policy y confirmación | Cumplido para las 37 tools; persisten branches especiales posteriores a policy |
 | ToolRegistry y ToolExecutor centralizan el flujo | Existen, pero siete tools son especiales y queda dispatch heredado inalcanzable | Parcial |
 | PermissionStore debe hacerse atómico | Temporal en mismo directorio, `fsync`, validación, backup y `os.replace` | Cumplido en Fase 3; lock interproceso pendiente |
-| Memoria usa escritura atómica | Temporal + `os.replace` presentes | Confirmado; falta fsync/lock interproceso |
+| Memoria usa escritura atómica | Temporal validado, `fsync`, backup recuperable y `os.replace` | Endurecido en Fase 15; falta lock interproceso |
 | 37 herramientas, 102 Python, 22 tests | Recuento directo coincide | Confirmado |
 | Suite 218/1/28 | Ejecución local coincide | Confirmado |
 | UI tiene 4.535 líneas y main 2.331 | Recuento directo coincide | Confirmado |
@@ -453,3 +455,16 @@ Se verificaron sintaxis, imports, launcher `--help`, import offscreen de `main.p
 - PyQt Widgets sigue siendo la presentación productiva. El benchmark, sus
   umbrales, límites y condiciones de reapertura están documentados en
   `docs/ui_qml_benchmark.md`.
+
+### 2026-07-29 - Fase 15
+
+- `docs/global_acceptance.json` representa exactamente los 19 criterios
+  globales del PDF y separa evidencia verificada, parcial y manual.
+- `scripts/check_global_acceptance.py` rechaza inventario incompleto, estados
+  incoherentes, evidencia ausente o rutas externas. Su modo estricto no permite
+  cierre mientras exista una brecha.
+- Memoria valida y hace durable temporal, backup y publicación. Un primario
+  corrupto no reemplaza el último backup válido y puede recuperarse desde él.
+- `runtime_state` preserva el último JSON completo ante fallos, no permite que
+  detalles reemplacen campos reservados y mantiene su contrato de telemetría
+  best-effort que nunca impide el arranque.

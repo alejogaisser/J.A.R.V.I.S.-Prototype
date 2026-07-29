@@ -31,6 +31,11 @@ El benchmark aislado de Fase 14 y sus tests también pasan por Ruff. No se añad
 a mypy porque es instrumentación reproducible, no un contrato productivo. El
 baseline incluye `benchmarks/` en `compileall`.
 
+Fase 15 incorpora `scripts/check_global_acceptance.py` a Ruff y mypy, y su
+prueba a Ruff. El baseline ejecuta el gate en modo integridad: exige los 19
+criterios del PDF y evidencia local válida, sin confundir ese control con el
+cierre estricto de brechas manuales o parciales.
+
 Ejecución:
 
 ```powershell
