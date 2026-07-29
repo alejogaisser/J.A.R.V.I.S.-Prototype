@@ -212,6 +212,53 @@
       "confirmation": "not_applicable",
       "preview": "not_applicable",
       "obsidian_note": "updated"
+    },
+    {
+      "phase": 17,
+      "title": "Audit methodology and scope closure",
+      "motivation": "Preserve the section 17 snapshot sources and limits while preventing a false claim of complete global acceptance.",
+      "objective": "Close the PDF execution sequence with a reproducible source, limitation, and residual-risk manifest.",
+      "files": [
+        "docs/audit_closure.json",
+        "docs/audit_closure.md",
+        "scripts/check_audit_closure.py",
+        "tests/test_audit_closure.py"
+      ],
+      "risks": [
+        "A source inventory verifies presence, not semantic completeness of every file.",
+        "Thirteen global acceptance criteria remain partial or manual."
+      ],
+      "tests": [
+        {
+          "scope": "directed",
+          "command": "python -m pytest -q tests/test_audit_closure.py",
+          "outcome": "passed",
+          "result": "5 passed; 12 passed across audit and operational gates"
+        },
+        {
+          "scope": "baseline",
+          "command": "scripts/validate_baseline.ps1",
+          "outcome": "passed",
+          "result": "410 passed, 2 skipped, 106 subtests passed"
+        }
+      ],
+      "metrics": [
+        "8 snapshot source groups and 5 explicit limits inventoried.",
+        "13 unresolved global criteria prevent verified_complete."
+      ],
+      "rollback": "Remove the closure gate call and revert its manifest, script, test, and documentation; runtime remains unchanged.",
+      "owner": "Audit closure manifest: scripts/check_audit_closure.py.",
+      "policy_route": "not_applicable",
+      "effect_verification": "The gate resolves every source/evidence path and cross-checks closure status against the global acceptance matrix.",
+      "cancellation_timeout_reconnect": "The read-only local gate has no worker, retry, reconnect, or external timeout.",
+      "compatibility": "No runtime, Gemini, audio, UI, tool, or legacy adapter is modified.",
+      "abstraction_benefit": "verifies_effect",
+      "real_behavior": "automated_without_hardware",
+      "limitations": "File presence does not replace semantic review; hardware, accounts, network, and destructive effects remain untested.",
+      "destructive": false,
+      "confirmation": "not_applicable",
+      "preview": "not_applicable",
+      "obsidian_note": "updated"
     }
   ]
 }

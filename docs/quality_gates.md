@@ -40,6 +40,10 @@ Fase 16 añade `scripts/check_operational_change_control.py` a Ruff/mypy y su
 prueba a Ruff. El baseline exige los 19 controles operativos y un registro
 estructurado por fase completada desde la 15.
 
+Fase 17 añade `scripts/check_audit_closure.py` a Ruff/mypy y su prueba a Ruff.
+El baseline conserva los ocho grupos de fuentes, cinco límites y el estado de
+riesgos abiertos sincronizado con aceptación global.
+
 Ejecución:
 
 ```powershell

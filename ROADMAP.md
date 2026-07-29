@@ -377,6 +377,28 @@ El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir t
   `AGENTS.md`, `git status` y la nota externa siguen siendo verificaciones
   humanas explícitas: el gate no afirma observar lo que CI no puede demostrar.
 
+### Fase 17 - Cierre metodológico, alcance y límites
+
+- **Estado:** completada en `codex/22-audit-closure`; cierre del recorrido del
+  PDF con riesgos abiertos.
+- **Objetivo:** preservar las fuentes y límites de la sección 17 y bloquear una
+  declaración global completa mientras falte evidencia.
+- **Archivos:** `docs/audit_closure.*`, `scripts/check_audit_closure.py`, tests,
+  control operativo y gates de calidad.
+- **Riesgo:** bajo; cambio documental/CI sin efecto productivo.
+- **Dependencias:** matriz global de Fase 15 y control operativo de Fase 16.
+- **Criterio de aceptación:** inventario exacto de 8 grupos de fuentes y 5
+  límites; rutas contenidas y existentes; resumen sincronizado con aceptación
+  global; `verified_complete` rechazado mientras haya criterios abiertos.
+- **Pruebas:** grupo/límite ausente, ruta externa/inexistente, resumen
+  desactualizado y cierre completo falso.
+- **Rollback:** retirar el gate del baseline y revertir sus artefactos; no hay
+  migración de datos ni cambio de runtime.
+- **Evidencia de rama:** 12 tests dirigidos entre cierre/control operativo,
+  Ruff limpio, mypy sin errores en 17 módulos y baseline con 410 tests
+  aprobados, 2 omitidos y 106 subtests. El recorrido del PDF queda cerrado como
+  `closed_with_open_risks`: 6 criterios globales verificados y 13 aún abiertos.
+
 ## Baseline y presupuestos iniciales
 
 Los siguientes valores del PDF son objetivos provisionales, no resultados medidos:
