@@ -77,6 +77,7 @@ flowchart TD
 | `core/live_session.py` | Checkpoint resumible y watchdog de audio | biblioteca estándar | Aislado y probado |
 | `services/*` | Owners de identidad de sesión, interrupción/micrófono, visión/cámara y shutdown | `core.live_session`, locks estándar | Compuestos por `JarvisLive`; snapshots y métricas tipadas |
 | `services/workers.py` | Lifecycle, health y restart acotado de workers | callbacks tipados, EventBus | Pilotos browser/visión integrados |
+| `services/agents.py` | Contratos, budget, workspace canónico y rollback de agentes | `pathlib`, contratos tipados | Integrado en `dev_agent`; ejecución generada bloqueada |
 | `core/runtime_state.py` | Estado observable por proceso mediante JSON reemplazado | filesystem | Atómico por reemplazo; errores silenciosos deliberados |
 | `actions/*` | SO, navegador, archivos, visión, web, recordatorios, estudio y desarrollo | heterogéneas; varias importan Gemini | Amplio, contratos desiguales |
 | `memory/*` | Memoria v2, historial, expiración, sensibilidad, grafo y scripts | JSON, filesystem | Implementado; falta locking entre procesos |
@@ -344,6 +345,15 @@ de sólo lectura; no se generaliza todavía a plataformas no verificadas.
 11. 360 handlers de excepción amplios, 67 con `pass`, y 303 llamadas `print()` en el árbol versionado.
 12. Dependencias opcionales/legacy mezcladas con capacidades principales.
 
+La autoridad de agentes queda separada de la generación de texto.
+`AgentSupervisor` valida planes no confiables, posee cada escritura y produce
+evidencia tipada. El workspace evita escapes y sobrescrituras, pero no se
+considera un sandbox de ejecución. Por eso `dev_agent` sólo materializa una
+vista previa: no acepta comandos ni dependencias del modelo, no ejecuta código
+y no abre procesos externos. Las rutinas crudas memorizadas también permanecen
+bloqueadas; su catálogo se conserva para una migración posterior a acciones
+declarativas allowlisted.
+
 ## Arquitectura objetivo incremental
 
 ```mermaid
@@ -410,3 +420,17 @@ Se verificaron sintaxis, imports, launcher `--help`, import offscreen de `main.p
   UI offscreen, sintaxis, inventario, suite y diff.
 - La instalación limpia sobre Python 3.14.6 y las validaciones se completaron
   sin acceder a hardware, cuentas, secretos ni efectos externos.
+
+### 2026-07-29 - Fase 13
+
+- `AgentTask`, `AgentBudget` y `AgentResult` hacen explícitos correlación,
+  límites, workspace, evidencia y rollback.
+- `AgentSupervisor` usa rutas resueltas y descendencia real; rechaza traversal,
+  absolutas, prefijos engañosos, symlinks externos y proyectos existentes.
+- `dev_agent` quedó reducido a generación contenida de previews. No instala,
+  ejecuta ni toma comandos desde la salida del modelo.
+- `script_memory` preserva las rutinas como previews, pero no ejecuta código
+  crudo y ya no obtiene un bypass `FREE` por estar registrado.
+- Las pruebas cubren prompt injection, dependencias, tiempo, salida excesiva,
+  escapes, symlinks cuando están disponibles y rollback parcial sin usar
+  Gemini, red, cuentas, hardware ni procesos reales.

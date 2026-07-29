@@ -138,10 +138,6 @@ class PermissionPolicy:
     def effective_level(self, tool: ToolDefinition, arguments: dict, context: ExecutionContext) -> PermissionLevel:
         operation = self.operation(tool.name, arguments)
         minimum = self.minimum(tool, operation)
-        if tool.name == "code_helper" and operation == "run":
-            from memory.script_memory import is_registered_script
-            if is_registered_script(arguments.get("routine_name", "")):
-                minimum = PermissionLevel.FREE
         configured = self.preferences.get(
             f"{tool.name}:{operation}",
             self.preferences.get(tool.name, PermissionLevel.FREE),

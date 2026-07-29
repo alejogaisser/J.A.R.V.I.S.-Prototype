@@ -228,12 +228,21 @@ especializado de entropía.
 
 ### H-10 - Ejecución e instalación generada tienen autoridad amplia
 
+- **Estado:** resuelto en Fase 13 para `dev_agent` y rutinas crudas heredadas.
 - **Descripción:** `dev_agent` instala dependencias decididas por salida de modelo y ejecuta comandos/proyectos; scripts memorizados ejecutan código.
 - **Evidencia:** `actions/dev_agent.py:239-272,295-344,519-549`; `memory/script_memory.py:23-34`.
 - **Impacto:** supply-chain, ejecución arbitraria, cambios persistentes y salidas sin límite estricto.
 - **Solución recomendada:** workspace aislado, allowlist, entorno virtual por proyecto, preview, confirmación siempre, límites de salida y auditoría.
 - **Esfuerzo:** alto.
 - **Prioridad:** P1 seguridad.
+- **Resolución:** el agente sólo crea previews en un proyecto nuevo contenido
+  por rutas canónicas, budgets tipados y rollback de archivos propios. Todo
+  `run_command` o dependencia propuesto por el modelo se rechaza antes de
+  escribir; se retiraron instalación, ejecución y apertura de IDE del handler.
+  `script_memory.run_script()` ya no interpreta código almacenado y la policy
+  dejó de conceder `FREE` a una rutina por estar registrada. La ejecución de
+  previews seguirá bloqueada hasta disponer de sandbox real y una segunda
+  confirmación explícita.
 
 ## Hallazgos medios
 

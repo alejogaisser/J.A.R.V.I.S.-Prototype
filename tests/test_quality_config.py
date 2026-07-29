@@ -12,6 +12,7 @@ def test_type_checking_is_limited_to_migrated_production_surface():
     assert "core/events.py" in files
     assert "services/runtime.py" in files
     assert "services/workers.py" in files
+    assert "services/agents.py" in files
     assert "config/settings.py" in files
     assert "main.py" not in files
     assert all(not path.endswith("/*") for path in files)
@@ -23,6 +24,7 @@ def test_quality_script_names_the_incremental_surface():
     assert "core/structured_logging.py" in source
     assert "core/events.py" in source
     assert "tests/test_runtime_events.py" in source
+    assert "tests/test_agent_supervisor.py" in source
     assert "tests/test_worker_supervisor.py" in source
     assert "tests/test_secret_scanner.py" in source
     assert "ruff check @QualityFiles" in source

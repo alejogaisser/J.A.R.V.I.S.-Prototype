@@ -27,19 +27,21 @@ el timeout, y antes de retornar termina y recolecta el árbol creado. El cleanup
 usa el PID exacto de `Popen` y sus descendientes mediante `psutil`; nunca busca
 procesos por nombre.
 
-El primer piloto es el comando de ejecución de proyectos de `dev_agent`. Un
-timeout ya no presenta una aplicación larga como posiblemente activa: termina
-su árbol y lo informa. La acción también añade checkpoints entre planificación,
-escritura, reintentos y ejecución. Si ya creó archivos, declara efecto parcial y
-rollback manual disponible.
+El primer piloto fue el comando de ejecución de proyectos de `dev_agent`. En
+Fase 13 esa ejecución automática se retiró: el agente conserva checkpoints
+entre planificación y escrituras contenidas, y `AgentSupervisor` elimina los
+archivos creados por la tarea si falla o se cancela. El runner sigue disponible
+para tools explícitas que ejecuten procesos confiables y allowlisted.
 
 ## Límites
 
 - Los handlers sin parámetro de cancelación mantienen el comportamiento legacy.
 - Python no permite detener con seguridad un thread arbitrario; un handler que
   ignore el token puede continuar.
-- Las llamadas de modelo, la instalación automática y la apertura del editor de
-  `dev_agent` todavía no usan transporte cancelable.
-- El rollback de un proyecto parcial se declara, pero no se ejecuta
-  automáticamente.
+- Las llamadas bloqueantes de modelo todavía dependen del timeout externo del
+  ToolExecutor; Python no puede terminar su thread por fuerza.
+- `dev_agent` ya no instala, abre editor ni ejecuta el preview. Habilitarlo
+  requerirá un sandbox de sistema operativo y otra confirmación, no sólo `cwd`.
+- El rollback automático cubre únicamente archivos nuevos propiedad de la
+  tarea; proyectos existentes se rechazan antes de escribir.
 - `cancel(request_id)` requiere una ejecución activa con `RequestContext`.

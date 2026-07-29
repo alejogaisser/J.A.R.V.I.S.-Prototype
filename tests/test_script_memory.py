@@ -1,6 +1,6 @@
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 import memory.script_memory as script_memory
 from core.permissions import PermissionPolicy
@@ -39,16 +39,20 @@ class ScriptMemoryTests(unittest.TestCase):
                 self.assertNotIn("file_path", prompt)
                 self.assertTrue(script_memory.is_registered_script("open daily"))
                 self.assertFalse(script_memory.is_registered_script("unknown"))
-                self.assertIn("routine ok", script_memory.run_script("open daily"))
+                self.assertIn(
+                    "execution is blocked",
+                    script_memory.run_script("open daily"),
+                )
                 code_tool = ToolDefinition(
                     "code_helper", "Code", {"type": "OBJECT", "properties": {}},
                     handler=lambda args: None, risk=RiskLevel.SENSITIVE,
                 )
-                self.assertTrue(
-                    PermissionPolicy().evaluate(
-                        code_tool, {"action": "run", "routine_name": "open daily"}
-                    ).allowed
+                decision = PermissionPolicy().evaluate(
+                    code_tool, {"action": "run", "routine_name": "open daily"}
                 )
+                self.assertFalse(decision.allowed)
+                self.assertTrue(decision.requires_confirmation)
+                self.assertEqual(decision.policy, "confirm_always")
         finally:
             script_memory.SCRIPT_MEMORY_PATH = original
 
