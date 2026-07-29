@@ -11,7 +11,6 @@ from pathlib import Path
 
 from .request_context import RequestContext
 
-
 DEFAULT_AUDIT_FILE = Path(__file__).resolve().parents[1] / "logs" / "request_audit.jsonl"
 _SAFE_LABEL = re.compile(r"^[a-zA-Z0-9_.:-]{1,64}$")
 _EVENTS = {

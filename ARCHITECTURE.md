@@ -302,6 +302,13 @@ al abrir el archivo deja disponible la consola y nunca impide el arranque.
 Los `print()` de wake y diagnósticos heredados permanecen por compatibilidad y
 se migrarán por frontera.
 
+La calidad continua también es incremental. `scripts/validate_quality.ps1`
+ejecuta Ruff sobre una allowlist de módulos/tests migrados y mypy sobre seis
+módulos productivos tipados. El baseline llama ese gate antes del escaneo de
+secretos y la suite. `.github/workflows/quality.yml` reproduce el mismo
+contrato en Windows con Python 3.12, timeout acotado y permisos de repositorio
+de sólo lectura; no se generaliza todavía a plataformas no verificadas.
+
 `requirements.txt` permite iniciar la base actual en el entorno existente, pero no declara varias dependencias importadas por capacidades anunciadas: `python-docx`, `pandas`, `openpyxl`, `PyPDF2`/`pdfplumber`, `pydub`, `faster-whisper`, `kokoro`, `miniaudio` y `torch`. Algunas son opcionales o legado no conectado; esa distinción todavía no está documentada ni separada en extras.
 
 ## Problemas arquitectónicos principales

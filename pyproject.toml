@@ -1,0 +1,23 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+files = [
+    "config/settings.py",
+    "core/diagnostics.py",
+    "core/request_audit.py",
+    "core/request_context.py",
+    "core/structured_logging.py",
+    "scripts/check_secrets.py",
+]
+check_untyped_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
