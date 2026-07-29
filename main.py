@@ -16,6 +16,7 @@ if _platform.system() == "Windows":
 # ─────────────────────────────────────────────────────────────────────────────
 
 import asyncio
+import logging
 import os
 import re
 import threading
@@ -61,6 +62,7 @@ from services.runtime import RuntimeServices
 from core.runtime_state import update_runtime_state
 from core.request_audit import RequestAuditSink
 from core.request_context import RequestContext
+from core.structured_logging import StructuredRuntimeLog
 from core.ui_boundary import UiCommandFacade
 from core.providers import GroundedSearchProvider
 from core.providers.google import GoogleGroundedSearchProvider
@@ -2609,6 +2611,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             await asyncio.sleep(delay)
 
 def main():
+    runtime_log = StructuredRuntimeLog()
     wake_supervised = os.environ.get("JARVIS_WAKE_SUPERVISED") == "1"
     if not wake_supervised:
         # Direct execution of main.py must obey the same microphone lifecycle
@@ -2620,6 +2623,14 @@ def main():
             print(f"[JARVIS] Could not pause wake detector: {exc}")
 
     start_in_pet_mode = "--pet" in sys.argv[1:]
+    runtime_log.record(
+        "application_started",
+        component="main",
+        metadata={
+            "surface": "pet" if start_in_pet_mode else "main",
+            "wake_supervised": wake_supervised,
+        },
+    )
     update_runtime_state(
         "jarvis", "on", surface="pet" if start_in_pet_mode else "main"
     )
@@ -2640,6 +2651,13 @@ def main():
             return
         except BaseException as exc:
             _CRASH_REPORTER.record_exception("JARVIS core runner", exc)
+            runtime_log.record(
+                "runner_failed",
+                level=logging.ERROR,
+                component="main",
+                message=f"{type(exc).__name__}: {exc}",
+                metadata={"error_code": type(exc).__name__},
+            )
             print(f"[JARVIS] Core stopped unexpectedly: {exc}")
             try:
                 ui.write_log(
@@ -2655,6 +2673,12 @@ def main():
         ui.root.mainloop()
     finally:
         update_runtime_state("jarvis", "off", reason="application_exit")
+        runtime_log.record(
+            "application_stopped",
+            component="main",
+            metadata={"reason": "application_exit"},
+        )
+        runtime_log.close()
         # Normal entry points supervise this process themselves.  If main.py
         # was executed directly, restore the always-on wake listener here too.
         if not wake_supervised:
