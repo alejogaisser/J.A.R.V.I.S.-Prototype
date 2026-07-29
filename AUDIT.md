@@ -399,6 +399,21 @@ especializado de entropía.
 
 ## Hallazgos bajos
 
+### L-00A - Límites del snapshot no estaban sincronizados con el cierre
+
+- **Estado:** resuelto en Fase 17 como cierre con riesgos abiertos.
+- **Descripción:** las fuentes y límites de la sección 17 eran texto estático;
+  podían quedar obsoletos o coexistir con una afirmación falsa de aceptación
+  completa.
+- **Impacto:** pérdida de trazabilidad del alcance y confusión entre baseline
+  mockeado, hardware real y arquitectura totalmente verificada.
+- **Resolución:** manifiesto exacto de 8 fuentes/5 límites, paths contenidos y
+  cruce automático con la matriz global. Con 13 criterios abiertos,
+  `verified_complete` falla.
+- **Límite:** existencia de un archivo no demuestra revisión semántica
+  exhaustiva; los pendientes permanecen en aceptación global.
+- **Rollback:** retirar gate/manifiesto no cambia runtime.
+
 ### L-00 - Instrucciones operativas sin gate estructurado
 
 - **Estado:** resuelto en Fase 16 desde la fase de enforcement 15.

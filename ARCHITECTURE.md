@@ -482,3 +482,15 @@ Se verificaron sintaxis, imports, launcher `--help`, import offscreen de `main.p
 - El contrato no entra al runtime ni crea una segunda autoridad arquitectónica:
   `ROADMAP.md` conserva el estado de fases y el script sólo comprueba
   coherencia/evidencia.
+
+### 2026-07-29 - Fase 17
+
+- `docs/audit_closure.json` conserva los ocho grupos de fuentes y cinco límites
+  metodológicos de la última sección del PDF.
+- El gate comprueba rutas contenidas/existentes y sincroniza la conclusión con
+  `docs/global_acceptance.json`.
+- La ejecución del roadmap del PDF queda cerrada, pero la arquitectura no se
+  declara totalmente aceptada: 13 criterios globales permanecen parciales o
+  manuales.
+- No se modificaron runtime, Gemini, audio, UI, tools ni adaptadores. La fase
+  sólo hace verificable el alcance y evita que desaparezcan sus límites.

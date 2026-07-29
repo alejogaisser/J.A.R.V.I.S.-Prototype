@@ -19,9 +19,17 @@ class OperationalChangeControlTests(unittest.TestCase):
 
     def test_contract_covers_all_pdf_controls_and_sequential_phases(self):
         controls, changes = control.validate_contract(self.payload, REPO_ROOT)
+        phases = [change["phase"] for change in self.payload["changes"]]
+        expected = list(
+            range(
+                self.payload["enforcement_start_phase"],
+                max(phases) + 1,
+            )
+        )
 
         self.assertEqual(controls, 19)
-        self.assertEqual(changes, 2)
+        self.assertEqual(changes, len(expected))
+        self.assertEqual(phases, expected)
 
     def test_missing_control_fails_closed(self):
         payload = copy.deepcopy(self.payload)

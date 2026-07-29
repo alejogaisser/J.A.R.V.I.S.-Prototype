@@ -50,6 +50,9 @@ Invoke-Checked "Global acceptance inventory" {
 Invoke-Checked "Operational change control" {
     & $Python scripts/check_operational_change_control.py --repo-root .
 }
+Invoke-Checked "Audit closure inventory" {
+    & $Python scripts/check_audit_closure.py --repo-root .
+}
 Invoke-Checked "Tool inventory contract" {
     & $Python -m pytest -q tests/test_tool_inventory.py
 }

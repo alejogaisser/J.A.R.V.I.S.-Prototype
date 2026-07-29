@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "source": "JARVIS_Mark_LI_Arquitectura_y_Plan_de_Mejora_v1.1.pdf, section 17",
+  "snapshot_date": "2026-07-28",
+  "review_date": "2026-07-29",
+  "closure_status": "closed_with_open_risks",
+  "source_groups": [
+    {
+      "id": "SRC-01",
+      "name": "entry_runtime",
+      "paths": ["jarvis_launcher.py", "wake_word.py", "main.py"]
+    },
+    {
+      "id": "SRC-02",
+      "name": "central_architecture",
+      "paths": ["core/tools", "core/permissions", "core/live_session.py", "core/runtime_state.py"]
+    },
+    {
+      "id": "SRC-03",
+      "name": "security",
+      "paths": ["core/security.py", "core/diagnostics.py", "SECURITY.md", ".gitignore"]
+    },
+    {
+      "id": "SRC-04",
+      "name": "presentation",
+      "paths": ["ui.py", "ui_mk2", "dashboard"]
+    },
+    {
+      "id": "SRC-05",
+      "name": "memory",
+      "paths": ["memory/memory_manager.py", "memory/graph_index.py", "memory/script_memory.py"]
+    },
+    {
+      "id": "SRC-06",
+      "name": "integrations",
+      "paths": ["connectors", "actions/account_connector.py", "actions/obsidian_connector.py"]
+    },
+    {
+      "id": "SRC-07",
+      "name": "actions",
+      "paths": ["actions"]
+    },
+    {
+      "id": "SRC-08",
+      "name": "documentation_tests",
+      "paths": ["readme.md", "CHANGELOG.md", "requirements.txt", "tests"]
+    }
+  ],
+  "limits": [
+    {
+      "id": "LIM-01",
+      "statement": "No real acoustic benchmark was performed.",
+      "status": "not_performed",
+      "evidence": ["docs/baseline.md", "docs/global_acceptance.json"]
+    },
+    {
+      "id": "LIM-02",
+      "statement": "No real Gemini, Google, Microsoft, or mobile-dashboard sessions were opened.",
+      "status": "not_performed",
+      "evidence": ["docs/baseline.md", "ROADMAP.md"]
+    },
+    {
+      "id": "LIM-03",
+      "statement": "No destructive or external effects were exercised.",
+      "status": "not_performed",
+      "evidence": ["docs/baseline.md", "scripts/validate_baseline.ps1"]
+    },
+    {
+      "id": "LIM-04",
+      "statement": "Performance thresholds require calibration on target hardware.",
+      "status": "target_calibration_required",
+      "evidence": ["docs/baseline.md", "ROADMAP.md", "docs/ui_qml_benchmark.md"]
+    },
+    {
+      "id": "LIM-05",
+      "statement": "The 37-tool matrix is generated and checked from code rather than completed by assumption.",
+      "status": "automated",
+      "evidence": ["docs/tool_migration_matrix.md", "tests/test_tool_inventory.py", "scripts/validate_baseline.ps1"]
+    }
+  ],
+  "global_acceptance": {
+    "total": 19,
+    "verified": 6,
+    "partial": 11,
+    "manual": 2,
+    "blocked": 0
+  },
+  "conclusion": "The PDF execution sequence is closed, but global architecture acceptance remains open until partial and manual criteria are resolved."
+}
