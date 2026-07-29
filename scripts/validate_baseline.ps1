@@ -38,6 +38,9 @@ Invoke-Checked "Main import and tool count (Qt offscreen)" {
 Invoke-Checked "Python syntax" {
     & $Python -m compileall -q actions config connectors core dashboard memory tests ui_mk2 utils main.py ui.py wake_word.py jarvis_launcher.py
 }
+Invoke-Checked "Tracked and staged secret scan" {
+    & $Python scripts/check_secrets.py --repo-root .
+}
 Invoke-Checked "Tool inventory contract" {
     & $Python -m pytest -q tests/test_tool_inventory.py
 }
