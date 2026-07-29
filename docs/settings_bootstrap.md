@@ -2,10 +2,9 @@
 
 ## Alcance
 
-Este incremento inicia la Fase 10 sin mezclar logging ni CI.
-`config.settings.AppSettings` es el contrato de configuración del proceso para
-el composition root. No reemplaza todavía los lectores heredados de todas las
-actions.
+`config.settings.AppSettings` es el contrato de configuración de todo el
+proceso. El bootstrap se amplió durante la Fase 10 hasta reemplazar los lectores
+y escritores directos de UI, actions, dashboard, memoria y clientes locales.
 
 ## Invariantes
 
@@ -17,35 +16,39 @@ actions.
 - Un consumidor que necesita Gemini llama
   `require_gemini_api_key()` y recibe `SettingsError` si falta.
 - La clave se excluye del `repr` del dataclass.
-- Cada ruta se lee una vez y queda cacheada hasta una recarga explícita.
+- Cada ruta se lee una vez y queda cacheada hasta una recarga o actualización
+  explícita.
 
 Los campos no migrados se preservan en un mapping de extras y
 `config.get_config()` mantiene una vista dict para compatibilidad.
 
 ## Reconfiguración
 
-La UI sigue siendo el escritor actual de `api_keys.json`. Después de publicar
-el documento llama `refresh_settings(API_FILE)`. El loop Live reutiliza el
-snapshot para reconectar y reconstruye el adaptador de búsqueda cuando una
-clave inválida fue reemplazada.
+`update_settings()` es el único escritor productivo. Fusiona cambios con la
+vista existente, valida el documento completo y recién entonces publica un
+temporal del mismo directorio mediante `fsync` + `os.replace`. El cache se
+actualiza bajo el mismo lock. UI, visión y memoria usan esa operación; el loop
+Live reutiliza el snapshot para reconectar y reconstruye el adaptador de
+búsqueda cuando una clave inválida fue reemplazada.
 
 No se usa un event bus para configuración, de acuerdo con el documento rector.
 
 ## Riesgos pendientes
 
-Actions, dashboard y `memory/config_manager.py` todavía leen el archivo por su
-cuenta. Migrarlos junto con sus interfaces de proveedor evita un refactor
-masivo y permite probar equivalencia por familia. Logging estructurado,
-rotación, lint, type checking, secret scanning automatizado y CI siguen fuera
-de este incremento.
+La cache es local a cada proceso: una edición externa manual no se observa
+hasta `refresh_settings()` o un nuevo proceso. No hay lock interproceso para
+dos escritores simultáneos. Los adaptadores heredados conservan sus funciones
+auxiliares, pero delegan al owner central.
 
 ## Rollback
 
-`config.get_config()` conserva su firma. Para revertir el bootstrap, `main.py`
-puede volver temporalmente a esa vista compatible y la llamada de refresh en
-UI puede retirarse; el formato físico de `api_keys.json` no cambió.
+`config.get_config()` y las funciones auxiliares heredadas conservan sus
+firmas. El rollback puede redirigir consumidores a esa vista sin cambiar el
+formato físico del documento.
 
 ## Verificación
 
 `tests/test_settings.py` cubre archivo ausente, JSON corrupto, tipos inválidos,
-cache, refresh explícito, error por clave faltante y redacción en `repr`.
+cache, refresh explícito, actualización atómica, preservación de extras,
+rechazo sin reemplazo, error por clave faltante, redacción en `repr` y
+ownership único de lectura/escritura.

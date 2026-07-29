@@ -6,6 +6,7 @@ import time
 import subprocess
 import platform
 from pathlib import Path
+from config.settings import get_settings
 from pycaw.pycaw import AudioUtilities
 
 try:
@@ -36,9 +37,7 @@ def _get_base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 def _get_api_key() -> str:
-    path = _get_base_dir() / "config" / "api_keys.json"
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    return get_settings().require_gemini_api_key()
 
 def _get_macos_wifi_interface() -> str:
     try:

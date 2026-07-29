@@ -1,8 +1,8 @@
-import json
 import subprocess
 import sys
 import time
 from pathlib import Path
+from config.settings import get_settings
 
 try:
     import pyautogui
@@ -24,13 +24,7 @@ def _base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 def _get_os() -> str:
-    try:
-        cfg = json.loads(
-            (_base_dir() / "config" / "api_keys.json").read_text(encoding="utf-8")
-        )
-        return cfg.get("os_system", "windows").lower()
-    except Exception:
-        return "windows"
+    return get_settings().os_system
 
 
 def _require_pyautogui():

@@ -1,6 +1,5 @@
 #computer_control.py
 import io
-import json
 import platform
 import re
 import string
@@ -14,6 +13,7 @@ else:
 import time
 import random
 from pathlib import Path
+from config.settings import get_settings
 
 try:
     import pyautogui
@@ -36,14 +36,10 @@ def _base_dir() -> Path:
 
 
 _BASE         = _base_dir()
-_CONFIG_PATH  = _BASE / "config" / "api_keys.json"
 _MEMORY_PATH  = _BASE / "memory" / "long_term.json"
 
 def _load_config() -> dict:
-    try:
-        return json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return get_settings().as_legacy_dict()
 
 def _platform_os() -> str:
     return {"Windows": "windows", "Darwin": "mac", "Linux": "linux"}.get(
@@ -51,11 +47,11 @@ def _platform_os() -> str:
     )
 
 def _get_os() -> str:
-    return _load_config().get("os_system", _platform_os()).lower()
+    return get_settings().os_system
 
 
 def _get_api_key() -> str:
-    return _load_config().get("gemini_api_key", "")
+    return get_settings().gemini_api_key
 
 _SAFE_SCREENSHOT_ROOTS = (
     Path.home(),

@@ -9,7 +9,7 @@ class ContextWorkspaceRegressionTests(unittest.TestCase):
 
     def test_camera_device_can_be_selected_and_persisted(self):
         self.assertIn("def _show_camera_selector", self.source)
-        self.assertIn('data["camera_index"] = int(index)', self.source)
+        self.assertIn('update_settings({"camera_index": int(index)})', self.source)
         self.assertIn("configure_capture(cap, cv2, profile)", self.source)
         self.assertIn("profile.jpeg_quality", self.source)
 

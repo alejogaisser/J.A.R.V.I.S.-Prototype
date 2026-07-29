@@ -1,9 +1,9 @@
 import subprocess
 import sys
-import json
 import re
 import time
 from pathlib import Path
+from config.settings import get_settings
 
 
 def get_base_dir():
@@ -12,7 +12,6 @@ def get_base_dir():
     return Path(__file__).resolve().parent.parent
 
 BASE_DIR           = get_base_dir()
-API_CONFIG_PATH    = BASE_DIR / "config" / "api_keys.json"
 from utils.paths import get_desktop
 from memory.script_memory import register_script, run_script
 DESKTOP = get_desktop()
@@ -21,8 +20,7 @@ GEMINI_MODEL       = "gemini-3.5-flash"
 
 
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    return get_settings().require_gemini_api_key()
 
 
 def _get_gemini(model: str = GEMINI_MODEL):

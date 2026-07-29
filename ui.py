@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 import os
 import platform
@@ -23,7 +22,7 @@ from ui_mk2.memory_workspace import MemoryGraphWorkspace
 from ui_mk2.study import StudyWorkspace
 from actions.open_geo import OpenGeoClient
 from core.runtime_state import update_runtime_state
-from config.settings import refresh_settings
+from config.settings import get_settings, update_settings
 
 if platform.system() == "Windows":
     _WIN_HIDE: dict = {"creationflags": subprocess.CREATE_NO_WINDOW}
@@ -53,7 +52,6 @@ def _base_dir() -> Path:
 
 BASE_DIR   = _base_dir()
 CONFIG_DIR = BASE_DIR / "config"
-API_FILE   = CONFIG_DIR / "api_keys.json"
 
 _DEFAULT_W, _DEFAULT_H = 980, 700
 _MIN_W,     _MIN_H     = 820, 580
@@ -2458,13 +2456,11 @@ class MainWindow(QMainWindow):
         cap = None
         try:
             import cv2
-            # Reuse camera index detected by screen_processor (cached in api_keys.json)
+            # Reuse the camera index owned by the process settings service.
             cam_idx = 0
             try:
-                import json as _j
-                cfg = _j.loads((CONFIG_DIR / "api_keys.json").read_text())
-                cam_idx = int(cfg.get("camera_index", 0))
-            except Exception:
+                cam_idx = int(get_settings().extras.get("camera_index", 0))
+            except (TypeError, ValueError):
                 pass
             try:
                 backend = cv2.CAP_DSHOW if _OS == "Windows" else cv2.CAP_ANY
@@ -2477,10 +2473,7 @@ class MainWindow(QMainWindow):
                 return
             if self._cam_stop.is_set():
                 return
-            try:
-                cfg = json.loads(API_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                cfg = {}
+            cfg = get_settings().as_legacy_dict()
             profile = profile_from_config(cfg)
             actual = configure_capture(cap, cv2, profile)
             if self._cam_stop.is_set():
@@ -3631,9 +3624,8 @@ class MainWindow(QMainWindow):
         indices = self._detect_camera_indices()
         current = 0
         try:
-            cfg = json.loads(API_FILE.read_text(encoding="utf-8"))
-            current = int(cfg.get("camera_index", 0))
-        except Exception:
+            current = int(get_settings().extras.get("camera_index", 0))
+        except (TypeError, ValueError):
             pass
         if not indices:
             action = menu.addAction("No available cameras detected")
@@ -3648,9 +3640,7 @@ class MainWindow(QMainWindow):
 
     def _select_camera(self, index: int) -> None:
         try:
-            data = json.loads(API_FILE.read_text(encoding="utf-8")) if API_FILE.exists() else {}
-            data["camera_index"] = int(index)
-            API_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+            update_settings({"camera_index": int(index)})
         except Exception as exc:
             self._log.append_log(f"CAMERA: could not save the device ({exc})")
         self._set_v1_button_state("camera")
@@ -4234,10 +4224,9 @@ class MainWindow(QMainWindow):
             )
 
     def _check_config(self) -> bool:
-        if not API_FILE.exists(): return False
         try:
-            d = json.loads(API_FILE.read_text(encoding="utf-8"))
-            return bool(d.get("gemini_api_key")) and bool(d.get("os_system"))
+            settings = get_settings()
+            return bool(settings.gemini_api_key) and bool(settings.os_system)
         except Exception:
             return False
 
@@ -4255,12 +4244,7 @@ class MainWindow(QMainWindow):
         self._overlay = ov
 
     def _on_setup_done(self, key: str, os_name: str):
-        os.makedirs(CONFIG_DIR, exist_ok=True)
-        API_FILE.write_text(
-            json.dumps({"gemini_api_key": key, "os_system": os_name}, indent=4),
-            encoding="utf-8",
-        )
-        refresh_settings(API_FILE)
+        update_settings({"gemini_api_key": key, "os_system": os_name})
         self._ready = True
         if self._overlay:
             self._overlay.hide()

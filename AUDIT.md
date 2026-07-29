@@ -283,19 +283,21 @@ especializado de entropía.
 
 ### M-05 - Configuración duplicada y fallos ocultos
 
-- **Estado:** mitigado parcialmente en Fase 10 para bootstrap, `main.py` y
-  reconfiguración UI; actions, dashboard y memoria aún tienen lectores propios.
+- **Estado:** resuelto en Fase 10 para la lectura y escritura del documento de
+  configuración local.
 - **Descripción:** `api_keys.json` se lee desde múltiples módulos; `config.get_config()` captura cualquier excepción y devuelve `{}`.
 - **Evidencia:** `config/__init__.py:5-18` y múltiples `_get_api_key()` en acciones.
 - **Impacto:** modelos/rutas inconsistentes y errores tardíos poco claros.
 - **Solución recomendada:** settings inmutables validados al bootstrap e inyección.
 - **Esfuerzo:** medio-alto.
 - **Prioridad:** P1/P2.
-- **Resolución parcial:** `AppSettings` valida JSON y tipos, normaliza OS,
-  mantiene extras compatibles y falla con `SettingsError` estable. El snapshot
-  se cachea por ruta y sólo se reemplaza mediante `refresh_settings()` después
-  de una escritura explícita. La clave queda excluida de `repr`; `main.py` ya
-  no abre el JSON directamente.
+- **Resolución:** `AppSettings` valida JSON y tipos, normaliza OS, mantiene
+  extras compatibles y falla con `SettingsError` estable. El snapshot se cachea
+  por ruta y todas las fronteras productivas lo consumen sin abrir el archivo
+  directamente. `update_settings()` valida el documento completo antes de
+  publicarlo atómicamente con temporal, `fsync` y `os.replace`, y actualiza el
+  cache bajo el mismo lock. La clave queda excluida de `repr`; una prueba
+  estática bloquea nuevos lectores paralelos.
 
 ### M-06 - `ui.py` y `main.py` siguen concentrando responsabilidades
 

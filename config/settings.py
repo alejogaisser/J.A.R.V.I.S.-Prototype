@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,17 +72,7 @@ class AppSettings:
         }
 
 
-def load_settings(path: Path | None = None) -> AppSettings:
-    resolved = (path or default_settings_path()).resolve()
-    try:
-        raw = json.loads(resolved.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        raw = {}
-    except json.JSONDecodeError as exc:
-        raise SettingsError("Settings file must contain valid JSON.") from exc
-    except OSError as exc:
-        raise SettingsError("Settings file could not be read.") from exc
-
+def _settings_from_raw(raw: object) -> AppSettings:
     if not isinstance(raw, dict):
         raise SettingsError("Settings root must be a JSON object.")
 
@@ -106,6 +98,19 @@ def load_settings(path: Path | None = None) -> AppSettings:
     )
 
 
+def load_settings(path: Path | None = None) -> AppSettings:
+    resolved = (path or default_settings_path()).resolve()
+    try:
+        raw = json.loads(resolved.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raw = {}
+    except json.JSONDecodeError as exc:
+        raise SettingsError("Settings file must contain valid JSON.") from exc
+    except OSError as exc:
+        raise SettingsError("Settings file could not be read.") from exc
+    return _settings_from_raw(raw)
+
+
 _CACHE: dict[Path, AppSettings] = {}
 _CACHE_LOCK = threading.RLock()
 
@@ -126,3 +131,53 @@ def refresh_settings(path: Path | None = None) -> AppSettings:
     with _CACHE_LOCK:
         _CACHE[resolved] = settings
     return settings
+
+
+def update_settings(
+    values: Mapping[str, Any],
+    path: Path | None = None,
+) -> AppSettings:
+    """Atomically merge validated values into the process settings document."""
+    resolved = (path or default_settings_path()).resolve()
+    if not isinstance(values, Mapping):
+        raise SettingsError("Settings update must be a mapping.")
+
+    with _CACHE_LOCK:
+        merged = get_settings(resolved).as_legacy_dict()
+        merged.update({str(key): _thaw_json(value) for key, value in values.items()})
+        settings = _settings_from_raw(merged)
+        try:
+            payload = json.dumps(
+                settings.as_legacy_dict(),
+                indent=2,
+                ensure_ascii=False,
+            )
+        except (TypeError, ValueError) as exc:
+            raise SettingsError("Settings values must be JSON serializable.") from exc
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        temp_name: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=resolved.parent,
+                prefix=f".{resolved.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_name = temp_file.name
+                temp_file.write(payload)
+                temp_file.write("\n")
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            os.replace(temp_name, resolved)
+        except OSError as exc:
+            if temp_name is not None:
+                try:
+                    Path(temp_name).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise SettingsError("Settings file could not be written.") from exc
+
+        _CACHE[resolved] = settings
+        return settings

@@ -1,7 +1,7 @@
 """
 Local LLM client for MARK XL.
 
-Supports two backends — selected via  "llm_provider"  in config/api_keys.json:
+Supports two backends — selected via "llm_provider" in local process settings:
 
   "llm_provider": "ollama"   (default)
         Uses Ollama's native /api/chat endpoint.
@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Callable, Generator
 
 import requests
+from config.settings import get_settings
 
 # Matches a sentence boundary: [.!?] followed by whitespace, or a blank line.
 # Avoids splitting on decimals (3.5) because those have no space after the dot.
@@ -36,8 +37,7 @@ def get_base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-BASE_DIR    = get_base_dir()
-CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
+BASE_DIR = get_base_dir()
 
 _DEFAULTS = {
     "llm_url":      "http://localhost:11434",
@@ -53,10 +53,7 @@ def get_llm_provider() -> str:
 
 
 def _load_config() -> dict:
-    try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return get_settings().as_legacy_dict()
 
 
 def ensure_ollama_running(timeout: int = 15) -> bool:
