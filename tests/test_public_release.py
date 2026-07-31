@@ -57,6 +57,14 @@ class PublicReleaseMetadataTests(unittest.TestCase):
                 self.assertIn("The Walt Disney Company", content)
                 self.assertIn("no está afiliado", content.casefold())
 
+    def test_current_maintainer_identity_preserves_previous_alias(self):
+        for relative_path in ("LICENSE.md", "NOTICE.md", "readme.md"):
+            with self.subTest(path=relative_path):
+                content = (ROOT / relative_path).read_text(encoding="utf-8")
+                self.assertIn("Alejo Gaisser", content)
+                self.assertIn("https://github.com/alejogaisser", content)
+                self.assertIn("@AlejoGaisser07", content)
+
     def test_bundled_wake_models_remain_documented(self):
         notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
         for filename in (

@@ -17,8 +17,9 @@ titulares correspondientes.
 
 ## Adaptación Mark LI
 
-Copyright © 2026 Alejo Gaisser (`AlejoGaisser07`) sobre sus contribuciones
-originales y modificaciones.
+Copyright © 2026 Alejo Gaisser
+([`@alejogaisser`](https://github.com/alejogaisser), anteriormente
+`@AlejoGaisser07`) sobre sus contribuciones originales y modificaciones.
 
 Entre los cambios sustanciales de Mark LI se encuentran:
 

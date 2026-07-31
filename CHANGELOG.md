@@ -4,6 +4,8 @@
 
 - se agregó `NOTICE.md` con la procedencia exacta de Mark XLVIII, su autor,
   licencia y commit de referencia;
+- la atribución de Mark LI identifica a Alejo Gaisser mediante su cuenta actual
+  `@alejogaisser` y conserva `@AlejoGaisser07` como alias histórico;
 - se aclaró que Mark LI publica código fuente para uso personal y no comercial,
   sin reclamar derechos sobre material original o de terceros;
 - se incorporó un aviso de no afiliación con Marvel/Disney;

@@ -689,3 +689,6 @@ No iniciar todavía la extracción de audio, sesión o UI. El siguiente cambio d
 - El puntero local de `main` se avanzó mediante fast-forward al árbol
   verificado. No hubo push ni cambio de visibilidad; PyQt6 permanece sin
   cambios.
+- La identidad del mantenedor se normalizó como Alejo Gaisser
+  (`@alejogaisser`, anteriormente `@AlejoGaisser07`) en licencia, NOTICE y
+  README. El comando de clonación usa la URL canónica actual.

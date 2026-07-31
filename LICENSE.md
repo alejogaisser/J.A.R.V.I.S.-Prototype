@@ -5,8 +5,9 @@
 Este repositorio publica su código fuente para uso personal y no comercial.
 No se presenta como software de código abierto conforme a la definición OSI.
 
-Copyright © 2026 Alejo Gaisser (`AlejoGaisser07`) sobre sus contribuciones
-originales y modificaciones.
+Copyright © 2026 Alejo Gaisser
+([`@alejogaisser`](https://github.com/alejogaisser), anteriormente
+`@AlejoGaisser07`) sobre sus contribuciones originales y modificaciones.
 
 En la medida en que los derechos correspondan al mantenedor de este
 repositorio, las modificaciones originales de JARVIS Mark LI se distribuyen

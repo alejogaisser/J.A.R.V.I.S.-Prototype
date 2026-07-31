@@ -44,8 +44,8 @@ La versión anterior publicada permanece preservada mediante el tag `v1.5-legacy
 Cloná el repositorio y entrá a la carpeta:
 
 ```powershell
-git clone https://github.com/AlejoGaisser07/Jarvis-Project.git
-cd Jarvis-Project
+git clone https://github.com/alejogaisser/J.A.R.V.I.S.-Prototype.git
+cd J.A.R.V.I.S.-Prototype
 ```
 
 Creá un entorno virtual e instalá las dependencias:
@@ -252,6 +252,10 @@ JARVIS Mark LI deriva de **Mark XLVIII**, creado por
 es el [commit `d178f6b`](https://github.com/FatihMakes/Mark-L/commit/d178f6b).
 Esta adaptación conserva el uso personal y no comercial establecido por el
 autor original e identifica sus modificaciones en [NOTICE.md](NOTICE.md).
+
+Las contribuciones y modificaciones de Mark LI corresponden a
+[Alejo Gaisser (`@alejogaisser`)](https://github.com/alejogaisser),
+anteriormente `@AlejoGaisser07`.
 
 Las modificaciones originales de Mark LI se publican, en la medida en que sus
 derechos correspondan al mantenedor, bajo
