@@ -28,8 +28,8 @@ automation, and third-party integrations.
 - Optional Obsidian, Google Workspace, and Microsoft Outlook integrations.
 - Local dashboard for phone access, commands, audio, and file transfer.
 
-[Installation](#installation) · [Architecture](ARCHITECTURE.md) ·
-[Security](SECURITY.md) · [Roadmap](ROADMAP.md) ·
+[Installation](#installation) · [Documentation](docs/README.md) ·
+[Architecture](ARCHITECTURE.md) · [Security](SECURITY.md) · [Roadmap](ROADMAP.md) ·
 [Contributing](#contributing)
 
 Mark LI is a substantial evolution of the earlier project. It reorganizes the
@@ -37,8 +37,33 @@ interface, audio lifecycle, memory, permissions, and tool registry while
 preserving attribution to **Mark XLVIII** by
 [FatihMakes](https://github.com/FatihMakes/Mark-XLVIII).
 
-The previous published version is preserved under the `v1.5-legacy` tag. See
-[CHANGELOG.md](CHANGELOG.md) for the major changes in each release.
+The previous published version is preserved under the
+[`v1.5-legacy`](https://github.com/alejogaisser/J.A.R.V.I.S.-Prototype/tree/v1.5-legacy)
+tag. See [CHANGELOG.md](CHANGELOG.md) for the major changes in each release.
+
+## Current status
+
+| Area | Status | Scope |
+| --- | --- | --- |
+| Windows desktop, voice, and wake-word startup | Available | Primary workflow; requires a Gemini API key and compatible audio hardware |
+| Permission-controlled tools and persistent memory | Available | Sensitive operations require confirmation; local private data remains outside Git |
+| Obsidian, Google Workspace, Outlook, and phone dashboard | Optional | Requires separate local configuration, accounts, or network access |
+| Camera, screen vision, and visual automation | Experimental | Behavior depends on hardware, desktop state, and external services |
+| macOS, Linux, and inherited tool verification | Limited | CI covers Windows; some legacy effects remain only partially verified |
+
+## Known limitations
+
+- Windows is the only platform exercised by CI. Support on macOS and Linux is
+  partial and is not claimed as verified compatibility.
+- The primary assistant requires Gemini and network access. Optional connectors
+  also depend on third-party accounts, APIs, and service availability.
+- Automated tests isolate microphones, cameras, desktop automation, accounts,
+  and other external effects; passing tests is not hardware validation.
+- Some optional or legacy paths require packages that are not yet separated
+  into reproducible extras. The documented installation covers the validated
+  baseline, not every inherited capability.
+- Permission prompts reduce risk but do not make unattended automation safe.
+  Review previews and confirmations before allowing sensitive actions.
 
 ## Requirements
 
@@ -231,8 +256,9 @@ powershell -ExecutionPolicy Bypass -File scripts\validate_baseline.ps1 `
   -Python .\.venv\Scripts\python.exe
 ```
 
-See [docs/baseline.md](docs/baseline.md) for scope, limitations, and the clean
-installation procedure, and
+See the [documentation index](docs/README.md) for the complete technical
+documentation, [docs/baseline.md](docs/baseline.md) for scope, limitations, and
+the clean installation procedure, and
 [docs/tool_migration_matrix.md](docs/tool_migration_matrix.md) for the
 contractual inventory of the 37 tools.
 
