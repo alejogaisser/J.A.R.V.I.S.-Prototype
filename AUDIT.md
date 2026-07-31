@@ -717,3 +717,68 @@ changes.
 - The identity of the maintainer was normalized as Alejo Gaisser
 (`@alejogaisser`, formerly `@AlejoGaisser07`) on license, NOTICE and
 README. The cloning command uses the current canonical URL.
+
+## Verified correction - 2026-07-31 - Pet to app input handoff
+
+- The first correction released a possible Pet mouse grab, but the user's
+  subsequent Windows test proved that navigation still failed. The reproduced
+  root cause was an orphaned control-bar builder inside `_request_pet_mode()`:
+  every Pet click replaced the live Chat/Files/Camera/Memory/Geo references
+  with buttons owned by a temporary widget that Qt immediately deleted.
+- The orphaned builder was removed. Pet is now explicitly non-checkable because
+  it is a surface transition rather than a persistent workspace. The existing
+  Pet pointer reset remains defensive ownership of drag/capture state.
+- A real Qt offscreen regression performs App -> Pet -> App -> Chat -> Files,
+  verifies that the original button objects remain alive and confirms that the
+  side panel opens and switches content.
+- Verification: directed UI suites `44 passed`; full suite `438 passed, 2
+  skipped, 134 subtests passed`. The user's Windows reproduction established
+  the failure; confirmation on the updated build remains pending.
+- Scope is limited to `ui.py`, `ui_mk2/pet.py`, their UI regression and
+  documentation. Session ownership, camera shutdown, tools, policy and
+  providers are unchanged.
+- Risk: low. The deleted block had no valid caller result and created an
+  unparented duplicate bar only as a side effect. Rollback: restore that block,
+  Pet checkability and remove the regressions; no configuration or data
+  migration is involved.
+
+## Verified correction - 2026-07-31 - Reliable wake and faster first frame
+
+- **Root cause:** the configured microphone name selected the first matching
+  DirectSound endpoint and forced it to 16 kHz/mono. Controlled acoustic tests
+  heard real voice (`RMS 504` vs floor `45`) but the Hey Jarvis model reached
+  only `0.0161` against threshold `0.35`. The same physical array through its
+  native WASAPI endpoint at 48 kHz, stereo mix and reduction reached `0.2531`;
+  a silent-room control peaked at `0.0244`.
+- `InputCaptureProfile` keeps the existing wake owner and selects a matching
+  native WASAPI endpoint when available. The callback normalizes interleaved
+  stereo and exact 48/32 -> 16 kHz integer ratios with NumPy before either
+  detector. The calibrated threshold is `0.08` and still requires recent real
+  voice plus an unlocked Windows session; Vosk unknown text is not accepted.
+- A second lifecycle gap was reproduced: virtual-environment launcher wrappers
+  can outlive the real Qt child. Process discovery now prefers a visible
+  top-level window, tolerates only a 15-second invisible startup grace and does
+  not let an old invisible wrapper pause wake indefinitely. Supervisor start is
+  mutex-guarded and stop rescans children created during termination.
+- **Real evidence:** after a normal UI close the resident detector returned to
+  `listening`; saying Hey Jarvis started `main.py` and produced a visible main
+  window. No audio or transcription was stored. This verifies one Windows
+  machine and does not constitute a general acoustic benchmark.
+- **Startup evidence (offscreen, same machine):** median `import main` fell from
+  `871.9 ms` to `433.2 ms` (50.3%); UI import from `605.5 ms` to `373.8 ms`
+  (38.3%); construction/first events from `815.6 ms` to `632.4 ms` (22.5%).
+  Audio/event-loop imports, OpenCV face detection, GEO client and WMI/GPU
+  metrics now load behind the first frame without changing their owners.
+- Scope: `wake_word.py`, `jarvis_launcher.py`, `main.py`, `ui.py`, wake/UI tests,
+  example configuration and documentation. Gemini protocol, tools, policy,
+  camera activation and account providers are unchanged.
+- Risks: threshold calibration is based on one microphone/voice/environment;
+  false-wake rate needs longer ambient observation. Rollback: restore mono
+  16 kHz capture/`0.35`, eager imports and immediate metrics/OpenCV setup. No
+  persistent data migration is required; local wake threshold can be restored.
+- Final verification: `444 passed, 2 skipped, 134 subtests passed`; dependency
+  consistency, compilation, launcher help, secret scan, operational change
+  control and `git diff --check` also passed. The full suite first exposed six
+  direct-construction routes that had bypassed the deferred `asyncio` load;
+  `_load_asyncio_dependency()` now preserves lazy startup while making those
+  routes self-sufficient, and all six regressions are covered.

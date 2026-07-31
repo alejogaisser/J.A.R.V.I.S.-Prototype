@@ -492,3 +492,40 @@ A small PR/committee for safety and specification:
 4. no changes in audio, wake, visual UI, models or Gemini Live.
 
 Full traceability must begin immediately afterwards, on that correct border.
+
+## Maintenance correction - 2026-07-31 - Pet navigation ownership
+
+- **Status:** corrected after a second real Windows report; pending user
+  confirmation on the updated build.
+- **Objective:** guarantee that returning from Pet Mode preserves the live
+  navigation controls and immediately restores access to Chat, Files and every
+  other main-application action.
+- **Implementation:** removed the orphaned duplicate-bar builder that replaced
+  the live button references during every Pet request. Pet is non-checkable,
+  while its existing owner still clears drag/capture state on exit.
+- **Evidence:** a Qt offscreen round trip now verifies App -> Pet -> App -> Chat
+  -> Files and object lifetime, rather than relying only on source assertions.
+- **Automated verification:** directed UI suites `44 passed`; full suite `438
+  passed, 2 skipped, 134 subtests passed`.
+- **Rollback:** restore the removed duplicate builder and Pet checkability, and
+  remove the regression; no state migration.
+
+## Maintenance correction - 2026-07-31 - Wake capture and fast visible shell
+
+- **Status:** implemented and verified on the target Windows machine.
+- **Objective:** make Hey Jarvis reliably reach a visible application while the
+  service stack loads behind an already painted UI.
+- **Wake implementation:** native WASAPI profile selection, stereo-array mix,
+  integer reduction to mono 16 kHz, calibrated `0.08` threshold with existing
+  voice/session guards, visible-child preference and stale-wrapper grace.
+- **Startup implementation:** defer audio/event-loop imports, OpenCV hand
+  tracker, GEO networking and WMI/GPU polling until after the first frame.
+- **Evidence:** controlled phrase/ambient separation (`0.2531` vs `0.0244`),
+  successful real Hey Jarvis -> visible window, `132 passed` directed wake/UI
+  tests, and median startup reductions of 50.3% import, 38.3% UI import and
+  22.5% construction/first events. Final baseline: `444 passed, 2 skipped, 134
+  subtests passed`, plus clean dependency, compilation, launcher, secret,
+  operational-control and diff checks.
+- **Remaining risk:** monitor false wakes and repeat the acoustic/latency matrix
+  with other voices, rooms and microphones. Rollback restores the prior capture
+  profile, threshold and eager initialization; no state migration.

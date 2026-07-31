@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import subprocess
 import sys
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 try:
@@ -20,6 +23,8 @@ WAKE_FILE = BASE_DIR / "wake_word.py"
 CONFIG_FILE = BASE_DIR / "config" / "wake_word.json"
 SUPERVISED_ENV = "JARVIS_WAKE_SUPERVISED"
 WAKE_SUPERVISOR_ENV = "JARVIS_WAKE_SUPERVISOR"
+_WAKE_START_MUTEX = "Local\\JARVISWakeSupervisorStart"
+_LOCAL_WAKE_START_LOCK = threading.Lock()
 
 
 def _python_executable(*, console: bool = False) -> Path:
@@ -31,6 +36,28 @@ def _python_executable(*, console: bool = False) -> Path:
         return python
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     return pythonw if pythonw.exists() else Path(sys.executable)
+
+
+@contextmanager
+def _wake_start_guard():
+    """Serialize check-and-spawn across UI, main and launcher processes."""
+    if sys.platform != "win32":
+        with _LOCAL_WAKE_START_LOCK:
+            yield
+        return
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.CreateMutexW(None, False, _WAKE_START_MUTEX)
+    if not handle:
+        raise OSError("Could not create wake supervisor start mutex")
+    wait_result = kernel32.WaitForSingleObject(handle, 5000)
+    if wait_result not in {0x00000000, 0x00000080}:
+        kernel32.CloseHandle(handle)
+        raise TimeoutError("Timed out waiting for wake supervisor start mutex")
+    try:
+        yield
+    finally:
+        kernel32.ReleaseMutex(handle)
+        kernel32.CloseHandle(handle)
 
 
 def _is_wake_supervisor_command(command: str) -> bool:
@@ -65,26 +92,33 @@ def stop_wake_detector() -> None:
         return
 
     wake_path = str(WAKE_FILE.resolve()).casefold()
-    supervisors = []
-    detectors = []
-    for running in psutil.process_iter(["pid", "cmdline"]):
-        try:
-            if running.info["pid"] == os.getpid():
+    deadline = time.monotonic() + 8.0
+    while True:
+        supervisors = []
+        detectors = []
+        for running in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                if running.info["pid"] == os.getpid():
+                    continue
+                command = " ".join(
+                    str(part) for part in (running.info.get("cmdline") or [])
+                ).casefold()
+                if _is_wake_supervisor_command(command):
+                    supervisors.append(running)
+                elif wake_path in command:
+                    detectors.append(running)
+            except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
                 continue
-            command = " ".join(
-                str(part) for part in (running.info.get("cmdline") or [])
-            ).casefold()
-            if _is_wake_supervisor_command(command):
-                supervisors.append(running)
-            elif wake_path in command:
-                detectors.append(running)
-        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
-            continue
 
-    # Stop the parent first so it cannot relaunch the child while direct mode
-    # is trying to release the microphone.
-    _terminate_processes(supervisors)
-    _terminate_processes(detectors)
+        if not supervisors and not detectors:
+            return
+        # Stop the parent first, then rescan: a supervisor can create a new
+        # child between the initial snapshot and its own termination.
+        _terminate_processes(supervisors)
+        _terminate_processes(detectors)
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(0.05)
 
 
 def _find_project_process(target: Path):
@@ -127,29 +161,40 @@ def start_wake_detector() -> bool:
     """Start the hidden, self-healing wake supervisor if none is running."""
     if not load_config().get("enabled", True):
         return False
-    if (
-        _find_project_process(WAKE_FILE) is not None
-        or _find_wake_supervisor() is not None
-    ):
-        return False
+    with _wake_start_guard():
+        if (
+            _find_project_process(WAKE_FILE) is not None
+            or _find_wake_supervisor() is not None
+        ):
+            return False
 
-    log_dir = BASE_DIR / "logs"
-    log_dir.mkdir(exist_ok=True)
-    wake_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-    with (log_dir / "wake_word.log").open("a", encoding="utf-8") as log:
-        subprocess.Popen(
-            [
-                str(_python_executable()), "-u", str(Path(__file__).resolve()),
-                "--mode", "wake",
-            ],
-            cwd=str(BASE_DIR),
-            creationflags=creation_flags,
-            close_fds=True,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            env=wake_env,
-        )
+        log_dir = BASE_DIR / "logs"
+        log_dir.mkdir(exist_ok=True)
+        wake_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        with (log_dir / "wake_word.log").open("a", encoding="utf-8") as log:
+            process = subprocess.Popen(
+                [
+                    str(_python_executable()), "-u", str(Path(__file__).resolve()),
+                    "--mode", "wake",
+                ],
+                cwd=str(BASE_DIR),
+                creationflags=creation_flags,
+                close_fds=True,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=wake_env,
+            )
+        # Keep the cross-process guard until the child is observable. Without
+        # this narrow handshake, a simultaneous UI/main restore can pass the
+        # second existence check before Windows publishes the first process.
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            if _find_wake_supervisor() is not None:
+                break
+            if process.poll() is not None:
+                break
+            time.sleep(0.02)
     return True
 
 
@@ -226,7 +271,7 @@ def load_config() -> dict:
         "model_path": "models/vosk-model-small-en-us-0.15",
         "min_wake_rms": 45,
         "min_confidence": 0.65,
-        "wake_threshold": 0.35,
+        "wake_threshold": 0.08,
         "input_device": None,
         "input_device_name": "Intel Smart Sound Technology for Digital Microphones",
     }

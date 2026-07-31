@@ -19,7 +19,60 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertEqual(config["phrases"], ["hey jarvis"])
         self.assertEqual(config["min_wake_rms"], 45)
         self.assertEqual(config["min_confidence"], 0.65)
-        self.assertEqual(config["wake_threshold"], 0.35)
+        self.assertEqual(config["wake_threshold"], 0.08)
+
+    def test_native_wasapi_profile_is_preferred_for_matching_microphone(self):
+        devices = [
+            {
+                "name": "Intel Smart Sound Microphone",
+                "max_input_channels": 1,
+                "default_samplerate": 44100,
+                "hostapi": 0,
+            },
+            {
+                "name": "Intel Smart Sound Microphone",
+                "max_input_channels": 2,
+                "default_samplerate": 48000,
+                "hostapi": 1,
+            },
+        ]
+
+        def query_devices(device=None, _kind=None):
+            return devices if device is None else devices[device]
+
+        with (
+            patch.object(wake_word.sd, "query_devices", side_effect=query_devices),
+            patch.object(
+                wake_word.sd,
+                "query_hostapis",
+                side_effect=lambda index: {"name": ("MME", "Windows WASAPI")[index]},
+            ),
+            patch.object(wake_word.sd, "check_input_settings"),
+            patch.object(wake_word.sd, "default", MagicMock(device=(0, 0))),
+        ):
+            profile = wake_word.resolve_input_profile(
+                None, "Intel Smart Sound Microphone"
+            )
+
+        self.assertEqual(profile.device, 1)
+        self.assertEqual(profile.sample_rate, 48000)
+        self.assertEqual(profile.channels, 2)
+        self.assertEqual(profile.downsample_factor, 3)
+
+    def test_native_stereo_capture_is_mixed_and_reduced_to_mono_16khz(self):
+        import numpy as np
+
+        stereo = np.array(
+            [[3, 9], [6, 12], [9, 15], [12, 18], [15, 21], [18, 24]],
+            dtype=np.int16,
+        )
+        normalized = wake_word.normalize_capture_audio(
+            stereo.tobytes(), channels=2, downsample_factor=3
+        )
+        self.assertEqual(
+            np.frombuffer(normalized, dtype=np.int16).tolist(),
+            [9, 18],
+        )
 
     def test_stored_config_overrides_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -89,6 +142,8 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertIn("WAKE_FILE.resolve()", stop)
         self.assertIn("_terminate_processes(supervisors)", stop)
         self.assertIn("_terminate_processes(detectors)", stop)
+        self.assertIn("while True:", stop)
+        self.assertIn("if not supervisors and not detectors:", stop)
         terminate = source[source.index("def _terminate_processes"):source.index("def stop_wake_detector")]
         self.assertIn("running.terminate()", terminate)
         self.assertIn("psutil.wait_procs", terminate)
@@ -180,6 +235,16 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertIn("wake", command)
         self.assertNotIn(str(jarvis_launcher.WAKE_FILE), command)
 
+    def test_wake_supervisor_spawn_is_serialized_until_observable(self):
+        source = Path("jarvis_launcher.py").read_text(encoding="utf-8")
+        start = source[
+            source.index("def start_wake_detector"):
+            source.index("def _append_wake_log")
+        ]
+        self.assertIn("with _wake_start_guard():", start)
+        self.assertIn("_find_wake_supervisor() is not None", start)
+        self.assertIn("deadline = time.monotonic() + 2.0", start)
+
     def test_mark_l_window_and_shortcut_arguments_are_supported(self):
         wake = Path("wake_word.py").read_text(encoding="utf-8")
         ui = Path("ui.py").read_text(encoding="utf-8")
@@ -251,6 +316,51 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertIn("GetExitCodeProcess", source)
         self.assertIn("STILL_ACTIVE = 259", source)
         self.assertIn("and process_is_active(process_id)", source)
+
+    def test_old_invisible_venv_wrapper_does_not_block_wake(self):
+        process = MagicMock()
+        process.info = {
+            "pid": 321,
+            "cmdline": ["pythonw.exe", str(wake_word.MAIN_FILE)],
+            "cwd": str(wake_word.BASE_DIR),
+            "create_time": 100.0,
+        }
+        with (
+            patch.object(wake_word.psutil, "process_iter", return_value=[process]),
+            patch.object(wake_word, "process_is_active", return_value=True),
+            patch.object(wake_word, "process_has_visible_window", return_value=False),
+            patch.object(wake_word.time, "time", return_value=200.0),
+            patch.object(wake_word.os, "getpid", return_value=999),
+        ):
+            self.assertIsNone(wake_word.get_running_jarvis_pid())
+
+    def test_visible_main_child_is_preferred_over_invisible_wrapper(self):
+        wrapper = MagicMock()
+        wrapper.info = {
+            "pid": 10,
+            "cmdline": ["pythonw.exe", str(wake_word.MAIN_FILE)],
+            "cwd": str(wake_word.BASE_DIR),
+            "create_time": 190.0,
+        }
+        child = MagicMock()
+        child.info = {
+            "pid": 11,
+            "cmdline": ["pythonw.exe", str(wake_word.MAIN_FILE)],
+            "cwd": str(wake_word.BASE_DIR),
+            "create_time": 191.0,
+        }
+        with (
+            patch.object(wake_word.psutil, "process_iter", return_value=[wrapper, child]),
+            patch.object(wake_word, "process_is_active", return_value=True),
+            patch.object(
+                wake_word,
+                "process_has_visible_window",
+                side_effect=lambda pid: pid == 11,
+            ),
+            patch.object(wake_word.time, "time", return_value=200.0),
+            patch.object(wake_word.os, "getpid", return_value=999),
+        ):
+            self.assertEqual(wake_word.get_running_jarvis_pid(), 11)
 
     def test_wake_state_is_observable_and_model_resets_after_manual_open(self):
         source = Path("wake_word.py").read_text(encoding="utf-8")

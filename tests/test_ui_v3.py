@@ -110,6 +110,29 @@ class ContextWorkspaceRegressionTests(unittest.TestCase):
             main.index("ui.start_after_visible(start_runner_after_first_frame)"),
         )
 
+    def test_audio_event_loop_metrics_and_camera_load_after_first_paint(self):
+        main = Path("main.py").read_text(encoding="utf-8")
+        eager_main = main[:main.index("def _load_asyncio_dependency")]
+        self.assertNotIn("import asyncio", eager_main)
+        self.assertNotIn("import sounddevice", eager_main)
+        runner = main[main.index("    def runner()"):
+                      main.index("    def start_runner_after_first_frame")]
+        self.assertLess(
+            runner.index("_load_runtime_dependencies()"),
+            runner.index("JarvisLive(ui,"),
+        )
+        self.assertIn("QTimer.singleShot(250, _metrics.start)", self.source)
+        gesture_init = self.source[
+            self.source.index("    def __init__(self):", self.source.index("class HandGestureTracker")):
+            self.source.index("    def _ensure_face_detector", self.source.index("class HandGestureTracker"))
+        ]
+        self.assertNotIn("import cv2", gesture_init)
+        geo = self.source[
+            self.source.index("    def _locate_geo_query"):
+            self.source.index("    def _apply_geo_focus")
+        ]
+        self.assertIn("from actions.open_geo import OpenGeoClient", geo)
+
     def test_panel_switches_skip_layout_animation_while_speaking(self):
         for method in (
             "def _animate_system_panel", "def _animate_side_panel",
