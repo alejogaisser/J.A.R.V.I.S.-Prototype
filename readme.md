@@ -1,47 +1,77 @@
-# JARVIS — Mark LI
+# JARVIS — Mark LI v2.0.0
 
-**Current version: 2.0.0 — Mark LI**
+Windows desktop AI assistant prototype with real-time voice, local wake-word
+activation, persistent memory, permission-controlled tools, computer
+automation, and third-party integrations.
 
-A desktop personal assistant for Windows featuring real-time voice
-conversation, local wake-word activation, a holographic interface,
-user-controlled memory, vision, scientific tools, automation, and integrations
-with external services.
+[![Quality](https://github.com/alejogaisser/J.A.R.V.I.S.-Prototype/actions/workflows/quality.yml/badge.svg)](https://github.com/alejogaisser/J.A.R.V.I.S.-Prototype/actions/workflows/quality.yml)
+[![Python 3.12–3.14](https://img.shields.io/badge/Python-3.12%E2%80%933.14-3776AB?logo=python&logoColor=white)](#requirements)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](#requirements)
+[![License: non-commercial](https://img.shields.io/badge/License-non--commercial-6f42c1)](LICENSE.md)
+
+> **Prototype status:** JARVIS can control applications, files, and connected
+> services. Keep confirmations enabled and review every sensitive action before
+> authorizing it. Never publish keys, OAuth credentials, memory, or private
+> configuration.
+
+![JARVIS Mark LI Core interface](docs/media/jarvis-mark-li-core.png)
+
+## Core capabilities
+
+- Real-time Gemini Live voice conversations with local “Hey Jarvis” activation
+  through OpenWakeWord and a configurable Vosk fallback.
+- Mark LI desktop interface with Core, Pet Mode, vision, and specialized Study
+  and GEO workspaces.
+- Permission-controlled automation for applications, windows, input devices,
+  files, web tasks, and reminders.
+- User-controlled persistent memory and a graph built from stored memories.
+- Optional Obsidian, Google Workspace, and Microsoft Outlook integrations.
+- Local dashboard for phone access, commands, audio, and file transfer.
+
+[Installation](#installation) · [Documentation](docs/README.md) ·
+[Architecture](ARCHITECTURE.md) · [Security](SECURITY.md) · [Roadmap](ROADMAP.md) ·
+[Contributing](CONTRIBUTING.md)
 
 Mark LI is a substantial evolution of the earlier project. It reorganizes the
 interface, audio lifecycle, memory, permissions, and tool registry while
 preserving attribution to **Mark XLVIII** by
 [FatihMakes](https://github.com/FatihMakes/Mark-XLVIII).
 
-The previous published version is preserved under the `v1.5-legacy` tag. See
-[CHANGELOG.md](CHANGELOG.md) for the major changes in each release.
+The previous published version is preserved under the
+[`v1.5-legacy`](https://github.com/alejogaisser/J.A.R.V.I.S.-Prototype/tree/v1.5-legacy)
+tag. See [CHANGELOG.md](CHANGELOG.md) for the major changes in each release.
 
-> JARVIS can control applications, files, and connected services. Review every
-> confirmation before authorizing sensitive actions, and never publish your
-> keys or private configuration.
+## Current status
 
-## Highlights
+JARVIS Mark LI is a prototype, not a production-ready assistant. These labels
+describe the current repository scope rather than a reliability guarantee.
 
-- Low-latency voice conversations powered by Gemini Live.
-- Direct startup or local “Hey Jarvis” activation through OpenWakeWord, with
-  Vosk as a fallback.
-- Automatic microphone recovery after mute, silence, or driver lockups.
-- Immediate response interruption with `Esc` or from the interface.
-- Mark LI interface with Core, Pet Mode, and specialized workspaces.
-- Continuous screen and camera capture within the primary session.
-- Control of applications, windows, keyboard, mouse, volume, brightness, and
-  files.
-- Web search, news, weather, flights, YouTube, and reminders.
-- User-controlled persistent memory and a graph built only from real memories.
-- Study tools for mathematics, 2D/3D plots, matrices, physics, chemistry, and
-  educational anatomy.
-- GEO workspace with open maps, geocoding, routing, and weather.
-- Integration with an Obsidian vault.
-- OAuth connectors for Gmail, Google Calendar, Google Drive, Google Docs,
-  Google Sheets, Google Slides, and Outlook.
-- Local dashboard for using JARVIS from a phone and sending commands, audio,
-  and files.
-- Central tool system with risk-based permissions and confirmations.
-- Development agent, file processing, and coding assistance.
+| Classification | Scope |
+| --- | --- |
+| Stable / available within the prototype | Windows launcher, voice and wake-word flow, central permission path, local configuration, and persistent memory |
+| Experimental | Camera and screen vision, visual automation, Study and GEO workspaces, and optional service integrations |
+| Limited | macOS and Linux behavior, inherited effect verification, and optional or legacy dependency coverage |
+| Not supported | Unattended sensitive automation, production or safety-critical deployment, and commercial use |
+
+## Known limitations
+
+- Windows is the only platform exercised by CI. Support on macOS and Linux is
+  partial and is not claimed as verified compatibility.
+- The primary assistant requires Gemini and network access. Optional connectors
+  also depend on third-party accounts, APIs, and service availability.
+- Gemini and enabled integrations send the data required for each request to
+  their external providers. Local memory does not make cloud-backed operations
+  fully local or private; review provider terms and avoid sensitive content.
+- Automated tests isolate microphones, cameras, desktop automation, accounts,
+  and other external effects; passing tests is not hardware validation.
+- Visual automation depends on the active desktop, window state, display
+  scaling, and recognition quality. It requires user supervision and may target
+  the wrong visible control.
+- Some optional or legacy paths require packages that are not yet separated
+  into reproducible extras. The documented installation covers the validated
+  baseline, not every inherited capability.
+- Permission prompts reduce risk but do not make unattended automation safe.
+  Review previews and confirmations before allowing sensitive actions.
 
 ## Requirements
 
@@ -234,8 +264,9 @@ powershell -ExecutionPolicy Bypass -File scripts\validate_baseline.ps1 `
   -Python .\.venv\Scripts\python.exe
 ```
 
-See [docs/baseline.md](docs/baseline.md) for scope, limitations, and the clean
-installation procedure, and
+See the [documentation index](docs/README.md) for the complete technical
+documentation, [docs/baseline.md](docs/baseline.md) for scope, limitations, and
+the clean installation procedure, and
 [docs/tool_migration_matrix.md](docs/tool_migration_matrix.md) for the
 contractual inventory of the 37 tools.
 
@@ -270,6 +301,13 @@ python -m compileall -q .
 └── utils/                     # Paths and temporary files
 ```
 
+## Contributing
+
+Contributions should be proposed from a fork through a focused pull request.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md), review
+[SECURITY.md](SECURITY.md), run the relevant tests, and confirm that the change
+contains no secrets, personal configuration, memory data, or private logs.
+
 ## Credits and license
 
 JARVIS Mark LI derives from **Mark XLVIII**, created by
@@ -280,7 +318,9 @@ terms and identifies its modifications in [NOTICE.md](NOTICE.md).
 
 The Mark LI contributions and modifications are by
 [Alejo Gaisser (`@alejogaisser`)](https://github.com/alejogaisser), formerly
-`@AlejoGaisser07`.
+`@AlejoGaisser07`. This identifies responsibility for the Mark LI adaptation;
+it does not claim authorship of the original Mark XLVIII code or third-party
+components.
 
 To the extent that the maintainer owns the relevant rights, the original Mark
 LI modifications are published under

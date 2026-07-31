@@ -40,6 +40,9 @@
 
 Mark LI consolidates the current evolution of JARVIS as a major update:
 
+See the [v2.0.0 release notes](docs/releases/v2.0.0.md) for requirements,
+limitations, installation, and the reproducible validation procedure.
+
 - new holographic interface with Core, Pet Mode, and workspaces;
 - local “Hey Jarvis” activation with OpenWakeWord and Vosk fallback;
 - corrected the offset between voice input and neural score without reducing
