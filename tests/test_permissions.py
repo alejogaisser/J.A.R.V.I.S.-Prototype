@@ -81,12 +81,28 @@ class PermissionPolicyTests(unittest.TestCase):
     def test_drive_reads_are_free_and_writes_require_confirmation(self):
         connector = tool("account_connector", risk=RiskLevel.READ_ONLY)
         policy = PermissionPolicy()
-        self.assertTrue(policy.evaluate(connector, {"action": "search"}).allowed)
-        for action in ("create_file", "create_folder"):
-            decision = policy.evaluate(connector, {"action": action})
-            self.assertEqual(decision.policy, "confirm_always")
-            self.assertFalse(decision.allowed)
-            self.assertTrue(decision.requires_confirmation)
+        for action in (
+            "status", "search", "find_folder", "list_children", "read",
+            "read_workspace_file",
+        ):
+            with self.subTest(action=action):
+                self.assertTrue(policy.evaluate(connector, {"action": action}).allowed)
+        for action in ("connect", "download"):
+            with self.subTest(action=action):
+                decision = policy.evaluate(connector, {"action": action})
+                self.assertEqual(decision.policy, "confirm_once")
+                self.assertFalse(decision.allowed)
+                self.assertTrue(decision.requires_confirmation)
+        for action in (
+            "create_file", "create_folder", "create_document", "append_document",
+            "create_spreadsheet", "write_sheet", "append_sheet",
+            "create_presentation", "append_slide", "disconnect",
+        ):
+            with self.subTest(action=action):
+                decision = policy.evaluate(connector, {"action": action})
+                self.assertEqual(decision.policy, "confirm_always")
+                self.assertFalse(decision.allowed)
+                self.assertTrue(decision.requires_confirmation)
 
     def test_computer_power_and_code_execution_remain_confirmed(self):
         policy = PermissionPolicy()

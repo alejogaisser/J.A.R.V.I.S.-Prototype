@@ -256,6 +256,41 @@ class AudioVisionRegressionTests(unittest.TestCase):
         self.assertIn("await asyncio.wait_for(phase1_done.wait(), timeout=30.0)", source)
         self.assertIn("self._briefing_phase1_done.set()", source)
         self.assertNotIn("await asyncio.sleep(3.0)", source)
+        briefing = source[
+            source.index("    async def _send_startup_briefing"):
+            source.index("    async def _briefing_news_phase")
+        ]
+        self.assertIn("await asyncio.sleep(0)", briefing)
+        self.assertLess(
+            briefing.index("await asyncio.wait_for(phase1_done.wait()"),
+            briefing.index("self._briefing_sent = True"),
+        )
+        self.assertIn("if not self._briefing_phase1_played:", briefing)
+        self.assertIn("self._briefing_inflight = False", briefing)
+
+        flush = source[
+            source.index("    async def _flush_playback"):
+            source.index("    def speak(", source.index("    async def _flush_playback"))
+        ]
+        self.assertIn("self._briefing_phase1_played = False", flush)
+
+        playback = source[
+            source.index("    async def _play_audio"):
+            source.index("    def _finish_shutdown_after_audio")
+        ]
+        self.assertIn("self._briefing_phase1_played = True", playback)
+
+    def test_gemini_sdk_loads_after_ui_module_and_off_the_qt_startup_path(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        self.assertNotIn("from google import genai\n", source[:source.index("class JarvisLive")])
+        self.assertIn("def _load_live_sdk()", source)
+        init = source[
+            source.index("class JarvisLive"):
+            source.index("    def _open_memory_graph")
+        ]
+        self.assertIn("search_provider: GroundedSearchProvider | None = None", init)
+        self.assertIn("runtime_events: EventBus | None = None", init)
+        self.assertIn("_load_live_sdk()", init)
 
     def test_only_escape_interrupts_model_playback(self):
         source = Path("main.py").read_text(encoding="utf-8")

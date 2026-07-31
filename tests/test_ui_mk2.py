@@ -26,9 +26,11 @@ class Mk2StateTests(unittest.TestCase):
 
 
 class Mk2IntegrationTests(unittest.TestCase):
-    def test_wake_word_opens_pet_instead_of_main_window(self):
+    def test_wake_word_opens_base_app_and_pet_remains_explicit(self):
         wake = Path("wake_word.py").read_text(encoding="utf-8")
-        self.assertIn('[str(executable), "-u", str(MAIN_FILE), "--pet"]', wake)
+        self.assertIn('[str(executable), "-u", str(MAIN_FILE)]', wake)
+        self.assertNotIn('[str(executable), "-u", str(MAIN_FILE), "--pet"]', wake)
+        self.assertIn("def enter_pet_mode", Path("ui.py").read_text(encoding="utf-8"))
 
     def test_pet_is_a_compact_text_free_movable_orb(self):
         pet = Path("ui_mk2/pet.py").read_text(encoding="utf-8")

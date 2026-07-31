@@ -17,6 +17,13 @@ class ConnectorCapabilities:
     download: bool = False
     create_file: bool = False
     create_folder: bool = False
+    read_workspace: bool = False
+    create_document: bool = False
+    update_document: bool = False
+    create_spreadsheet: bool = False
+    update_spreadsheet: bool = False
+    create_presentation: bool = False
+    update_presentation: bool = False
     send: bool = False
     delete: bool = False
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import platform as _platform
 import subprocess as _subprocess
 
@@ -31,10 +33,27 @@ from core.clock import local_now, prompt_datetime
 from pathlib import Path
 
 import sounddevice as sd
-from google import genai
-from google.genai import types
 from ui import JarvisUI
 from config.settings import get_settings
+
+genai = None
+types = None
+_LIVE_SDK_LOCK = threading.Lock()
+
+
+def _load_live_sdk() -> None:
+    """Load the heavy Gemini SDK on the core thread after the UI is visible."""
+    global genai, types
+    if genai is not None and types is not None:
+        return
+    with _LIVE_SDK_LOCK:
+        if genai is not None and types is not None:
+            return
+        from google import genai as loaded_genai
+        from google.genai import types as loaded_types
+
+        genai = loaded_genai
+        types = loaded_types
 
 
 def _configure_console_encoding() -> None:
@@ -822,23 +841,31 @@ TOOL_DECLARATIONS = [
         "name": "account_connector",
         "description": (
             "Connect, disconnect, inspect, search, read, download, or create items in an authorized "
-            "personal account. Supports Gmail, Google Calendar and Google Drive. Read/search/download "
+            "personal account. Supports Gmail, Google Calendar and Google Drive, including native "
+            "Google Docs, Sheets and Slides content. Read/search/download "
             "are direct after OAuth; Google Drive also supports find_folder, list_children, and "
-            "verified create_file/create_folder. For any Google Drive request, use only this tool: "
+            "verified file/folder and Workspace writes. Use read_workspace_file for native content; "
+            "use create/append_document, create_spreadsheet, write/append_sheet, or "
+            "create_presentation/append_slide for native writes. For any Google Drive request, use only this tool: "
             "never use file_controller, browser vision, or screen_process to claim a Drive change. "
             "Never claim a write succeeded unless the tool result starts with 'Verified'. Never request "
             "or store the user's password."
         ),
         "parameters": {"type": "OBJECT", "properties": {
             "provider": {"type": "STRING", "description": "gmail|outlook|google_calendar|google_drive"},
-            "action": {"type": "STRING", "description": "connect|disconnect|status|search|find_folder|list_children|read|download|create_file|create_folder"},
+            "action": {"type": "STRING", "description": "connect|disconnect|status|search|find_folder|list_children|read|read_workspace_file|download|create_file|create_folder|create_document|append_document|create_spreadsheet|write_sheet|append_sheet|create_presentation|append_slide"},
             "query": {"type": "STRING", "description": "Provider-specific search text or Gmail query"},
             "limit": {"type": "INTEGER"}, "item_id": {"type": "STRING"},
             "attachment": {"type": "STRING"}, "destination": {"type": "STRING"},
             "name": {"type": "STRING", "description": "Name for create_file or create_folder"},
             "content": {"type": "STRING", "description": "UTF-8 text content for create_file"},
             "parent_id": {"type": "STRING", "description": "Google Drive folder ID returned by search/read"},
-            "mime_type": {"type": "STRING", "description": "Optional MIME type for create_file"}
+            "mime_type": {"type": "STRING", "description": "Optional MIME type for create_file"},
+            "range": {"type": "STRING", "description": "A1 range for reading or writing Google Sheets"},
+            "values": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "STRING"}}, "description": "Rows of scalar values for Google Sheets"},
+            "title": {"type": "STRING", "description": "Title text for a new Google Slides page"},
+            "body": {"type": "STRING", "description": "Body text for a new Google Slides page"},
+            "max_chars": {"type": "INTEGER", "description": "Maximum native text returned, up to 50000"}
         }, "required": ["provider", "action"]}
     },
     {
@@ -888,6 +915,7 @@ class JarvisLive:
         search_provider: GroundedSearchProvider | None = None,
         runtime_events: EventBus | None = None,
     ):
+        _load_live_sdk()
         _load_action_dependencies()
         self.ui             = ui
         self.ui_tools       = UiCommandFacade(self.ui)
@@ -918,10 +946,12 @@ class JarvisLive:
         self.ui.on_interrupt      = self.interrupt
         self._turn_done_event: asyncio.Event | None = None
         self._briefing_phase1_done: asyncio.Event | None = None
+        self._briefing_phase1_played = False
         self._dashboard     = None
         self._dashboard_factory = None
         self._dashboard_tasks_started = False
         self._briefing_sent    = False          # morning briefing fires once per process
+        self._briefing_inflight = False
         self._sys_monitor      = SystemMonitor()  # persistent cooldown state
         self._proactive        = ProactiveEngine()
         self._last_user_speech = time.monotonic()  # updated on every user utterance
@@ -1338,6 +1368,8 @@ class JarvisLive:
         await asyncio.to_thread(self._reset_output_stream)
         self.set_speaking(False)
         if self._briefing_phase1_done:
+            # Release the waiter without reporting discarded audio as played.
+            self._briefing_phase1_played = False
             self._briefing_phase1_done.set()
         print(f"[JARVIS] ✋ {reason} interruption — {drained} queued chunks discarded")
 
@@ -2257,6 +2289,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         self.set_speaking(False)
                         self._turn_done_event.clear()
                         if self._briefing_phase1_done:
+                            self._briefing_phase1_played = True
                             self._briefing_phase1_done.set()
                         if self._runtime.lifecycle.shutdown_requested:
                             self._runtime.lifecycle.observe_playback_drained()
@@ -2313,14 +2346,13 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
     # ── Morning briefing ────────────────────────────────────────────────────────
 
     async def _send_startup_briefing(self) -> None:
-            """
-            Two-phase briefing:
-          Phase 1: immediate greeting.
-          Phase 2: fetch news in background.
-        """
-            await asyncio.sleep(0.3)
-
-            if not self.session:
+        """Send the greeting once it is actually playable, retrying after disconnects."""
+        try:
+            # Yield once so receive/playback tasks are running before the model
+            # can answer. This replaces the arbitrary 300 ms startup delay.
+            await asyncio.sleep(0)
+            session = self.session
+            if session is None:
                 return
 
             memory = load_memory()
@@ -2328,43 +2360,40 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
             def _val(key: str) -> str:
                 entry = identity.get(key, {})
-
                 if isinstance(entry, dict):
                     return str(entry.get("value", "")).strip()
-
                 return str(entry).strip()
 
             lang = get_response_language(memory)
             name = _val("name")
-
             now = local_now()
             time_str = now.strftime("%H:%M")
             date_str = now.strftime("%A, %B %d, %Y")
-
             lang_clause = f" Respond in {lang}." if lang else ""
             name_clause = f" Address the user as {name}." if name else ""
-
-            p1 = (
-            f"Greet the user, state that the authoritative local date and time are "
-            f"{date_str} at {time_str} in Buenos Aires, and say you are "
-            f"fetching today's news headlines now. "
-            f"One short sentence only. Do not call any tools."
-            f"{lang_clause}{name_clause}"
-        )
+            prompt = (
+                "Greet the user, state that the authoritative local date and time are "
+                f"{date_str} at {time_str} in Buenos Aires, and say you are "
+                "fetching today's news headlines now. One short sentence only. "
+                f"Do not call any tools.{lang_clause}{name_clause}"
+            )
 
             phase1_done = asyncio.Event()
+            self._briefing_phase1_played = False
             self._briefing_phase1_done = phase1_done
-
-            await self.session.send_realtime_input(
-                text=p1
-        )
-
-            self.ui.write_log(
-            "SYS: Briefing phase 1 (greeting) sent."
-        )
+            await session.send_realtime_input(text=prompt)
+            self.ui.write_log("SYS: Briefing phase 1 (greeting) sent.")
 
             try:
                 await asyncio.wait_for(phase1_done.wait(), timeout=30.0)
+                if not self._briefing_phase1_played:
+                    self.ui.write_log(
+                        "SYS: Briefing greeting interrupted; retrying after reconnect."
+                    )
+                    return
+                # Mark completion only after playback. If the session drops
+                # earlier, the next connection schedules the greeting again.
+                self._briefing_sent = True
                 await self._briefing_news_phase(lang)
             except asyncio.TimeoutError:
                 self.ui.write_log(
@@ -2378,6 +2407,8 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             finally:
                 if self._briefing_phase1_done is phase1_done:
                     self._briefing_phase1_done = None
+        finally:
+            self._briefing_inflight = False
 
     async def _briefing_news_phase(self, lang: str) -> None:
         """
@@ -2575,8 +2606,8 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         tg.create_task(self._relay_phone_audio())
 
                     # Morning briefing — fires once per process launch
-                    if not self._briefing_sent:
-                        self._briefing_sent = True
+                    if not self._briefing_sent and not self._briefing_inflight:
+                        self._briefing_inflight = True
                         tg.create_task(self._send_startup_briefing())
 
             except KeyboardInterrupt:
@@ -2699,7 +2730,14 @@ def main():
             except Exception:
                 pass
 
-    threading.Thread(target=runner, daemon=True).start()
+    def start_runner_after_first_frame() -> None:
+        threading.Thread(
+            target=runner,
+            name="jarvis-core",
+            daemon=True,
+        ).start()
+
+    ui.start_after_visible(start_runner_after_first_frame)
     try:
         ui.root.mainloop()
     finally:

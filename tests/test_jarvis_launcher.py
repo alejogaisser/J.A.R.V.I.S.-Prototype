@@ -17,7 +17,7 @@ class LauncherConfigTests(unittest.TestCase):
                 config = jarvis_launcher.load_config()
         self.assertTrue(config["enabled"])
         self.assertEqual(config["phrases"], ["hey jarvis"])
-        self.assertEqual(config["min_wake_rms"], 110)
+        self.assertEqual(config["min_wake_rms"], 45)
         self.assertEqual(config["min_confidence"], 0.65)
         self.assertEqual(config["wake_threshold"], 0.35)
 
@@ -225,13 +225,16 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertIn("elif console:", launch)
         self.assertIn("stop_wake_detector()", launch)
 
-    def test_wake_launch_starts_non_intrusive_pet_mode(self):
+    def test_wake_launch_starts_base_fullscreen_app(self):
         wake = Path("wake_word.py").read_text(encoding="utf-8")
         launch = wake[wake.index("def launch_jarvis"):wake.index("# PROCESAMIENTO DE VOZ")]
-        self.assertIn('[str(executable), "-u", str(MAIN_FILE), "--pet"]', launch)
+        self.assertIn('[str(executable), "-u", str(MAIN_FILE)]', launch)
+        self.assertNotIn('"--pet"', launch)
         self.assertNotIn('[str(executable), str(SPLASH_FILE), str(process.pid)]', launch)
         self.assertNotIn("timeout=15.0", launch)
-        self.assertIn("Pet Mode visible", launch)
+        self.assertIn("interfaz base en pantalla completa", launch)
+        self.assertIn("bring_process_window_to_front(process.pid, timeout=12.0)", launch)
+        self.assertIn("SW_RESTORE = 9", wake)
         self.assertIn('log_dir / "jarvis.log"', launch)
         self.assertIn("stderr=subprocess.STDOUT", launch)
 
@@ -305,6 +308,109 @@ class LauncherConfigTests(unittest.TestCase):
                 score=0.951,
                 session_available=False,
             ))
+
+    def test_sustained_voice_cannot_be_learned_as_ambient_noise(self):
+        gate = wake_word.AdaptiveVoiceGate(110)
+        initial_threshold = gate.threshold
+
+        for _ in range(100):
+            gate.observe(700, recognizer_has_speech=False)
+
+        self.assertEqual(gate.threshold, initial_threshold)
+        self.assertTrue(gate.observe(700, recognizer_has_speech=False))
+
+    def test_primary_detector_keeps_vosk_as_runtime_fallback(self):
+        source = Path("wake_word.py").read_text(encoding="utf-8")
+        primary = source[
+            source.index("def listen_for_openwakeword"):
+            source.index("def listen_for_wake_word")
+        ]
+        self.assertIn("vosk_approved", primary)
+        self.assertIn("*VOSK_WAKE_ALIASES", primary)
+        self.assertIn("result_matches_wake_phrase(fallback_result)", primary)
+        self.assertIn("result_matches_vosk_wake_alias(fallback_result)", primary)
+        self.assertIn("APROBADO por respaldo Vosk", primary)
+
+    def test_vosk_fallback_loads_without_blocking_openwakeword_startup(self):
+        sentinel = object()
+        loader = wake_word.AsyncVoskFallback(
+            Path("unused"),
+            model_factory=lambda _path: sentinel,
+        )
+        started = loader.start()
+        self.assertIs(started, loader)
+        self.assertTrue(loader.wait(timeout=1.0))
+        self.assertIs(loader.model_if_ready(), sentinel)
+
+        source = Path("wake_word.py").read_text(encoding="utf-8")
+        main = source[source.index("def main() -> None:"):]
+        self.assertIn("AsyncVoskFallback(MODEL_PATH).start()", main)
+
+    def test_hybrid_vosk_grammar_can_arm_on_hey_and_ignores_empty_finals(self):
+        source = Path("wake_word.py").read_text(encoding="utf-8")
+        primary = source[
+            source.index("def listen_for_openwakeword"):
+            source.index("def listen_for_wake_word")
+        ]
+        self.assertIn('["hey", *WAKE_PHRASES, *VOSK_WAKE_ALIASES, "[unk]"]', primary)
+        self.assertIn("if fallback_text:", primary)
+
+    def test_stalled_microphone_recovers_with_short_bounded_delay(self):
+        self.assertEqual(wake_word.STREAM_STALL_TIMEOUT, 2.0)
+        self.assertEqual(wake_word.MIC_RETRY_DELAY, 1.0)
+
+    def test_open_stream_has_stall_recovery_and_status_heartbeat(self):
+        source = Path("wake_word.py").read_text(encoding="utf-8")
+        self.assertIn("class AudioStreamStalled", source)
+        self.assertIn("STREAM_STALL_TIMEOUT", source)
+        self.assertIn("STATUS_HEARTBEAT_INTERVAL", source)
+        self.assertIn('reset_detector_state(model, "recuperación del micrófono")', source)
+
+    def test_oov_jarvis_requires_confident_hey_then_unknown_word(self):
+        sequence = wake_word.VoskWakeSequence(duration=4.0)
+
+        self.assertFalse(sequence.observe(
+            "[unk]", 1.0, True, True, now=10.0
+        ))
+        self.assertFalse(sequence.observe(
+            "hey", 1.0, True, True, now=20.0
+        ))
+        self.assertTrue(sequence.observe(
+            "[unk]", 1.0, True, True, now=23.0
+        ))
+
+    def test_oov_jarvis_sequence_expires_and_respects_guards(self):
+        sequence = wake_word.VoskWakeSequence(duration=4.0)
+
+        self.assertFalse(sequence.observe(
+            "hey", 0.2, True, True, now=10.0
+        ))
+        self.assertFalse(sequence.observe(
+            "[unk]", 1.0, True, True, now=11.0
+        ))
+        self.assertFalse(sequence.observe(
+            "hey", 1.0, True, True, now=20.0
+        ))
+        self.assertFalse(sequence.observe(
+            "[unk]", 1.0, True, True, now=25.0
+        ))
+
+    def test_confident_hey_can_combine_with_weak_neural_jarvis_score(self):
+        sequence = wake_word.VoskWakeSequence(duration=4.0)
+
+        self.assertFalse(sequence.observe(
+            "hey", 1.0, True, True, now=10.0
+        ))
+        self.assertTrue(sequence.neural_followup(
+            0.051, True, True, now=11.0
+        ))
+
+    def test_weak_neural_score_cannot_wake_without_armed_hey(self):
+        sequence = wake_word.VoskWakeSequence(duration=4.0)
+
+        self.assertFalse(sequence.neural_followup(
+            0.9, True, True, now=10.0
+        ))
 
 
 if __name__ == "__main__":

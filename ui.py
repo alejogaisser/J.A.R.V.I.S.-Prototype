@@ -4301,8 +4301,10 @@ class JarvisUI:
         # background wake-word process. Retry after Qt has created a real HWND.
         if not self._start_in_pet_mode:
             QTimer.singleShot(0, self._bring_main_window_to_front)
-            QTimer.singleShot(350, self._bring_main_window_to_front)
-            QTimer.singleShot(1200, self._bring_main_window_to_front)
+            QTimer.singleShot(250, self._bring_main_window_to_front)
+            QTimer.singleShot(750, self._bring_main_window_to_front)
+            QTimer.singleShot(1500, self._bring_main_window_to_front)
+            QTimer.singleShot(3000, self._bring_main_window_to_front)
 
         # Remove any ghost Qt window created during startup.
         QTimer.singleShot(500, self._close_ghost_windows)
@@ -4316,6 +4318,35 @@ class JarvisUI:
         if self._surface_mode != "main":
             return
         self._pet.hide_pet()
+
+        if platform.system() == "Windows":
+            try:
+                hwnd = int(self._win.winId())
+                user32 = ctypes.windll.user32
+                SW_RESTORE = 9
+                SWP_NOMOVE = 0x0002
+                SWP_NOSIZE = 0x0001
+                SWP_SHOWWINDOW = 0x0040
+
+                # SW_SHOW leaves an iconic/minimized HWND in the taskbar.
+                # Restore it first; Qt then owns the final fullscreen state.
+                user32.AllowSetForegroundWindow(-1)
+                user32.ShowWindowAsync(hwnd, SW_RESTORE)
+                user32.SetWindowPos(
+                    hwnd, -1, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                )
+                user32.SetWindowPos(
+                    hwnd, -2, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                )
+            except (AttributeError, OSError, TypeError, ValueError) as exc:
+                print(f"[UI] Could not restore JARVIS window: {exc}")
+
+        state = self._win.windowState()
+        state &= ~Qt.WindowState.WindowMinimized
+        state |= Qt.WindowState.WindowFullScreen | Qt.WindowState.WindowActive
+        self._win.setWindowState(state)
         self._win.showFullScreen()
         self._win.raise_()
         self._win.activateWindow()
@@ -4326,25 +4357,14 @@ class JarvisUI:
         try:
             hwnd = int(self._win.winId())
             user32 = ctypes.windll.user32
-            SW_SHOW = 5
-            SWP_NOMOVE = 0x0002
-            SWP_NOSIZE = 0x0001
-            SWP_SHOWWINDOW = 0x0040
-
-            user32.AllowSetForegroundWindow(-1)
-            user32.ShowWindowAsync(hwnd, SW_SHOW)
-            user32.SetWindowPos(
-                hwnd, -1, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-            )
-            user32.SetWindowPos(
-                hwnd, -2, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-            )
             user32.SetForegroundWindow(hwnd)
             user32.BringWindowToTop(hwnd)
         except (AttributeError, OSError, TypeError, ValueError) as exc:
             print(f"[UI] Could not bring JARVIS to the foreground: {exc}")
+
+    def start_after_visible(self, callback, delay_ms: int = 50) -> None:
+        """Start backend work only after Qt has had time to paint the first frame."""
+        QTimer.singleShot(max(0, int(delay_ms)), callback)
 
     def _open_from_pet(self) -> None:
         """Complete the desktop-pet to application handoff on the Qt thread."""

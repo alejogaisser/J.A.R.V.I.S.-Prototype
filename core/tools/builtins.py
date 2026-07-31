@@ -36,6 +36,7 @@ RISK = {
     "memory_forget": RiskLevel.SENSITIVE,
     "memory_restore": RiskLevel.LOCAL_CHANGE,
     "obsidian_connector": RiskLevel.SENSITIVE,
+    "account_connector": RiskLevel.EXTERNAL_EFFECT,
     "permission_manager": RiskLevel.SENSITIVE,
 }
 
@@ -46,6 +47,7 @@ CONFIRMATION = {
         "file_controller", "file_processor", "computer_settings", "desktop_control",
         "code_helper", "dev_agent", "game_updater",
         "obsidian_connector",
+        "account_connector",
     }
 }
 CONFIRMATION["memory_forget"] = ConfirmationPolicy.ALWAYS

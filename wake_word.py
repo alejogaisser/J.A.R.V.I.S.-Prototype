@@ -9,10 +9,13 @@ import queue
 import re
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
+from collections.abc import Callable
 from pathlib import Path
 from ctypes import wintypes
+from typing import Any
 
 import numpy as np
 import psutil
@@ -48,16 +51,27 @@ OPENWAKEWORD_EMBEDDING_PATH = OPENWAKEWORD_DIR / "embedding_model.onnx"
 SAMPLE_RATE = 16_000
 BLOCK_SIZE = 4_000
 OPENWAKEWORD_BLOCK_SIZE = 1_280
-MIN_WAKE_RMS = 110
+MIN_WAKE_RMS = 45
 INPUT_DEVICE = None
 MIN_WAKE_CONFIDENCE = 0.65
 OPENWAKEWORD_THRESHOLD = 0.35
-WAKE_AUDIO_WINDOW = 1.5
+WAKE_AUDIO_WINDOW = 3.0
+OPENWAKEWORD_FOLLOWUP_THRESHOLD = 0.05
 NOISE_MULTIPLIER = 2.8
 DIAGNOSTIC_INTERVAL = 0.5
 DIAGNOSTICS_ENABLED = os.environ.get("JARVIS_WAKE_DIAGNOSTICS") == "1"
+STREAM_STALL_TIMEOUT = 2.0
+MIC_RETRY_DELAY = 1.0
+STATUS_HEARTBEAT_INTERVAL = 15.0
+VOSK_FOLLOWUP_WINDOW = 4.0
 
 WAKE_PHRASES = ("hey jarvis",)
+VOSK_WAKE_ALIASES = (
+    "hey service",
+    "hey harvest",
+    "hey travis",
+    "hey charles",
+)
 
 # Oculta los mensajes internos de Vosk.
 SetLogLevel(-1)
@@ -65,6 +79,67 @@ SetLogLevel(-1)
 _audio_queue: queue.Queue[bytes] = queue.Queue(maxsize=30)
 _instance_mutex = None
 _diagnostic_last_print = 0.0
+_audio_last_callback = 0.0
+
+
+class AudioStreamStalled(RuntimeError):
+    """Raised when PortAudio stays open but stops delivering microphone data."""
+
+
+class AsyncVoskFallback:
+    """Load the heavier Vosk fallback without delaying OpenWakeWord readiness."""
+
+    def __init__(
+        self,
+        model_path: Path,
+        model_factory: Callable[[str], Any] = VoskModel,
+    ) -> None:
+        self._model_path = Path(model_path)
+        self._model_factory = model_factory
+        self._model: Any | None = None
+        self._error: Exception | None = None
+        self._ready = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> "AsyncVoskFallback":
+        """Start one daemon loader and return immediately."""
+        if self._thread is not None:
+            return self
+        self._thread = threading.Thread(
+            target=self._load,
+            name="jarvis-vosk-fallback-loader",
+            daemon=True,
+        )
+        self._thread.start()
+        return self
+
+    def _load(self) -> None:
+        started_at = time.monotonic()
+        try:
+            self._model = self._model_factory(str(self._model_path))
+            elapsed = time.monotonic() - started_at
+            print_wake_diagnostic(
+                f"Respaldo Vosk listo en {elapsed:.2f}s.",
+                force=True,
+            )
+        except Exception as exc:
+            # OpenWakeWord remains fully operational when the optional fallback
+            # cannot load. Preserve the failure for a sanitized diagnostic.
+            self._error = exc
+            print(
+                "[WakeWord] El respaldo Vosk no pudo cargarse; "
+                f"OpenWakeWord continúa activo ({type(exc).__name__})."
+            )
+        finally:
+            self._ready.set()
+
+    def model_if_ready(self) -> Any | None:
+        """Return the model only after loading completed successfully."""
+        return self._model if self._ready.is_set() and self._error is None else None
+
+    def wait(self, timeout: float | None = None) -> bool:
+        """Wait for tests or diagnostics without exposing the loader thread."""
+        return self._ready.wait(timeout)
 
 
 def apply_wake_config() -> None:
@@ -158,6 +233,9 @@ def audio_callback(indata, frames, time_info, status) -> None:
 
     Si la cola está llena, descarta el bloque para evitar acumulación.
     """
+    global _audio_last_callback
+    _audio_last_callback = time.monotonic()
+
     if status:
         print(f"[WakeWord] Advertencia de audio: {status}")
 
@@ -297,7 +375,7 @@ def bring_process_window_to_front(
 
     user32 = ctypes.windll.user32
 
-    SW_SHOW = 5
+    SW_RESTORE = 9
 
     HWND_TOPMOST = -1
     HWND_NOTOPMOST = -2
@@ -381,7 +459,9 @@ def bring_process_window_to_front(
             hwnd = main_window[0]
 
             user32.AllowSetForegroundWindow(-1)
-            user32.ShowWindowAsync(hwnd, SW_SHOW)
+            # SW_RESTORE is required when Windows has only kept the app's
+            # taskbar button; SW_SHOW does not clear the minimized state.
+            user32.ShowWindowAsync(hwnd, SW_RESTORE)
 
             user32.SetWindowPos(
                 hwnd,
@@ -459,7 +539,7 @@ def launch_jarvis() -> None:
     with (log_dir / "jarvis.log").open("a", encoding="utf-8") as jarvis_log:
         main_env = {**os.environ, "JARVIS_WAKE_SUPERVISED": "1"}
         process = subprocess.Popen(
-            [str(executable), "-u", str(MAIN_FILE), "--pet"],
+            [str(executable), "-u", str(MAIN_FILE)],
             cwd=str(BASE_DIR),
             creationflags=creation_flags,
             close_fds=True,
@@ -470,8 +550,10 @@ def launch_jarvis() -> None:
 
     print(f"[WakeWord] Estado: En sesión. PID: {process.pid}")
 
-    # Pet Mode deliberately avoids stealing focus from the active application.
-    print("[WakeWord] Pet Mode visible; la app principal permanece cerrada.")
+    # Wake startup now follows the same base surface as a direct launch. Pet
+    # Mode remains an explicit in-session transition owned by JarvisUI.
+    print("[WakeWord] Abriendo la interfaz base en pantalla completa...")
+    bring_process_window_to_front(process.pid, timeout=12.0)
 
     print("[WakeWord] Esperando a que se cierre...")
 
@@ -534,6 +616,13 @@ def result_matches_wake_phrase(payload: str) -> bool:
     return bool(recognized) and recognized in expected
 
 
+def result_matches_vosk_wake_alias(payload: str) -> bool:
+    """Match only a full two-word acoustic proxy for the OOV word ``Jarvis``."""
+    recognized = result_words(payload)
+    expected = {tuple(phrase.split()) for phrase in VOSK_WAKE_ALIASES}
+    return bool(recognized) and recognized in expected
+
+
 def windows_session_available() -> bool:
     """Do not wake while Windows is locked (common when a laptop lid is closed)."""
     if platform.system() != "Windows":
@@ -581,8 +670,11 @@ class AdaptiveVoiceGate:
         return max(self.absolute_floor, self.noise_floor * NOISE_MULTIPLIER)
 
     def observe(self, rms: float, recognizer_has_speech: bool) -> bool:
-        # Follow steady room noise slowly, but never learn from recognized speech.
-        if not recognizer_has_speech and rms < self.threshold * 1.35:
+        # Learn only from audio below the absolute voice floor.  The previous
+        # threshold-relative rule could absorb a sustained spoken phrase into the
+        # noise floor before OpenWakeWord emitted a score, making the detector
+        # progressively deaf after startup.
+        if not recognizer_has_speech and rms < self.absolute_floor:
             self.noise_floor = (self.noise_floor * 0.97) + (rms * 0.03)
 
         voiced = rms >= self.threshold
@@ -608,6 +700,60 @@ class RecentVoiceWindow:
             self.last_voice_at is not None
             and observed_at - self.last_voice_at <= self.duration
         )
+
+
+class VoskWakeSequence:
+    """Recognize ``hey`` followed by Jarvis when Jarvis is out-of-vocabulary."""
+
+    def __init__(self, duration: float = VOSK_FOLLOWUP_WINDOW) -> None:
+        self.duration = float(duration)
+        self.armed_until = 0.0
+
+    def neural_followup(
+        self,
+        score: float,
+        has_recent_voice: bool,
+        session_available: bool,
+        *,
+        now: float | None = None,
+    ) -> bool:
+        """Combine a confident Vosk ``hey`` with a weak Jarvis neural score."""
+        observed_at = time.monotonic() if now is None else now
+        approved = (
+            observed_at <= self.armed_until
+            and score >= OPENWAKEWORD_FOLLOWUP_THRESHOLD
+            and has_recent_voice
+            and session_available
+        )
+        if approved or observed_at > self.armed_until:
+            self.armed_until = 0.0
+        return approved
+
+    def observe(
+        self,
+        text: str,
+        confidence: float,
+        has_recent_voice: bool,
+        session_available: bool,
+        *,
+        now: float | None = None,
+    ) -> bool:
+        observed_at = time.monotonic() if now is None else now
+        eligible = (
+            confidence >= MIN_WAKE_CONFIDENCE
+            and has_recent_voice
+            and session_available
+        )
+        if text == "hey" and eligible:
+            self.armed_until = observed_at + self.duration
+            return False
+        approved = (
+            text == "[unk]"
+            and eligible
+            and observed_at <= self.armed_until
+        )
+        self.armed_until = 0.0
+        return approved
 
 
 def openwakeword_candidate_approved(
@@ -646,17 +792,42 @@ def create_openwakeword_model():
 
 def listen_for_openwakeword(
     model,
-    diagnostic_vosk_model: VoskModel | None = None,
+    fallback_vosk_model: VoskModel | AsyncVoskFallback | None = None,
 ) -> bool:
-    """Activate immediately after a confident local ``Hey Jarvis`` match."""
+    """Activate through OpenWakeWord, with exact Vosk recognition as fallback."""
+    global _audio_last_callback
     clear_audio_queue()
     voice_gate = AdaptiveVoiceGate(MIN_WAKE_RMS)
     recent_voice = RecentVoiceWindow()
-    diagnostic_recognizer = None
-    diagnostic_partial = ""
-    if diagnostic_vosk_model is not None:
-        diagnostic_recognizer = KaldiRecognizer(diagnostic_vosk_model, SAMPLE_RATE)
-        diagnostic_recognizer.SetWords(True)
+    fallback_recognizer = None
+    fallback_partial = ""
+    fallback_sequence = VoskWakeSequence()
+    def ensure_fallback_recognizer() -> None:
+        nonlocal fallback_recognizer
+        if fallback_recognizer is not None:
+            return
+        resolved_model = (
+            fallback_vosk_model.model_if_ready()
+            if isinstance(fallback_vosk_model, AsyncVoskFallback)
+            else fallback_vosk_model
+        )
+        if resolved_model is None:
+            return
+        # A tiny wake-only grammar avoids accent-driven substitutions such as
+        # "east" for "hey".  ``[unk]`` is essential: unrelated speech can still
+        # be rejected instead of being forced into the configured phrase.
+        fallback_grammar = json.dumps(
+            ["hey", *WAKE_PHRASES, *VOSK_WAKE_ALIASES, "[unk]"],
+            ensure_ascii=False,
+        )
+        fallback_recognizer = KaldiRecognizer(
+            resolved_model,
+            SAMPLE_RATE,
+            fallback_grammar,
+        )
+        fallback_recognizer.SetWords(True)
+
+    ensure_fallback_recognizer()
     print("[WakeWord] Estado: Dormido. Frase requerida: Hey Jarvis")
     print_wake_diagnostic(
         "OpenWakeWord decide la activación; Vosk sólo transcribe para diagnóstico. "
@@ -665,6 +836,8 @@ def listen_for_openwakeword(
         force=True,
     )
     update_runtime_state("wake_word", "listening", phrase="Hey Jarvis")
+    _audio_last_callback = time.monotonic()
+    last_status_heartbeat = _audio_last_callback
 
     with sd.RawInputStream(
         device=INPUT_DEVICE,
@@ -681,6 +854,10 @@ def listen_for_openwakeword(
                 if jarvis_is_running():
                     model.reset()
                     return False
+                if time.monotonic() - _audio_last_callback >= STREAM_STALL_TIMEOUT:
+                    raise AudioStreamStalled(
+                        "el micrófono dejó de entregar audio"
+                    )
                 continue
 
             if jarvis_is_running():
@@ -688,6 +865,9 @@ def listen_for_openwakeword(
                 clear_audio_queue()
                 return False
 
+            # OpenWakeWord starts immediately. Attach Vosk only when its
+            # background load finishes; no audio stream restart is required.
+            ensure_fallback_recognizer()
             samples = np.frombuffer(audio_data, dtype=np.int16)
             predictions = model.predict(samples)
             score = max((float(value) for value in predictions.values()), default=0.0)
@@ -696,29 +876,60 @@ def listen_for_openwakeword(
             has_recent_voice = recent_voice.observe(has_voice)
             session_available = windows_session_available()
 
-            if diagnostic_recognizer is not None:
-                if diagnostic_recognizer.AcceptWaveform(audio_data):
-                    diagnostic_result = diagnostic_recognizer.Result()
-                    diagnostic_text = extract_text(diagnostic_result, field="text")
-                    diagnostic_confidence = result_confidence(diagnostic_result)
-                    if diagnostic_text:
+            vosk_approved = False
+            if fallback_recognizer is not None:
+                if fallback_recognizer.AcceptWaveform(audio_data):
+                    fallback_result = fallback_recognizer.Result()
+                    fallback_text = extract_text(fallback_result, field="text")
+                    fallback_confidence = result_confidence(fallback_result)
+                    if fallback_text:
                         print_wake_diagnostic(
-                            f"Vosk final='{diagnostic_text}' "
-                            f"confianza={diagnostic_confidence:.3f} "
+                            f"Vosk final='{fallback_text}' "
+                            f"confianza={fallback_confidence:.3f} "
                             f"(referencia mínima fallback={MIN_WAKE_CONFIDENCE:.3f}).",
                             force=True,
                         )
-                    diagnostic_partial = ""
+                    vosk_approved = (
+                        has_recent_voice
+                        and (
+                            (
+                                contains_wake_phrase(fallback_text)
+                                and result_matches_wake_phrase(fallback_result)
+                            )
+                            or result_matches_vosk_wake_alias(fallback_result)
+                        )
+                        and fallback_confidence >= MIN_WAKE_CONFIDENCE
+                        and session_available
+                    )
+                    if fallback_text:
+                        vosk_approved = vosk_approved or fallback_sequence.observe(
+                            fallback_text,
+                            fallback_confidence,
+                            has_recent_voice,
+                            session_available,
+                        )
+                    fallback_partial = ""
                 else:
                     partial = extract_text(
-                        diagnostic_recognizer.PartialResult(), field="partial"
+                        fallback_recognizer.PartialResult(), field="partial"
                     )
-                    if partial and partial != diagnostic_partial:
-                        diagnostic_partial = partial
+                    if partial and partial != fallback_partial:
+                        fallback_partial = partial
                         print_wake_diagnostic(
                             f"Vosk parcial='{partial}'.",
                             force=True,
                         )
+
+            now = time.monotonic()
+            if now - last_status_heartbeat >= STATUS_HEARTBEAT_INTERVAL:
+                update_runtime_state(
+                    "wake_word",
+                    "listening",
+                    phrase="Hey Jarvis",
+                    rms=round(rms),
+                    input_device=INPUT_DEVICE,
+                )
+                last_status_heartbeat = now
 
             print_wake_diagnostic(
                 f"RMS={rms:.0f} (mínimo={MIN_WAKE_RMS}, "
@@ -739,6 +950,25 @@ def listen_for_openwakeword(
                     f"score={score:.3f}/"
                     f"{OPENWAKEWORD_THRESHOLD:.3f}, RMS={rms:.0f}/"
                     f"{voice_gate.threshold:.0f}, voz reciente=SÍ."
+                )
+                model.reset()
+                clear_audio_queue()
+                return True
+            if fallback_sequence.neural_followup(
+                score,
+                has_recent_voice,
+                session_available,
+            ):
+                print(
+                    "[WakeWord] Hey Jarvis detectado — APROBADO por "
+                    "confirmación híbrida."
+                )
+                model.reset()
+                clear_audio_queue()
+                return True
+            if vosk_approved:
+                print(
+                    "[WakeWord] Hey Jarvis detectado — APROBADO por respaldo Vosk."
                 )
                 model.reset()
                 clear_audio_queue()
@@ -892,12 +1122,13 @@ def main() -> None:
     wake_model = create_openwakeword_model()
     if wake_model is not None and WAKE_PHRASES == ("hey jarvis",):
         model = wake_model
-        diagnostic_vosk_model = None
-        if DIAGNOSTICS_ENABLED and MODEL_PATH.exists():
-            print("[WakeDiag] Cargando Vosk para transcripción visible...")
-            diagnostic_vosk_model = VoskModel(str(MODEL_PATH))
+        fallback_vosk_model = None
+        if MODEL_PATH.exists():
+            if DIAGNOSTICS_ENABLED:
+                print("[WakeDiag] Preparando Vosk en segundo plano...")
+            fallback_vosk_model = AsyncVoskFallback(MODEL_PATH).start()
         listen = lambda active_model: listen_for_openwakeword(
-            active_model, diagnostic_vosk_model
+            active_model, fallback_vosk_model
         )
         print("[WakeWord] Detector local Hey Jarvis cargado.")
     else:
@@ -937,11 +1168,13 @@ def main() -> None:
             print("\n[WakeWord] Detector detenido.")
             break
 
-        except sd.PortAudioError as error:
+        except (sd.PortAudioError, AudioStreamStalled) as error:
             print(f"[WakeWord] Error de micrófono: {error}")
-            print("[WakeWord] Reintentando en 3 segundos...")
+            print(f"[WakeWord] Reintentando en {MIC_RETRY_DELAY:.0f} segundo...")
             update_runtime_state("wake_word", "retrying", error="microphone")
-            time.sleep(3)
+            apply_wake_config()
+            reset_detector_state(model, "recuperación del micrófono")
+            time.sleep(MIC_RETRY_DELAY)
 
         except Exception as error:
             print(

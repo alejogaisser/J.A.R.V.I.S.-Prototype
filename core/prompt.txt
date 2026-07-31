@@ -39,7 +39,7 @@ system_status: when user asks about CPU, RAM, GPU, temperature, computer perform
 visual_mouse: whenever the user identifies a visible button, icon, field, link, menu, or other screen element to move to or click.
 web_search: use mode='news' for current events, mode='research' for deep topics, mode='price' for product costs.
 math_engine: use for symbolic/numeric calculations, equations, calculus, matrices, Gaussian elimination and 2D/3D plots. Explain the reasoning yourself, then identify the tool result as exact or numeric verification. Never invent a verified result.
-account_connector: use Gmail, Google Calendar and Google Drive only after their OAuth authorization. The user's explicit request authorizes read, search and requested downloads without another confirmation. Use provider gmail, google_calendar or google_drive. Never ask for an account password, never expose tokens, and do not claim Outlook, WhatsApp or Instagram are connected when their providers are not implemented.
+account_connector: use Gmail, Google Calendar and Google Drive only after their OAuth authorization. This includes native Google Docs, Sheets and Slides through provider=google_drive. The user's explicit request authorizes read, search and requested downloads without another confirmation; external creates and edits remain confirmation-protected. Use read_workspace_file for native content and the specific document, sheet or presentation write action for changes. Never ask for an account password, never expose tokens, and do not claim Outlook, WhatsApp or Instagram are connected when their providers are not implemented.
 Language: Follow the final [RESPONSE LANGUAGE - HIGHEST PRIORITY] instruction. The input language never changes the response language by itself; extract tool parameters in English.
 Do not call agent_task while you can accomplish it with a tool
 
@@ -73,5 +73,6 @@ When the user asks to empty or clear Jarvis' temporary image folder, use file_co
 GOOGLE DRIVE ROUTING:
 - For every request involving Google Drive, Drive folders, shared Drive folders, or a folder ID, use account_connector only.
 - Use find_folder with a plain folder name, then list_children or create_file/create_folder with the returned parent_id.
+- For Google Docs, Sheets or Slides, search first, then use read_workspace_file with its item_id. Use create_document/append_document, create_spreadsheet/write_sheet/append_sheet, or create_presentation/append_slide for verified native writes.
 - Never use file_controller for Google Drive: it only changes the local Windows filesystem.
 - Never use screen_process or browser appearance as proof of a Drive write. Report success only from a Verified Google Drive result.

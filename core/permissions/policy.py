@@ -40,10 +40,15 @@ _BROWSER_INTERACTION_ACTIONS = {
     "click", "fill_form", "press", "smart_click", "smart_type", "type",
 }
 _ACCOUNT_READ_ACTIONS = {
-    "find_folder", "list_children", "read", "search", "status",
+    "find_folder", "list_children", "read", "read_workspace_file", "search",
+    "status",
 }
 _ACCOUNT_LOCAL_CHANGE_ACTIONS = {"connect", "download"}
-_ACCOUNT_EXTERNAL_ACTIONS = {"create_file", "create_folder", "disconnect"}
+_ACCOUNT_EXTERNAL_ACTIONS = {
+    "append_document", "append_sheet", "append_slide", "create_document",
+    "create_file", "create_folder", "create_presentation",
+    "create_spreadsheet", "disconnect", "write_sheet",
+}
 _FREE_COMPUTER_ACTIONS = {
     "type", "smart_type", "click", "left_click", "double_click", "right_click",
     "move", "drag", "hotkey", "press", "scroll", "copy", "paste", "screenshot",
@@ -70,6 +75,8 @@ class PermissionPolicy:
                 return PermissionLevel.FREE
             if operation in _ACCOUNT_LOCAL_CHANGE_ACTIONS:
                 return PermissionLevel.CONFIRM_ONCE
+            if operation in _ACCOUNT_EXTERNAL_ACTIONS:
+                return PermissionLevel.CONFIRM_ALWAYS
             return PermissionLevel.CONFIRM_ALWAYS
         if tool.name in _FREE_TOOLS:
             return PermissionLevel.FREE

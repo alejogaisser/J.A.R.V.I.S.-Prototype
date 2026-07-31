@@ -97,6 +97,18 @@ class ContextWorkspaceRegressionTests(unittest.TestCase):
         ]
         self.assertIn("self._win.showFullScreen()", constructor)
         self.assertNotIn("self._win.showNormal()", constructor)
+        self.assertIn("SW_RESTORE = 9", constructor)
+        self.assertIn("~Qt.WindowState.WindowMinimized", constructor)
+        self.assertIn("Qt.WindowState.WindowFullScreen", constructor)
+
+    def test_backend_starts_after_first_visible_frame(self):
+        main = Path("main.py").read_text(encoding="utf-8")
+        self.assertIn("ui.start_after_visible(start_runner_after_first_frame)", main)
+        self.assertIn("def start_after_visible", self.source)
+        self.assertLess(
+            main.index('ui = JarvisUI("face.png")'),
+            main.index("ui.start_after_visible(start_runner_after_first_frame)"),
+        )
 
     def test_panel_switches_skip_layout_animation_while_speaking(self):
         for method in (

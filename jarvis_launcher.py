@@ -224,7 +224,7 @@ def load_config() -> dict:
         "enabled": True,
         "phrases": ["hey jarvis"],
         "model_path": "models/vosk-model-small-en-us-0.15",
-        "min_wake_rms": 110,
+        "min_wake_rms": 45,
         "min_confidence": 0.65,
         "wake_threshold": 0.35,
         "input_device": None,

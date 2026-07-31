@@ -8,6 +8,12 @@ from typing import Any
 from .audit import record
 from .base import AccountConnector, ConnectorCapabilities, ConnectorError
 from .google_common import GoogleOAuthMixin, google_dependencies
+from .google_workspace import (
+    GOOGLE_DOCUMENT_MIME,
+    GOOGLE_PRESENTATION_MIME,
+    GOOGLE_SPREADSHEET_MIME,
+    GoogleWorkspaceService,
+)
 
 GOOGLE_EXPORTS = {
     "application/vnd.google-apps.document": ("application/pdf", ".pdf"),
@@ -20,7 +26,18 @@ class GoogleDriveConnector(GoogleOAuthMixin, AccountConnector):
     provider = "google_drive"
     scopes = ["https://www.googleapis.com/auth/drive"]
     capabilities = ConnectorCapabilities(
-        search=True, read=True, download=True, create_file=True, create_folder=True
+        search=True,
+        read=True,
+        download=True,
+        create_file=True,
+        create_folder=True,
+        read_workspace=True,
+        create_document=True,
+        update_document=True,
+        create_spreadsheet=True,
+        update_spreadsheet=True,
+        create_presentation=True,
+        update_presentation=True,
     )
 
     def __init__(self) -> None:
@@ -29,6 +46,11 @@ class GoogleDriveConnector(GoogleOAuthMixin, AccountConnector):
     def _service(self):
         build = google_dependencies()[3]
         return build("drive", "v3", credentials=self._credentials(), cache_discovery=False)
+
+    def _workspace(self) -> GoogleWorkspaceService:
+        """Share this connector's OAuth owner with the native Workspace APIs."""
+        build = google_dependencies()[3]
+        return GoogleWorkspaceService(self._credentials(), build)
 
     def connect(self) -> str:
         creds = self._credentials(interactive=True)
@@ -148,6 +170,153 @@ class GoogleDriveConnector(GoogleOAuthMixin, AccountConnector):
         verified = self._verify_created(created.get("id", ""), clean_name)
         record(self.provider, "create_file", count=1)
         return verified
+
+    def _create_workspace_file(
+        self,
+        name: str,
+        mime_type: str,
+        parent_id: str = "",
+    ) -> dict[str, Any]:
+        clean_name = Path(name or "").name.strip()
+        if not clean_name or clean_name in {".", ".."}:
+            raise ConnectorError("A non-empty Google Workspace file name is required.")
+        metadata: dict[str, Any] = {"name": clean_name, "mimeType": mime_type}
+        if parent_id:
+            metadata["parents"] = [parent_id]
+        created = self._service().files().create(
+            body=metadata,
+            fields="id,name,mimeType,modifiedTime,size,webViewLink,parents",
+            supportsAllDrives=True,
+        ).execute()
+        return self._verify_created(created.get("id", ""), clean_name)
+
+    def _mime_type(self, item_id: str) -> str:
+        if not item_id:
+            raise ConnectorError("A Google Workspace file ID is required.")
+        item = self._service().files().get(
+            fileId=item_id,
+            fields="id,mimeType",
+            supportsAllDrives=True,
+        ).execute()
+        return str(item.get("mimeType", ""))
+
+    def _require_mime_type(self, item_id: str, expected: str) -> None:
+        observed = self._mime_type(item_id)
+        if observed != expected:
+            raise ConnectorError(
+                f"Google file {item_id!r} has type {observed!r}; expected {expected!r}."
+            )
+
+    def read_workspace_file(
+        self,
+        item_id: str,
+        range_name: str = "",
+        max_chars: int = 20_000,
+    ) -> dict[str, Any]:
+        """Read bounded native content after identifying the Drive MIME type."""
+        mime_type = self._mime_type(item_id)
+        workspace = self._workspace()
+        if mime_type == GOOGLE_DOCUMENT_MIME:
+            result = workspace.read_document(item_id, max_chars=max_chars)
+        elif mime_type == GOOGLE_SPREADSHEET_MIME:
+            result = workspace.read_spreadsheet(item_id, range_name or "A1:Z1000")
+        elif mime_type == GOOGLE_PRESENTATION_MIME:
+            result = workspace.read_presentation(item_id, max_chars=max_chars)
+        else:
+            raise ConnectorError(
+                "Native content reading supports Google Docs, Sheets, and Slides only."
+            )
+        record(self.provider, "read_workspace_file")
+        return result
+
+    def create_document(
+        self,
+        name: str,
+        content: str = "",
+        parent_id: str = "",
+    ) -> dict[str, Any]:
+        created = self._create_workspace_file(name, GOOGLE_DOCUMENT_MIME, parent_id)
+        if content:
+            try:
+                self._workspace().append_document(created["id"], content)
+            except Exception as exc:
+                raise ConnectorError(
+                    "The Google Doc was created and verified, but its initial "
+                    f"content was not applied: {exc}"
+                ) from exc
+        record(self.provider, "create_document", count=1)
+        return self._verify_created(created["id"], created["name"])
+
+    def append_document(self, item_id: str, content: str) -> dict[str, Any]:
+        self._require_mime_type(item_id, GOOGLE_DOCUMENT_MIME)
+        result = self._workspace().append_document(item_id, content)
+        record(self.provider, "append_document", count=1)
+        return result
+
+    def create_spreadsheet(
+        self,
+        name: str,
+        values: Any = None,
+        parent_id: str = "",
+        range_name: str = "A1",
+    ) -> dict[str, Any]:
+        created = self._create_workspace_file(name, GOOGLE_SPREADSHEET_MIME, parent_id)
+        if values:
+            try:
+                self._workspace().write_spreadsheet(
+                    created["id"], range_name or "A1", values, append=False
+                )
+            except Exception as exc:
+                raise ConnectorError(
+                    "The Google Sheet was created and verified, but its initial "
+                    f"values were not applied: {exc}"
+                ) from exc
+        record(self.provider, "create_spreadsheet", count=1)
+        return self._verify_created(created["id"], created["name"])
+
+    def write_sheet(
+        self,
+        item_id: str,
+        range_name: str,
+        values: Any,
+        *,
+        append: bool = False,
+    ) -> dict[str, Any]:
+        self._require_mime_type(item_id, GOOGLE_SPREADSHEET_MIME)
+        result = self._workspace().write_spreadsheet(
+            item_id, range_name, values, append=append
+        )
+        record(
+            self.provider,
+            "append_sheet" if append else "write_sheet",
+            count=result["updated_cells"],
+        )
+        return result
+
+    def create_presentation(
+        self,
+        name: str,
+        title: str = "",
+        body: str = "",
+        parent_id: str = "",
+    ) -> dict[str, Any]:
+        created = self._create_workspace_file(name, GOOGLE_PRESENTATION_MIME, parent_id)
+        if title or body:
+            try:
+                self._workspace().append_slide(created["id"], title, body)
+            except Exception as exc:
+                raise ConnectorError(
+                    "The Google Slides presentation was created and verified, "
+                    f"but its initial slide was not applied: {exc}"
+                ) from exc
+        record(self.provider, "create_presentation", count=1)
+        return self._verify_created(created["id"], created["name"])
+
+    def append_slide(self, item_id: str, title: str, body: str) -> dict[str, Any]:
+        self._require_mime_type(item_id, GOOGLE_PRESENTATION_MIME)
+        result = self._workspace().append_slide(item_id, title, body)
+        record(self.provider, "append_slide", count=1)
+        return result
 
     def _verify_created(self, item_id: str, expected_name: str) -> dict[str, Any]:
         """Read the new item back so a success message always means it exists."""
