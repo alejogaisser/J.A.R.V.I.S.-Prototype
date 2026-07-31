@@ -66,12 +66,12 @@ class ToolInventoryTests(unittest.TestCase):
                 )
                 self.assertEqual(float(row["Timeout s"]), tool.timeout)
                 for field in (
-                    "Policy actual",
-                    "Retorno actual",
-                    "Verificación",
+                    "Current Policy",
+                    "Current return",
+                    "Verification",
                     "Rollback",
-                    "Cobertura",
-                    "Migración pendiente",
+                    "Coverage",
+                    "Pending migration",
                 ):
                     self.assertTrue(row[field], f"{tool.name}: missing {field}")
 

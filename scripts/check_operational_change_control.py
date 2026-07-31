@@ -87,7 +87,7 @@ def _resolve_repo_path(repo_root: Path, raw_path: object, label: str) -> Path:
 
 def _completed_phases(roadmap: Path, start: int) -> set[int]:
     source = roadmap.read_text(encoding="utf-8")
-    matches = list(re.finditer(r"(?m)^### Fase (\d+) - .+$", source))
+    matches = list(re.finditer(r"(?m)^### (?:Fase|Phase) (\d+) - .+$", source))
     completed: set[int] = set()
     for index, match in enumerate(matches):
         phase = int(match.group(1))
@@ -95,7 +95,11 @@ def _completed_phases(roadmap: Path, start: int) -> set[int]:
             continue
         end = matches[index + 1].start() if index + 1 < len(matches) else len(source)
         block = source[match.end() : end]
-        if re.search(r"\*\*Estado:\*\*\s+completad[ao]", block, re.IGNORECASE):
+        if re.search(
+            r"\*\*(?:Estado|Status):\*\*\s+(?:completad[ao]|completed)",
+            block,
+            re.IGNORECASE,
+        ):
             completed.add(phase)
     return completed
 
