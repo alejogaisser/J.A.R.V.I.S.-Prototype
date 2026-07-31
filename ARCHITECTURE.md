@@ -91,10 +91,19 @@ flowchart TD
 
 1. `jarvis_launcher.py` procesa el modo.
 2. En modo wake, supervisa `wake_word.py` y reinicia con backoff si falla.
-3. `wake_word.py` toma el micrófono, verifica instancia única y usa OpenWakeWord; Vosk actúa como respaldo.
-4. Tras detectar la frase, libera el stream y lanza `main.py`.
-5. `main.py` crea `QApplication`/`JarvisUI`, construye `JarvisLive` y ejecuta su loop asyncio en un thread daemon.
-6. `JarvisLive.run()` crea el cliente Gemini, abre una sesión Live y levanta tareas de envío, recepción, reproducción, monitorización, proactividad y, si fue activado, dashboard.
+3. `wake_word.py` verifica instancia única, carga OpenWakeWord y comienza a
+   escuchar; el respaldo Vosk se carga en un thread daemon y se adjunta al
+   recognizer cuando queda listo.
+4. Tras detectar la frase, libera el stream y lanza `main.py` en su superficie
+   base. La UI nace fullscreen; Pet Mode queda como transición explícita de la
+   misma sesión.
+5. `main.py` crea `QApplication`/`JarvisUI`, muestra el primer frame fullscreen
+   y recién entonces inicia el thread daemon `jarvis-core`.
+6. `JarvisLive` carga de forma diferida el SDK, y `run()` crea el cliente
+   Gemini, abre una sesión Live y levanta tareas de envío, recepción,
+   reproducción, monitorización, proactividad y, si fue activado, dashboard.
+   El saludo inicial sólo se considera completado tras reproducirse y queda
+   pendiente si la sesión se interrumpe.
 
 ### Reconexión
 

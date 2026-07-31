@@ -484,3 +484,190 @@ especializado de entropía.
 ## Recomendación
 
 No iniciar todavía la extracción de audio, sesión o UI. El siguiente cambio debe ser pequeño, reversible y centrado en tests de origen/riesgo y la matriz de herramientas; después, `RequestContext` y PermissionStore atómico.
+
+## Cambio verificado - 2026-07-30 - Google Workspace nativo
+
+### Alcance
+
+- `GoogleDriveConnector` continúa siendo el owner único de OAuth, Drive y
+  archivos Workspace.
+- `connectors/google_workspace.py` encapsula las APIs nativas de Docs, Sheets
+  y Slides con el mismo token, builder inyectado, límites y errores
+  específicos.
+- `account_connector` incorporó lectura nativa; creación y append de Docs;
+  creación, escritura y append de Sheets; y creación/append de Slides.
+- `main.py` sigue siendo el composition root y registra la misma herramienta;
+  no cambiaron audio, visión, UI, dashboard ni Gemini Live.
+
+### Seguridad y evidencia
+
+- Leer, buscar y descargar continúa libre tras OAuth.
+- Toda creación o edición remota requiere al menos `confirm_once`;
+  `disconnect` requiere `confirm_always`.
+- Las lecturas tienen límites de texto/celdas y las escrituras validan
+  contenido, matriz y tamaño.
+- Docs se verifica por contenido final; Sheets por rango/celdas y lectura
+  posterior; Slides por ID de página y texto observado.
+- La auditoría registra sólo proveedor, operación y conteo. No registra
+  cuerpos, valores, consultas, IDs ni tokens.
+
+### Discrepancias y riesgos
+
+- **Discrepancia resuelta parcialmente con H-06:** las escrituras de
+  `account_connector` ya no son `FREE`. La clasificación de browser,
+  recordatorios y otros conectores sigue pendiente.
+- Las APIs de Google Workspace fueron habilitadas manualmente en el proyecto
+  Google Cloud. Se probó la cuenta real mediante el token protegido existente,
+  sin leer ni mostrar configuración OAuth, identidad, archivos previos o
+  contenido ajeno al smoke test.
+- Crear un archivo y poblar su contenido son dos efectos remotos: si falla el
+  segundo, el error informa que el archivo vacío ya fue creado y no intenta
+  borrarlo silenciosamente.
+- La verificación es local al conector; `ToolResult v2` y `request_id` siguen
+  pendientes según las Fases 2 y 4.
+
+### Verificación y rollback
+
+- Suite completa: `226 passed, 1 skipped, 41 subtests passed`; una advertencia
+  externa de deprecación futura en `google.genai`.
+- `pip check`, `compileall`, `jarvis_launcher.py --help` y `git diff --check`:
+  correctos con el Python del entorno virtual.
+- Smoke real de Google Workspace: Docs, Sheets y Slides completaron
+  `create -> write -> readback`; los tres artefactos temporales se movieron a
+  la papelera y `trashed=true` se verificó nuevamente mediante Drive API.
+- No se ejecutaron navegador visual, Gemini, micrófono, cámara ni dashboard.
+- Rollback: retirar las acciones nativas y `GoogleWorkspaceService`, restaurar
+  la matriz de capabilities/policy y conservar el conector Drive previo. No
+  requiere migración de datos locales ni tokens.
+
+## Cambio verificado - 2026-07-30 - Wake rápido y superficie base fullscreen
+
+### Causa y alcance
+
+- El arranque por wake ejecutaba `main.py --pet`, mientras el inicio directo
+  ya abría `JarvisUI` fullscreen. Se eliminó esa divergencia: ambas rutas
+  inician la superficie base y Pet Mode sigue disponible sólo por transición
+  explícita.
+- Con OpenWakeWord disponible, `wake_word.main()` cargaba Vosk de forma
+  síncrona antes de abrir el stream. La medición local fue ~439 ms para
+  OpenWakeWord y ~1.498 ms adicionales para Vosk.
+- El fallback híbrido esperaba un resultado final `hey`, pero la gramática no
+  incluía `hey` como entrada independiente. Además, un final vacío podía
+  desarmar la ventana antes de recibir el segundo término.
+- `AsyncVoskFallback` carga el modelo pesado en un thread daemon; OpenWakeWord
+  escucha inmediatamente y el recognizer Vosk se conecta cuando está listo.
+  La gramática incluye `hey` y los finales vacíos ya no alteran la secuencia.
+
+### Ownership, compatibilidad y recuperación
+
+- `wake_word.py` conserva ownership de detector, stream, fallback y proceso
+  lanzado. `JarvisUI` conserva ownership de fullscreen y App/Pet.
+- No cambiaron Gemini Live, audio de conversación, cámara, dashboard, policy
+  ni las señales Qt de Pet Mode.
+- Un stream sin callbacks se considera trabado a los 2 s y reintenta después
+  de 1 s; antes eran 5 s y 3 s. El reset conserva limpieza de cola y estado
+  neural antes de reabrir.
+- Rollback: volver a carga Vosk síncrona, timeout 5/3 y argumento `--pet`; no
+  hay migración de configuración ni datos.
+
+### Evidencia y límites
+
+- Tests dirigidos de launcher/wake/UI: `72 passed`.
+- Suite completa: `229 passed, 1 skipped, 41 subtests passed`.
+- `pip check`, `compileall`, launcher `--help` y `git diff --check`: correctos.
+- Medición repetida: OpenWakeWord listo en ~160 ms; Vosk listo en background
+  a ~1.190 ms. Son tiempos locales de carga, no Wake -> UI.
+- Se reiniciaron únicamente supervisor y detector; ambos quedaron activos,
+  OpenWakeWord informó estado de escucha y no aparecieron errores nuevos.
+- No se grabó audio ni se verificó acústicamente la frase. La detección hablada,
+  Wake -> UI visible y el foco fullscreen real requieren prueba manual.
+
+## Corrección verificada - 2026-07-31 - Primer frame, restauración y saludo
+
+### Evidencia posterior y causa
+
+- La prueba manual del 31 de julio confirmó tres brechas del cambio anterior:
+  apertura lenta, ventana sólo presente en la barra de tareas y saludo emitido
+  recién después de pasar a Pet Mode.
+- `main.py` importaba `google.genai` antes de construir la UI. El perfil local
+  atribuyó ~1.871 ms acumulados al SDK y midió ~2.241 ms para importar `main`.
+- Los dos intentos de foco usaban `SW_SHOW`, que no restaura un HWND minimizado.
+- `_briefing_sent` se marcaba al programar el saludo, no después de reproducirlo.
+  Una falla o desconexión inicial impedía reintentarlo; además, el vaciado de
+  audio podía liberar la espera sin distinguir audio descartado de reproducido.
+
+### Implementación y ownership
+
+- Gemini se importa de forma diferida y thread-safe dentro del owner
+  `JarvisLive`; Qt construye, muestra y pinta la superficie base antes de
+  iniciar el thread `jarvis-core`.
+- `JarvisUI` mantiene ownership del estado visual. En Windows restaura con
+  `SW_RESTORE`, elimina `WindowMinimized`, aplica `WindowFullScreen` y reintenta
+  foco de manera acotada. Los callbacks tardíos no revierten una transición
+  explícita a Pet Mode.
+- El saludo conserva estados separados `inflight`, `played` y `sent`.
+  Sólo queda completado tras drenar su audio; una desconexión libera la tarea
+  sin declarar éxito y permite reintentar en la siguiente sesión.
+- No cambiaron las señales App/Pet, policy, herramientas, cámara, dashboard ni
+  los adaptadores de cuentas.
+
+### Evidencia, riesgos y rollback
+
+- Prueba Qt offscreen desde estado minimizado: ventana visible, fullscreen,
+  no minimizada y superficie `main`.
+- En el mismo entorno, el import de `main` bajó de ~2.241 ms a ~509 ms
+  (aprox. 77%); la construcción UI medida fue ~492 ms. Esto mide carga local,
+  no Wake -> UI sobre hardware.
+- Tests dirigidos: `124 passed, 20 subtests passed`. Suite completa:
+  `231 passed, 1 skipped, 41 subtests passed`; `pip check`, `compileall` y
+  `git diff --check` correctos.
+- Se reiniciaron únicamente el supervisor y el detector wake residentes; ambos
+  quedaron activos y habilitados con el código actualizado.
+- Riesgo pendiente: repetir “Hey Jarvis” en el equipo real y comprobar foco,
+  fullscreen, saludo audible y latencia extremo a extremo. No se iniciaron
+  la app principal, Gemini, cámara, dashboard ni cuentas; la suite automatizada
+  mantuvo micrófono y demás hardware mockeados.
+- Rollback: restaurar imports eager, arranque inmediato del runner, `SW_SHOW`
+  y el booleano previo del briefing. No hay migración de datos/configuración.
+
+## Preparación verificada - 2026-07-31 - Publicación no comercial
+
+### Alcance y procedencia
+
+- No se cambió la visibilidad del repositorio, no se hizo commit/push y no se
+  modificó lógica productiva.
+- La procedencia ahora enlaza el commit público `d178f6b` de Mark XLVIII,
+  creado por FatihMakes y publicado bajo CC BY-NC 4.0.
+- `NOTICE.md` separa explícitamente material original, modificaciones de Mark LI
+  y componentes de terceros. `LICENSE.md` limita el copyright reclamado a las
+  contribuciones propias y describe el repositorio como código fuente público
+  para uso personal y no comercial.
+- Se agregó un aviso de no afiliación con Marvel Entertainment, Marvel Studios
+  y The Walt Disney Company; no se reclaman sus marcas o personajes.
+
+### Higiene y prevención de regresiones
+
+- `config/google_oauth_client.example.json` usa únicamente placeholders
+  inequívocos. El archivo OAuth real permaneció ignorado; su contenido no se
+  mostró ni se modificó.
+- `/output/` quedó en `.gitignore` para impedir que PDFs y otros artefactos
+  generados entren por accidente en una publicación.
+- `SECURITY.md` incluye una checklist previa a visibilidad pública.
+- `tests/test_public_release.py` verifica placeholders, ignore, atribución,
+  disclaimer y licencias de los modelos wake.
+
+### Verificación, riesgo pendiente y rollback
+
+- Pruebas dirigidas: `5 passed, 7 subtests passed`.
+- Suite completa: `236 passed, 1 skipped, 48 subtests passed`.
+- `pip check`, `compileall`, escaneo de secretos y `git diff --check`:
+  correctos.
+- PyQt6 no fue migrado ni relicenciado. Su compatibilidad GPLv3/comercial con
+  el esquema no comercial permanece como decisión pendiente antes de declarar
+  el repositorio listo jurídicamente.
+- El historial conserva una antigua cadena ficticia de aspecto aleatorio en la
+  plantilla OAuth; no coincide con la credencial local actual. No se reescribió
+  historial ni se forzó ninguna rama para evitar una operación destructiva.
+- Rollback: retirar `NOTICE.md` y el test, restaurar los textos previos, la
+  plantilla de ejemplo y la entrada `/output/`. No hay migración de runtime,
+  credenciales ni datos.

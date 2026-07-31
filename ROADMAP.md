@@ -14,6 +14,23 @@
 
 El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir trazabilidad general hay que cerrar dos huecos de seguridad observados en el dispatch actual —origen remoto y clasificación de herramientas— mediante tests que fallen primero. Después se puede implementar `RequestContext` y persistencia atómica sin alterar el comportamiento visual ni el protocolo Gemini.
 
+### Avance incremental - 2026-07-30
+
+- El owner OAuth de `GoogleDriveConnector` se amplió a contenido nativo de
+  Google Docs, Sheets y Slides mediante un servicio interno inyectable; no se
+  agregó una herramienta ni una autenticación paralela.
+- Las operaciones externas de creación y edición de `account_connector`
+  ahora tienen mínimo `confirm_once`; lectura, búsqueda y descarga permanecen
+  libres después de OAuth, y desconectar queda en `confirm_always`.
+- Se agregaron lecturas acotadas, límites de tamaño/celdas, auditoría sin
+  cuerpos y verificación por lectura posterior o rango/página observado.
+- Smoke real aprobado: Docs, Sheets y Slides completaron creación, escritura y
+  lectura; los tres artefactos temporales fueron enviados a papelera y
+  verificados como `trashed=true`.
+- Esto completa sólo la clasificación de riesgo del conector dentro de Fase 1.
+  Siguen pendientes el origen remoto extremo a extremo y el resto de las
+  herramientas subclasificadas.
+
 ## Fases
 
 ### Fase 0 - Línea base reproducible e inventario
@@ -410,6 +427,46 @@ Los siguientes valores del PDF son objetivos provisionales, no resultados medido
 | Tool local simple | < 300 ms | pendiente benchmark |
 | Reconexión recuperable | < 5 s | pendiente fault injection |
 | Shutdown limpio | < 3 s | pendiente observación de recursos |
+
+### Medición incremental de wake - 2026-07-30
+
+- Baseline local de carga secuencial: OpenWakeWord ~439 ms más Vosk ~1.498 ms
+  antes de comenzar a escuchar.
+- Después del cambio: OpenWakeWord quedó disponible en ~160 ms en la medición
+  repetida; Vosk terminó en segundo plano a ~1.190 ms sin bloquear la escucha.
+- La recuperación teórica de un stream sin callbacks baja de hasta ~8 s
+  (`5 s + 3 s`) a ~3 s (`2 s + 1 s`).
+- Supervisor y detector fueron reiniciados y quedaron activos sin errores
+  nuevos. La métrica Wake -> UI visible y la tasa acústica de aciertos siguen
+  pendientes de una prueba hablada en el hardware real.
+
+### Corrección incremental de arranque - 2026-07-31
+
+- La validación manual reveló que el proceso podía quedar minimizado y que el
+  saludo no se reintentaba tras una sesión inicial fallida.
+- La UI ahora obtiene el primer frame antes de cargar Gemini, restaura ventanas
+  icónicas con `SW_RESTORE` y reafirma fullscreen sin alterar Pet Mode.
+- El import local de `main` bajó de ~2.241 ms a ~509 ms (aprox. 77%). La prueba
+  Qt offscreen confirmó superficie `main`, visible, fullscreen y no minimizada.
+- El saludo sólo se marca enviado después de terminar su reproducción; audio
+  descartado por reconexión conserva el saludo pendiente.
+- Suite completa: `231 passed, 1 skipped, 41 subtests passed`.
+- Supervisor y detector wake reiniciados; ambos quedaron activos y habilitados.
+- Pendiente manual: medir Wake -> primer frame y confirmar saludo audible,
+  foco y fullscreen en el hardware real.
+
+### Preparación de publicación no comercial - 2026-07-31
+
+- Completados: atribución al commit exacto de Mark XLVIII, `NOTICE.md`, alcance
+  CC BY-NC, disclaimer de no afiliación, placeholder OAuth inequívoco,
+  exclusión de `/output/` y checklist de seguridad.
+- Se agregaron pruebas para conservar estos requisitos y el escaneo actual no
+  detectó secretos versionados.
+- Verificación completa: `236 passed, 1 skipped, 48 subtests passed`.
+- La visibilidad sigue privada y no hubo commit, push ni reescritura de
+  historial.
+- Pendiente antes de declarar publicación jurídicamente lista: decidir la
+  compatibilidad de PyQt6 GPLv3/comercial. Esta preparación no modifica PyQt6.
 
 ## Quick wins previos al primer sprint
 

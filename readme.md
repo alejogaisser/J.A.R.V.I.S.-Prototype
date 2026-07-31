@@ -102,6 +102,13 @@ Los tres modelos ONNX necesarios para “Hey Jarvis” están incluidos en `mode
 python jarvis_launcher.py --mode wake
 ```
 
+OpenWakeWord comienza a escuchar apenas carga el detector dedicado; Vosk se
+prepara en segundo plano y se adjunta después como respaldo. Al detectar la
+frase, JARVIS restaura y abre la aplicación base en pantalla completa. La UI
+muestra su primer frame antes de cargar el SDK de Gemini; el saludo inicial se
+reintenta si la primera sesión se interrumpe. Pet Mode se activa únicamente
+desde la propia interfaz o mediante una orden explícita durante la sesión.
+
 Para ejecutar temporalmente el detector con diagnóstico visible:
 
 ```powershell
@@ -130,13 +137,22 @@ Las escrituras y modificaciones requieren confirmación por seguridad.
 
 ### Google
 
-Para Gmail, Google Calendar y Google Drive, creá credenciales OAuth de aplicación de escritorio y guardalas con la estructura indicada en:
+Para Gmail, Google Calendar y Google Drive, incluidos Google Docs, Sheets y
+Presentations, creá credenciales OAuth de aplicación de escritorio y guardalas
+con la estructura indicada en:
 
 ```text
 config/google_oauth_client.example.json
 ```
 
 El archivo real debe llamarse `config/google_oauth_client.json`.
+
+En el mismo proyecto de Google Cloud habilitá **Google Drive API**, **Google
+Docs API**, **Google Sheets API** y **Google Slides API**. JARVIS reutiliza el
+owner OAuth y el token protegido del conector de Drive; no abre una ruta de
+automatización visual paralela. Las búsquedas, lecturas y exportaciones son
+directas después de autorizar la cuenta. Crear o editar archivos remotos pasa
+por la confirmación central y verifica el efecto mediante la API.
 
 ### Microsoft Outlook
 
@@ -231,13 +247,22 @@ python -m compileall -q .
 
 ## Créditos y licencia
 
-Proyecto original **Mark XLVIII** creado por [FatihMakes](https://www.youtube.com/@FatihMakes).
+JARVIS Mark LI deriva de **Mark XLVIII**, creado por
+[FatihMakes](https://github.com/FatihMakes). La versión original de referencia
+es el [commit `d178f6b`](https://github.com/FatihMakes/Mark-L/commit/d178f6b).
+Esta adaptación conserva el uso personal y no comercial establecido por el
+autor original e identifica sus modificaciones en [NOTICE.md](NOTICE.md).
 
 Las modificaciones originales de Mark LI se publican, en la medida en que sus
 derechos correspondan al mantenedor, bajo
-[Creative Commons BY-NC 4.0](LICENSE.md). Conservá la atribución y verificá las
-condiciones del proyecto original antes de redistribuir modificaciones.
+[Creative Commons BY-NC 4.0](LICENSE.md). Es código fuente público para uso
+personal y no comercial; no se presenta como un proyecto open source conforme
+a la definición OSI.
 
 Los modelos de wake word y demás componentes externos mantienen licencias
 propias. Consultá [los avisos de terceros](THIRD_PARTY_NOTICES.md) y la
 [política de seguridad](SECURITY.md) antes de publicar un fork.
+
+Este proyecto es independiente y no está afiliado, patrocinado ni aprobado por
+Marvel Entertainment, Marvel Studios, The Walt Disney Company ni por los
+titulares de las marcas asociadas a JARVIS o Iron Man.

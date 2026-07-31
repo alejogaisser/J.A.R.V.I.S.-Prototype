@@ -6,9 +6,18 @@ respectivos autores.
 ## Mark XLVIII
 
 Este proyecto deriva de **Mark XLVIII**, creado por
-[FatihMakes](https://www.youtube.com/@FatihMakes). La atribución se conserva en
-el README y en la licencia de este repositorio. Las condiciones publicadas por
-el autor original prevalecen sobre cualquier resumen incluido aquí.
+[FatihMakes](https://github.com/FatihMakes), a partir del
+[commit `d178f6b`](https://github.com/FatihMakes/Mark-L/commit/d178f6b) del
+repositorio público `FatihMakes/Mark-L`.
+
+El autor original declara uso personal y no comercial bajo Creative Commons
+Attribution-NonCommercial 4.0 International (CC BY-NC 4.0). La atribución se
+conserva en el README, `LICENSE.md` y `NOTICE.md`. Las condiciones publicadas
+por el autor original prevalecen sobre cualquier resumen incluido aquí.
+
+Entre los archivos inicialmente conservados sin cambios se encontraba
+`config/jarvis.ico`; por lo tanto, no se reclama autoría propia sobre ese
+recurso.
 
 ## openWakeWord
 
@@ -56,3 +65,7 @@ OTRO TIPO, QUE SURJA DEL SOFTWARE, SU USO U OTRAS OPERACIONES CON ÉL.
 Las bibliotecas declaradas en los archivos de requisitos no se redistribuyen
 como código fuente dentro de este repositorio. Cada una conserva la licencia
 publicada por su propio mantenedor.
+
+PyQt6 y PyQt6-WebEngine se instalan como dependencias externas y se ofrecen por
+sus mantenedores bajo GPLv3 o licencias comerciales. Este aviso documenta esa
+dependencia, pero no modifica ni sustituye sus condiciones.

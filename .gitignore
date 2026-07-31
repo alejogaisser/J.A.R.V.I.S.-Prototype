@@ -33,6 +33,7 @@ jarvis_temp_screenshot.png
 jarvis_debug_*.png
 youtube_summary_*.txt
 tmp/
+/output/
 
 # Local test/user workspaces; never publish their contents.
 Drive/

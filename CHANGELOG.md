@@ -1,5 +1,17 @@
 # Historial de versiones
 
+## Preparación de publicación pública — 2026-07-31
+
+- se agregó `NOTICE.md` con la procedencia exacta de Mark XLVIII, su autor,
+  licencia y commit de referencia;
+- se aclaró que Mark LI publica código fuente para uso personal y no comercial,
+  sin reclamar derechos sobre material original o de terceros;
+- se incorporó un aviso de no afiliación con Marvel/Disney;
+- la plantilla OAuth de Google ahora usa placeholders inequívocos;
+- `output/` quedó excluido para evitar publicar artefactos generados;
+- se añadieron pruebas de regresión para créditos, placeholders, modelos y
+  metadatos de publicación.
+
 ## Publicación segura — 2026-07-23
 
 - se incorporaron la licencia del proyecto, los avisos de terceros y la

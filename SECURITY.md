@@ -15,6 +15,7 @@ El repositorio excluye deliberadamente:
 - configuraciones personales y auditorías de conectores;
 - `memory/long_term.json` y demás memoria personal;
 - logs, capturas, workspaces locales y entornos virtuales;
+- artefactos generados dentro de `output/`;
 - `AGENTS.md`, que contiene instrucciones locales de desarrollo.
 
 Antes de hacer público un fork o una copia, verificá no sólo el árbol actual
@@ -44,6 +45,16 @@ Los eventos generales de runtime usan `StructuredRuntimeLog`: sólo aceptan
 metadata allowlisted, sanitizan mensajes y rotan `logs/runtime.jsonl`. Los
 eventos de tools continúan en `RequestAuditSink` y no aceptan argumentos ni
 cuerpos. Los logs reales permanecen fuera de Git.
+
+## Lista mínima antes de cambiar la visibilidad
+
+1. Ejecutar el escaneo de secretos sobre el árbol y todo el historial.
+2. Confirmar que las plantillas usan únicamente placeholders reconocibles.
+3. Revisar ramas y tags, porque también pasan a ser visibles.
+4. Verificar que `git status` no incluya artefactos personales por agregar.
+5. Confirmar créditos, licencias y avisos de terceros.
+6. Recordar que una copia o fork realizado mientras el repositorio es público
+   no puede retirarse de equipos ajenos volviendo el repositorio a privado.
 
 ## Alcance
 
