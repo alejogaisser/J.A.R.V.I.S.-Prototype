@@ -27,6 +27,8 @@ the scope and environment each document explicitly describes.
 - [Credits, attribution, and licensing](../NOTICE.md) — Project provenance and
   maintainer modifications; also review the [license](../LICENSE.md) and
   [third-party notices](../THIRD_PARTY_NOTICES.md).
+- [Development process](development-process.md) — Maintainer responsibility,
+  AI-assisted work, review expectations, and evidence requirements.
 
 ## Tool and effect contracts
 

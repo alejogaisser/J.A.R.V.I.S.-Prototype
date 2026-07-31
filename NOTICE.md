@@ -31,9 +31,22 @@ Substantial Mark LI changes include:
 - connectors and verified operations for external services;
 - automated tests, technical documentation, and lifecycle improvements.
 
+This list identifies areas reorganized or extended in the Mark LI adaptation.
+It does not claim authorship of unchanged Mark XLVIII code, retained assets, or
+third-party components.
+
 The Git history and `CHANGELOG.md` provide the chronological details. The
 license for these modifications covers only rights owned by their author and
 does not relicense pre-existing or third-party material.
+
+## Development responsibility
+
+AI assistance has been used for implementation drafts, review, testing
+support, and documentation. Alejo Gaisser defined the objectives, functional
+flows, integration and acceptance criteria, and remains responsible for
+changes accepted into this adaptation. See
+[docs/development-process.md](docs/development-process.md) for the documented
+review and evidence policy.
 
 ## Third parties and trademarks
 

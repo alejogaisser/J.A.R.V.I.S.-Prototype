@@ -113,3 +113,15 @@ Complete the pull request template, describe risks and rollback, include only
 sanitized evidence, and respond to review on the same branch. Required CI must
 be green before merge. Approval remains at the maintainer's discretion, and
 merge signifies that the maintainer accepts responsibility for the change.
+
+## AI-assisted development
+
+AI assistance has been used to accelerate implementation drafts, review,
+testing support, and documentation. The maintainer defines project objectives,
+functional workflows, safety criteria, integration decisions, and acceptance
+of changes. AI output is not treated as evidence or as an independent approval.
+
+Every merged change is considered reviewed and accepted by the maintainer,
+including changes prepared with AI assistance. See
+[docs/development-process.md](docs/development-process.md) for the complete
+responsibility and evidence policy.

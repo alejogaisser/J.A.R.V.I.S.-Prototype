@@ -30,7 +30,7 @@ automation, and third-party integrations.
 
 [Installation](#installation) · [Documentation](docs/README.md) ·
 [Architecture](ARCHITECTURE.md) · [Security](SECURITY.md) · [Roadmap](ROADMAP.md) ·
-[Contributing](#contributing)
+[Contributing](CONTRIBUTING.md)
 
 Mark LI is a substantial evolution of the earlier project. It reorganizes the
 interface, audio lifecycle, memory, permissions, and tool registry while
@@ -43,13 +43,15 @@ tag. See [CHANGELOG.md](CHANGELOG.md) for the major changes in each release.
 
 ## Current status
 
-| Area | Status | Scope |
-| --- | --- | --- |
-| Windows desktop, voice, and wake-word startup | Available | Primary workflow; requires a Gemini API key and compatible audio hardware |
-| Permission-controlled tools and persistent memory | Available | Sensitive operations require confirmation; local private data remains outside Git |
-| Obsidian, Google Workspace, Outlook, and phone dashboard | Optional | Requires separate local configuration, accounts, or network access |
-| Camera, screen vision, and visual automation | Experimental | Behavior depends on hardware, desktop state, and external services |
-| macOS, Linux, and inherited tool verification | Limited | CI covers Windows; some legacy effects remain only partially verified |
+JARVIS Mark LI is a prototype, not a production-ready assistant. These labels
+describe the current repository scope rather than a reliability guarantee.
+
+| Classification | Scope |
+| --- | --- |
+| Stable / available within the prototype | Windows launcher, voice and wake-word flow, central permission path, local configuration, and persistent memory |
+| Experimental | Camera and screen vision, visual automation, Study and GEO workspaces, and optional service integrations |
+| Limited | macOS and Linux behavior, inherited effect verification, and optional or legacy dependency coverage |
+| Not supported | Unattended sensitive automation, production or safety-critical deployment, and commercial use |
 
 ## Known limitations
 
@@ -57,8 +59,14 @@ tag. See [CHANGELOG.md](CHANGELOG.md) for the major changes in each release.
   partial and is not claimed as verified compatibility.
 - The primary assistant requires Gemini and network access. Optional connectors
   also depend on third-party accounts, APIs, and service availability.
+- Gemini and enabled integrations send the data required for each request to
+  their external providers. Local memory does not make cloud-backed operations
+  fully local or private; review provider terms and avoid sensitive content.
 - Automated tests isolate microphones, cameras, desktop automation, accounts,
   and other external effects; passing tests is not hardware validation.
+- Visual automation depends on the active desktop, window state, display
+  scaling, and recognition quality. It requires user supervision and may target
+  the wrong visible control.
 - Some optional or legacy paths require packages that are not yet separated
   into reproducible extras. The documented installation covers the validated
   baseline, not every inherited capability.
@@ -296,9 +304,9 @@ python -m compileall -q .
 ## Contributing
 
 Contributions should be proposed from a fork through a focused pull request.
-Before submitting one, review [SECURITY.md](SECURITY.md), run the relevant
-tests, and confirm that the change contains no secrets, personal configuration,
-memory data, or private logs.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md), review
+[SECURITY.md](SECURITY.md), run the relevant tests, and confirm that the change
+contains no secrets, personal configuration, memory data, or private logs.
 
 ## Credits and license
 
@@ -310,7 +318,9 @@ terms and identifies its modifications in [NOTICE.md](NOTICE.md).
 
 The Mark LI contributions and modifications are by
 [Alejo Gaisser (`@alejogaisser`)](https://github.com/alejogaisser), formerly
-`@AlejoGaisser07`.
+`@AlejoGaisser07`. This identifies responsibility for the Mark LI adaptation;
+it does not claim authorship of the original Mark XLVIII code or third-party
+components.
 
 To the extent that the maintainer owns the relevant rights, the original Mark
 LI modifications are published under
