@@ -236,16 +236,20 @@ class GoogleDriveConnector(GoogleOAuthMixin, AccountConnector):
         parent_id: str = "",
     ) -> dict[str, Any]:
         created = self._create_workspace_file(name, GOOGLE_DOCUMENT_MIME, parent_id)
+        initial_update: dict[str, Any] | None = None
         if content:
             try:
-                self._workspace().append_document(created["id"], content)
+                initial_update = self._workspace().append_document(created["id"], content)
             except Exception as exc:
                 raise ConnectorError(
                     "The Google Doc was created and verified, but its initial "
                     f"content was not applied: {exc}"
                 ) from exc
         record(self.provider, "create_document", count=1)
-        return self._verify_created(created["id"], created["name"])
+        result = self._verify_created(created["id"], created["name"])
+        if initial_update is not None:
+            result["initial_update"] = initial_update
+        return result
 
     def append_document(self, item_id: str, content: str) -> dict[str, Any]:
         self._require_mime_type(item_id, GOOGLE_DOCUMENT_MIME)
@@ -261,9 +265,10 @@ class GoogleDriveConnector(GoogleOAuthMixin, AccountConnector):
         range_name: str = "A1",
     ) -> dict[str, Any]:
         created = self._create_workspace_file(name, GOOGLE_SPREADSHEET_MIME, parent_id)
+        initial_update: dict[str, Any] | None = None
         if values:
             try:
-                self._workspace().write_spreadsheet(
+                initial_update = self._workspace().write_spreadsheet(
                     created["id"], range_name or "A1", values, append=False
                 )
             except Exception as exc:
@@ -272,7 +277,10 @@ class GoogleDriveConnector(GoogleOAuthMixin, AccountConnector):
                     f"values were not applied: {exc}"
                 ) from exc
         record(self.provider, "create_spreadsheet", count=1)
-        return self._verify_created(created["id"], created["name"])
+        result = self._verify_created(created["id"], created["name"])
+        if initial_update is not None:
+            result["initial_update"] = initial_update
+        return result
 
     def write_sheet(
         self,
@@ -301,16 +309,20 @@ class GoogleDriveConnector(GoogleOAuthMixin, AccountConnector):
         parent_id: str = "",
     ) -> dict[str, Any]:
         created = self._create_workspace_file(name, GOOGLE_PRESENTATION_MIME, parent_id)
+        initial_update: dict[str, Any] | None = None
         if title or body:
             try:
-                self._workspace().append_slide(created["id"], title, body)
+                initial_update = self._workspace().append_slide(created["id"], title, body)
             except Exception as exc:
                 raise ConnectorError(
                     "The Google Slides presentation was created and verified, "
                     f"but its initial slide was not applied: {exc}"
                 ) from exc
         record(self.provider, "create_presentation", count=1)
-        return self._verify_created(created["id"], created["name"])
+        result = self._verify_created(created["id"], created["name"])
+        if initial_update is not None:
+            result["initial_update"] = initial_update
+        return result
 
     def append_slide(self, item_id: str, title: str, body: str) -> dict[str, Any]:
         self._require_mime_type(item_id, GOOGLE_PRESENTATION_MIME)

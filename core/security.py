@@ -7,7 +7,7 @@ import re
 import time
 import unicodedata
 from collections.abc import Callable
-
+from dataclasses import dataclass, field
 
 _SENSITIVE_LOG_FIELDS = {"code", "content", "message_text", "password", "text"}
 
@@ -91,6 +91,66 @@ def _normalize_confirmation(text: str) -> str:
     return " ".join(normalized.split())
 
 
+_DENIAL_FRAGMENTS = {
+    "no apruebo", "no te apruebo", "no autorizo", "no te autorizo",
+    "no confirmo", "no te confirmo", "no lo hagas",
+    "do not approve", "do not authorize", "dont do it",
+}
+_UPFRONT_APPROVAL_PATTERNS = (
+    re.compile(r"\b(?:te\s+)?(?:apruebo|autorizo|confirmo)\b"),
+    re.compile(r"\b(?:tenes|tienes)\s+mi\s+(?:aprobacion|autorizacion|permiso)\b"),
+    re.compile(r"\b(?:dale|adelante|procede|proceda|hacelo|hazlo)\b"),
+    re.compile(r"\b(?:de\s+una|sin\s+preguntar(?:me)?(?:\s+de\s+nuevo)?)\b"),
+    re.compile(r"\b(?:approved|authorized|go\s+ahead|proceed)\b"),
+)
+
+
+def has_explicit_upfront_approval(text: str) -> bool:
+    """Detect approval authored by the user as part of the original request."""
+    normalized = _normalize_confirmation(text)
+    if not normalized or any(fragment in normalized for fragment in _DENIAL_FRAGMENTS):
+        return False
+    return any(pattern.search(normalized) for pattern in _UPFRONT_APPROVAL_PATTERNS)
+
+
+def action_fingerprint(tool_name: str, args: dict) -> str:
+    payload = json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+    return f"{tool_name}:{payload}"
+
+
+@dataclass(slots=True)
+class UpfrontApprovalGate:
+    """Hold one short-lived approval from trusted input, never from tool arguments."""
+
+    ttl_seconds: float = 45.0
+    clock: Callable[[], float] = time.monotonic
+    _source: str | None = field(default=None, init=False)
+    _expires_at: float = field(default=0.0, init=False)
+
+    def observe_request(self, text: str, source: object, *, final: bool = True) -> bool:
+        approved = has_explicit_upfront_approval(text)
+        if approved:
+            self._source = str(getattr(source, "value", source))
+            self._expires_at = self.clock() + self.ttl_seconds
+        elif final:
+            self.clear()
+        return approved
+
+    def consume(self, source: object) -> bool:
+        source_value = str(getattr(source, "value", source))
+        if self._expires_at <= self.clock():
+            self.clear()
+            return False
+        if self._source != source_value:
+            return False
+        self.clear()
+        return True
+
+    def clear(self) -> None:
+        self._source = None
+        self._expires_at = 0.0
+
+
 class VoiceConfirmationGate:
     """Authorize exactly one staged action after an explicit spoken response."""
 
@@ -116,8 +176,7 @@ class VoiceConfirmationGate:
 
     @staticmethod
     def _fingerprint(tool_name: str, args: dict) -> str:
-        payload = json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
-        return f"{tool_name}:{payload}"
+        return action_fingerprint(tool_name, args)
 
     def _expire_if_needed(self) -> None:
         if self._pending and self._pending["expires_at"] <= self._clock():

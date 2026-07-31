@@ -14,7 +14,6 @@ from core.permissions import (
 from core.tools import ConfirmationPolicy, RiskLevel, ToolDefinition, ToolExecutor, ToolRegistry
 from core.tools.builtins import build_builtin_registry
 
-
 SCHEMA = {"type": "OBJECT", "properties": {}}
 
 
@@ -299,8 +298,8 @@ class RiskMinimumTests(unittest.TestCase):
             ("account_connector", "connect", PermissionLevel.CONFIRM_ONCE),
             ("account_connector", "download", PermissionLevel.CONFIRM_ONCE),
             ("account_connector", "disconnect", PermissionLevel.CONFIRM_ALWAYS),
-            ("account_connector", "create_file", PermissionLevel.CONFIRM_ALWAYS),
-            ("account_connector", "create_folder", PermissionLevel.CONFIRM_ALWAYS),
+            ("account_connector", "create_file", PermissionLevel.FREE),
+            ("account_connector", "create_folder", PermissionLevel.FREE),
             ("file_controller", "create_file", PermissionLevel.CONFIRM_ONCE),
             ("file_controller", "copy", PermissionLevel.CONFIRM_ONCE),
         ]

@@ -1,11 +1,11 @@
-import json
 import unittest
 from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
+from actions.account_connector import _connector, account_connector
 from connectors.base import ConnectorCapabilities, ConnectorError
-from connectors.gmail import _body
+from connectors.gmail import GmailConnector, _body
 from connectors.google_calendar import GoogleCalendarConnector
 from connectors.google_drive import GOOGLE_EXPORTS, GoogleDriveConnector
 from connectors.google_workspace import (
@@ -15,7 +15,6 @@ from connectors.google_workspace import (
     GoogleWorkspaceService,
 )
 from connectors.outlook import OutlookConnector, _plain_text
-from actions.account_connector import _connector, account_connector
 
 
 class ConnectorTests(unittest.TestCase):
@@ -202,9 +201,136 @@ class ConnectorTests(unittest.TestCase):
                 "range": "Datos!A1",
                 "values": [["A", "B"]],
             })
-        self.assertTrue(result.startswith("Verified Google Sheets update:"))
+        self.assertTrue(result.success)
+        self.assertTrue(result.message.startswith("Verified Google Sheets update:"))
+        self.assertEqual(result.verification_status.value, "verified")
         connector.write_sheet.assert_called_once_with(
             "sheet-id", "Datos!A1", [["A", "B"]], append=False
+        )
+
+    def test_account_connector_does_not_turn_api_errors_into_success(self):
+        connector = MagicMock()
+        connector.create_spreadsheet.side_effect = ConnectorError("Sheets API disabled")
+        with patch("actions.account_connector._connector", return_value=connector):
+            result = account_connector({
+                "provider": "google_drive",
+                "action": "create_spreadsheet",
+                "name": "Notas",
+                "values": [["Materia", "Nota"]],
+            })
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "connector_error")
+
+    def test_account_connector_marks_created_but_unpopulated_file_as_partial(self):
+        connector = MagicMock()
+        connector.create_document.side_effect = ConnectorError(
+            "The Google Doc was created and verified, but its initial content was not applied"
+        )
+        with patch("actions.account_connector._connector", return_value=connector):
+            result = account_connector({
+                "provider": "google_drive", "action": "create_document",
+                "name": "Plan", "content": "Contenido",
+            })
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "partial_effect")
+        self.assertEqual(result.effect_status.value, "partial")
+
+    def test_sheet_creation_returns_initial_content_verification(self):
+        connector = GoogleDriveConnector()
+        workspace = MagicMock()
+        workspace.write_spreadsheet.return_value = {
+            "id": "sheet-id", "range": "Sheet1!A1:B2",
+            "updated_cells": 4, "verified": True,
+        }
+        verified = {
+            "id": "sheet-id", "name": "Notas",
+            "mimeType": GOOGLE_SPREADSHEET_MIME, "verified": True,
+        }
+        with patch.object(
+            connector, "_create_workspace_file", return_value=verified
+        ), patch.object(
+            connector, "_workspace", return_value=workspace
+        ), patch.object(
+            connector, "_verify_created", return_value=dict(verified)
+        ), patch("connectors.google_drive.record"):
+            result = connector.create_spreadsheet(
+                "Notas", [["Materia", "Nota"], ["Álgebra", 9]]
+            )
+        self.assertTrue(result["initial_update"]["verified"])
+        self.assertEqual(result["initial_update"]["updated_cells"], 4)
+
+    def test_calendar_create_update_and_delete_are_api_verified(self):
+        connector = GoogleCalendarConnector()
+        service = MagicMock()
+        events = service.events.return_value
+        created = {
+            "id": "event-id", "summary": "Parcial",
+            "start": {"dateTime": "2026-08-10T10:00:00-03:00"},
+            "end": {"dateTime": "2026-08-10T12:00:00-03:00"},
+        }
+        events.insert.return_value.execute.return_value = created
+        events.get.return_value.execute.return_value = created
+        with patch.object(connector, "_service", return_value=service), patch(
+            "connectors.google_calendar.record"
+        ):
+            made = connector.create_event(
+                "Parcial", "2026-08-10T10:00:00-03:00",
+                "2026-08-10T12:00:00-03:00",
+            )
+            events.get.return_value.execute.return_value = {**created, "location": "Aula 2"}
+            changed = connector.update_event("event-id", location="Aula 2")
+
+            class MissingEvent(Exception):
+                resp = type("Response", (), {"status": 404})()
+
+            events.get.return_value.execute.side_effect = MissingEvent()
+            deleted = connector.delete_event("event-id")
+        self.assertTrue(made["verified"])
+        self.assertEqual(changed["location"], "Aula 2")
+        self.assertTrue(deleted["verified"])
+
+    def test_account_action_routes_verified_calendar_creation(self):
+        connector = MagicMock()
+        connector.create_event.return_value = {
+            "id": "event-id", "summary": "Parcial", "verified": True,
+        }
+        with patch("actions.account_connector._connector", return_value=connector):
+            result = account_connector({
+                "provider": "google_calendar", "action": "create_event",
+                "summary": "Parcial", "start": "2026-08-10T10:00:00-03:00",
+                "end": "2026-08-10T12:00:00-03:00",
+                "timezone": "America/Argentina/Buenos_Aires",
+            })
+        self.assertTrue(result.success)
+        self.assertEqual(result.verification_status.value, "verified")
+        connector.create_event.assert_called_once_with(
+            "Parcial", "2026-08-10T10:00:00-03:00",
+            "2026-08-10T12:00:00-03:00",
+            timezone="America/Argentina/Buenos_Aires",
+            description="", location="", attendees=None, calendar_id="primary",
+        )
+
+    def test_gmail_search_calls_native_api_and_normalizes_metadata(self):
+        connector = GmailConnector()
+        service = MagicMock()
+        messages = service.users.return_value.messages.return_value
+        messages.list.return_value.execute.return_value = {"messages": [{"id": "m1"}]}
+        messages.get.return_value.execute.return_value = {
+            "snippet": "Recordatorio",
+            "payload": {"headers": [
+                {"name": "From", "value": "docente@example.edu"},
+                {"name": "Subject", "value": "Parcial"},
+                {"name": "Date", "value": "Fri, 31 Jul 2026 10:00:00 -0300"},
+            ]},
+        }
+        with patch.object(connector, "_service", return_value=service), patch(
+            "connectors.gmail.record"
+        ):
+            result = connector.search("subject:Parcial", 5)
+        self.assertEqual(result[0]["id"], "m1")
+        self.assertEqual(result[0]["subject"], "Parcial")
+        messages.list.assert_called_once_with(
+            userId="me", q="subject:Parcial", maxResults=5
         )
 
     def test_native_mime_constants_cover_docs_sheets_and_slides(self):

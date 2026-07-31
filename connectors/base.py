@@ -24,6 +24,8 @@ class ConnectorCapabilities:
     update_spreadsheet: bool = False
     create_presentation: bool = False
     update_presentation: bool = False
+    create_event: bool = False
+    update_event: bool = False
     send: bool = False
     delete: bool = False
 

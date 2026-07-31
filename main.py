@@ -103,7 +103,13 @@ _CRASH_LOG_HANDLE = (_CRASH_LOG_DIR / "jarvis_crash.log").open(
 )
 faulthandler.enable(_CRASH_LOG_HANDLE, all_threads=True)
 from core.diagnostics import CrashReporter
-from core.security import VoiceConfirmationGate, confirmation_request, safe_tool_args
+from core.security import (
+    UpfrontApprovalGate,
+    VoiceConfirmationGate,
+    action_fingerprint,
+    confirmation_request,
+    safe_tool_args,
+)
 from services.runtime import RuntimeServices
 from core.events import DashboardConnected, EventBus, RuntimeEvent
 from core.runtime_state import update_runtime_state
@@ -116,10 +122,12 @@ from core.providers.google import GoogleGroundedSearchProvider
 from core.permissions import (
     ExecutionContext, InputSource, PermissionLevel, PermissionPolicy, PermissionStore,
     build_preview,
+    requires_fresh_confirmation,
 )
 from core.tools import (
     EffectStatus,
     ExecutionStatus,
+    RiskLevel,
     ToolExecutor,
     ToolResult,
     VerificationStatus,
@@ -871,7 +879,7 @@ TOOL_DECLARATIONS = [
             "personal account. Supports Gmail, Google Calendar and Google Drive, including native "
             "Google Docs, Sheets and Slides content. Read/search/download "
             "are direct after OAuth; Google Drive also supports find_folder, list_children, and "
-            "verified file/folder and Workspace writes. Use read_workspace_file for native content; "
+            "verified file/folder and Workspace writes plus verified Calendar event create/update/delete. Use read_workspace_file for native content; "
             "use create/append_document, create_spreadsheet, write/append_sheet, or "
             "create_presentation/append_slide for native writes. For any Google Drive request, use only this tool: "
             "never use file_controller, browser vision, or screen_process to claim a Drive change. "
@@ -880,7 +888,7 @@ TOOL_DECLARATIONS = [
         ),
         "parameters": {"type": "OBJECT", "properties": {
             "provider": {"type": "STRING", "description": "gmail|outlook|google_calendar|google_drive"},
-            "action": {"type": "STRING", "description": "connect|disconnect|status|search|find_folder|list_children|read|read_workspace_file|download|create_file|create_folder|create_document|append_document|create_spreadsheet|write_sheet|append_sheet|create_presentation|append_slide"},
+            "action": {"type": "STRING", "description": "connect|disconnect|status|search|find_folder|list_children|read|read_workspace_file|download|create_file|create_folder|create_document|append_document|create_spreadsheet|write_sheet|append_sheet|create_presentation|append_slide|create_event|update_event|delete_event"},
             "query": {"type": "STRING", "description": "Provider-specific search text or Gmail query"},
             "limit": {"type": "INTEGER"}, "item_id": {"type": "STRING"},
             "attachment": {"type": "STRING"}, "destination": {"type": "STRING"},
@@ -892,7 +900,15 @@ TOOL_DECLARATIONS = [
             "values": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "STRING"}}, "description": "Rows of scalar values for Google Sheets"},
             "title": {"type": "STRING", "description": "Title text for a new Google Slides page"},
             "body": {"type": "STRING", "description": "Body text for a new Google Slides page"},
-            "max_chars": {"type": "INTEGER", "description": "Maximum native text returned, up to 50000"}
+            "max_chars": {"type": "INTEGER", "description": "Maximum native text returned, up to 50000"},
+            "summary": {"type": "STRING", "description": "Google Calendar event title"},
+            "start": {"type": "STRING", "description": "Calendar start as ISO-8601 date or date-time"},
+            "end": {"type": "STRING", "description": "Calendar end as ISO-8601 date or date-time"},
+            "timezone": {"type": "STRING", "description": "IANA timezone for Calendar date-times"},
+            "description": {"type": "STRING", "description": "Calendar event description"},
+            "location": {"type": "STRING", "description": "Calendar event location"},
+            "attendees": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Calendar attendee emails"},
+            "calendar_id": {"type": "STRING", "description": "Calendar ID; defaults to primary"}
         }, "required": ["provider", "action"]}
     },
     {
@@ -983,10 +999,12 @@ class JarvisLive:
         self._proactive        = ProactiveEngine()
         self._last_user_speech = time.monotonic()  # updated on every user utterance
         self._confirmation_gate = VoiceConfirmationGate(ttl_seconds=60)
+        self._upfront_approval_gate = UpfrontApprovalGate(ttl_seconds=45)
         self._pending_confirmation_fc = None
         self._pending_confirmation_source: InputSource | None = None
         self._pending_confirmation_context: RequestContext | None = None
         self._confirmation_execution_scheduled = False
+        self._confirmed_replay_cache: dict[str, tuple[float, dict]] = {}
         self._active_input_source = self._default_source()
         self._input_source_locked = False
         handlers = {
@@ -1246,10 +1264,60 @@ class JarvisLive:
             return
         if self._handle_confirmation_text(text):
             return
+        self._observe_upfront_approval(text, InputSource.UI)
         asyncio.run_coroutine_threadsafe(
             self._send_text_input(text, InputSource.UI),
             self._loop
         )
+
+    def _observe_upfront_approval(
+        self,
+        text: str,
+        source: InputSource,
+        *,
+        final: bool = True,
+    ) -> bool:
+        gate = getattr(self, "_upfront_approval_gate", None)
+        return bool(gate and gate.observe_request(text, source, final=final))
+
+    @staticmethod
+    def _confirmation_cache_key(name: str, args: dict, source: InputSource) -> str:
+        return f"{source.value}:{action_fingerprint(name, args)}"
+
+    def _remember_confirmed_result(
+        self,
+        fc,
+        source: InputSource,
+        payload: dict,
+    ) -> None:
+        cache = getattr(self, "_confirmed_replay_cache", None)
+        if cache is None:
+            cache = {}
+            self._confirmed_replay_cache = cache
+        cache[self._confirmation_cache_key(fc.name, dict(fc.args or {}), source)] = (
+            time.monotonic() + 10.0,
+            {
+                "result": payload.get("result", "Done."),
+                "success": payload.get("success", True),
+                "error": payload.get("error"),
+            },
+        )
+
+    def _recent_confirmed_result(
+        self,
+        name: str,
+        args: dict,
+        source: InputSource,
+    ) -> dict | None:
+        cache = getattr(self, "_confirmed_replay_cache", None)
+        if not cache:
+            return None
+        now = time.monotonic()
+        expired = [key for key, (deadline, _) in cache.items() if deadline <= now]
+        for key in expired:
+            cache.pop(key, None)
+        entry = cache.get(self._confirmation_cache_key(name, args, source))
+        return dict(entry[1]) if entry is not None else None
 
     def _handle_confirmation_text(self, text: str) -> bool:
         """Observe an explicit voice/text yes or no for the pending action."""
@@ -1314,6 +1382,8 @@ class JarvisLive:
                 request_context=context,
             )
             payload = getattr(response, "response", {}) or {}
+            if context is not None and source is not None and isinstance(payload, dict):
+                self._remember_confirmed_result(fc, source, payload)
             result = payload.get("result", "Done.") if isinstance(payload, dict) else str(payload)
             if self.session:
                 await self.session.send_realtime_input(
@@ -1509,6 +1579,25 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         _load_asyncio_dependency()
         request_started_at = time.monotonic()
 
+        if not preapproved:
+            replay = self._recent_confirmed_result(name, args, execution_source)
+            if replay is not None:
+                self._audit_request(
+                    request_context,
+                    "confirmation",
+                    name,
+                    outcome="duplicate_suppressed",
+                )
+                replay["duplicate_suppressed"] = True
+                return self._function_response(
+                    fc,
+                    request_context,
+                    replay,
+                    completed=True,
+                    outcome="duplicate_suppressed",
+                    duration_ms=(time.monotonic() - request_started_at) * 1000,
+                )
+
         if name in {"file_processor", "code_helper", "dev_agent", "desktop_control", "computer_control"}:
             from actions.file_controller import _is_protected_path
             for field in ("path", "file_path", "output_path", "destination"):
@@ -1612,6 +1701,20 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             f"[SECURITY] {name}/{decision.operation}: {decision.policy} "
             f"simulated={decision.simulated}"
         )
+        fresh_confirmation_required = requires_fresh_confirmation(
+            name, decision.operation
+        )
+        upfront_gate = getattr(self, "_upfront_approval_gate", None)
+        upfront_preapproved = False
+        if decision.requires_confirmation and not preapproved and upfront_gate:
+            if not fresh_confirmation_required:
+                upfront_preapproved = upfront_gate.consume(
+                    execution_source
+                )
+        elif definition.risk != RiskLevel.READ_ONLY and upfront_gate:
+            # A bundled approval belongs to one effectful tool call only. Creation
+            # actions that are already free must not leak it into a later request.
+            upfront_gate.consume(execution_source)
         if decision.simulated:
             preview = build_preview(name, args, decision)
             self._audit_request(
@@ -1649,7 +1752,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             )
 
         approval = confirmation_request(name, args)
-        if decision.requires_confirmation and not preapproved:
+        if decision.requires_confirmation and not (preapproved or upfront_preapproved):
             if approval is None:
                 approval = (
                     "Approve this action?",
@@ -1684,14 +1787,17 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 )
             if name == "computer_settings":
                 args["confirmed"] = "yes"
-        elif decision.requires_confirmation and preapproved:
+        elif decision.requires_confirmation and (preapproved or upfront_preapproved):
             self._audit_request(
                 request_context,
                 "confirmation",
                 name,
-                outcome="approved",
+                outcome="approved" if preapproved else "approved_upfront",
             )
-            self.ui.write_log(f"SECURITY: Executing preapproved action {name} once.")
+            approval_kind = "staged" if preapproved else "bundled with the user request"
+            self.ui.write_log(
+                f"SECURITY: Executing action {name} once; approval was {approval_kind}."
+            )
             if name == "computer_settings":
                 args["confirmed"] = "yes"
         else:
@@ -1743,7 +1849,9 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         "search", "find_folder", "read",
                     }:
                         try:
-                            payload = json.loads(str(execution.data))
+                            payload = execution.data
+                            if isinstance(payload, str):
+                                payload = json.loads(payload)
                             items = payload if isinstance(payload, list) else [payload]
                             for item in items:
                                 if (
@@ -2236,7 +2344,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                             if txt:
                                 in_buf.append(txt)
                                 self._last_user_speech = time.monotonic()
-                                self._handle_confirmation_text(txt)
+                                if not self._handle_confirmation_text(txt):
+                                    self._observe_upfront_approval(
+                                        txt, self._active_input_source, final=False
+                                    )
 
                         if sc.turn_complete:
                             turn_completed = True
@@ -2256,7 +2367,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
 
                             full_in = " ".join(in_buf).strip()
                             if full_in:
-                                self._handle_confirmation_text(full_in)
+                                if not self._handle_confirmation_text(full_in):
+                                    self._observe_upfront_approval(
+                                        full_in, self._active_input_source
+                                    )
                                 self.ui.write_log(f"You: {full_in}")
                                 if self._dashboard:
                                     asyncio.create_task(self._dashboard.broadcast({
@@ -2565,6 +2679,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         if self._handle_confirmation_text(text):
             self.ui.write_log(f"[Web]: {text}")
             return
+        self._observe_upfront_approval(text, InputSource.DASHBOARD_TEXT)
         # Wait up to 8s for session to become ready after a wake.
         for _ in range(80):
             if self.session:

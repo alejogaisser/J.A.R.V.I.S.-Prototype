@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +12,17 @@ from .google_common import GoogleOAuthMixin, google_dependencies
 
 class GoogleCalendarConnector(GoogleOAuthMixin, AccountConnector):
     provider = "google_calendar"
-    scopes = ["https://www.googleapis.com/auth/calendar.readonly"]
-    capabilities = ConnectorCapabilities(search=True, read=True)
+    scopes = [
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/calendar.readonly",
+    ]
+    capabilities = ConnectorCapabilities(
+        search=True,
+        read=True,
+        create_event=True,
+        update_event=True,
+        delete=True,
+    )
 
     def __init__(self) -> None:
         self._init_google_oauth()
@@ -65,6 +75,156 @@ class GoogleCalendarConnector(GoogleOAuthMixin, AccountConnector):
         record(self.provider, "read")
         return result
 
+    @staticmethod
+    def _event_time(value: str, timezone: str) -> dict[str, str]:
+        clean = str(value or "").strip()
+        if not clean:
+            raise ConnectorError("Calendar event start and end are required.")
+        if len(clean) == 10:
+            try:
+                datetime.fromisoformat(clean)
+            except ValueError as exc:
+                raise ConnectorError("All-day event dates must use YYYY-MM-DD.") from exc
+            return {"date": clean}
+        try:
+            datetime.fromisoformat(clean.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ConnectorError("Event times must use ISO-8601 format.") from exc
+        payload = {"dateTime": clean}
+        if timezone:
+            payload["timeZone"] = timezone
+        return payload
+
+    @staticmethod
+    def _attendees(values: Any) -> list[dict[str, str]]:
+        if values is None:
+            return []
+        if not isinstance(values, list) or len(values) > 50:
+            raise ConnectorError("Calendar attendees must be an array of at most 50 emails.")
+        attendees: list[dict[str, str]] = []
+        for value in values:
+            email = str(value or "").strip()
+            if not email or "@" not in email or len(email) > 254:
+                raise ConnectorError("Every calendar attendee must be a valid email address.")
+            attendees.append({"email": email})
+        return attendees
+
+    def create_event(
+        self,
+        summary: str,
+        start: str,
+        end: str,
+        *,
+        timezone: str = "",
+        description: str = "",
+        location: str = "",
+        attendees: Any = None,
+        calendar_id: str = "primary",
+    ) -> dict[str, Any]:
+        clean_summary = str(summary or "").strip()
+        if not clean_summary:
+            raise ConnectorError("A calendar event title is required.")
+        body = {
+            "summary": clean_summary[:500],
+            "start": self._event_time(start, timezone),
+            "end": self._event_time(end, timezone),
+        }
+        if description:
+            body["description"] = str(description)[:20_000]
+        if location:
+            body["location"] = str(location)[:1_000]
+        if attendees:
+            body["attendees"] = self._attendees(attendees)
+        created = self._service().events().insert(
+            calendarId=calendar_id or "primary",
+            body=body,
+            sendUpdates="none",
+        ).execute()
+        event_id = str(created.get("id", ""))
+        if not event_id:
+            raise ConnectorError("Google Calendar returned no event ID.")
+        observed = self._service().events().get(
+            calendarId=calendar_id or "primary", eventId=event_id
+        ).execute()
+        if observed.get("summary") != body["summary"]:
+            raise ConnectorError("The Google Calendar event could not be verified by readback.")
+        result = self._event(observed)
+        result["verified"] = True
+        record(self.provider, "create_event", count=1)
+        return result
+
+    def update_event(
+        self,
+        item_id: str,
+        *,
+        summary: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        timezone: str = "",
+        description: str | None = None,
+        location: str | None = None,
+        attendees: Any = None,
+        calendar_id: str = "primary",
+    ) -> dict[str, Any]:
+        if not item_id:
+            raise ConnectorError("A calendar event ID is required.")
+        body: dict[str, Any] = {}
+        if summary is not None:
+            clean_summary = str(summary).strip()
+            if not clean_summary:
+                raise ConnectorError("A calendar event title cannot be empty.")
+            body["summary"] = clean_summary[:500]
+        if start is not None:
+            body["start"] = self._event_time(start, timezone)
+        if end is not None:
+            body["end"] = self._event_time(end, timezone)
+        if description is not None:
+            body["description"] = str(description)[:20_000]
+        if location is not None:
+            body["location"] = str(location)[:1_000]
+        if attendees is not None:
+            body["attendees"] = self._attendees(attendees)
+        if not body:
+            raise ConnectorError("At least one calendar event field must change.")
+        events = self._service().events()
+        events.patch(
+            calendarId=calendar_id or "primary",
+            eventId=item_id,
+            body=body,
+            sendUpdates="none",
+        ).execute()
+        observed = events.get(
+            calendarId=calendar_id or "primary", eventId=item_id
+        ).execute()
+        for key in ("summary", "description", "location"):
+            if key in body and observed.get(key, "") != body[key]:
+                raise ConnectorError("The Google Calendar update could not be verified by readback.")
+        result = self._event(observed)
+        result["verified"] = True
+        record(self.provider, "update_event", count=1)
+        return result
+
+    def delete_event(self, item_id: str, calendar_id: str = "primary") -> dict[str, Any]:
+        if not item_id:
+            raise ConnectorError("A calendar event ID is required.")
+        events = self._service().events()
+        events.delete(
+            calendarId=calendar_id or "primary",
+            eventId=item_id,
+            sendUpdates="none",
+        ).execute()
+        try:
+            events.get(
+                calendarId=calendar_id or "primary", eventId=item_id
+            ).execute()
+        except Exception as exc:
+            status = getattr(getattr(exc, "resp", None), "status", None)
+            if status not in {404, 410}:
+                raise
+        else:
+            raise ConnectorError("The Google Calendar deletion could not be verified.")
+        record(self.provider, "delete_event", count=1)
+        return {"id": item_id, "deleted": True, "verified": True}
+
     def download(self, item_id: str, attachment: str, destination: Path) -> Path:
         raise ConnectorError("Google Calendar events do not support attachment downloads yet.")
-
