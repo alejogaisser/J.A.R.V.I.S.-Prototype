@@ -50,7 +50,7 @@ without adding a row and declaring its limits.
 | `geo_map` | read_only | FREE | No | Dict/text legacy | Provider response; coupled presentation | Not applicable | 30 | executor | GEO + Qt affinity | Typed provider |
 | `math_engine` | read_only | FREE | No | Text/legacy file | Partial local calculation | Not applicable | 30 | executor | Math/security | Result/typed artefact |
 | `study_engine` | local_change | FREE | No | Text/legacy file | Partial per operation | According to artifact | 30 | executor | Study | Risk and provider per operation |
-| `account_connector` | external_effect | FREE reading; connect/download ONCE; create/disconnect ALWAYS | No | Text/JSON legacy | Partial Provider | Depending on operation | 30 | executor | Connectors/policy | Preview and external verification |
+| `account_connector` | external_effect | FREE reading and Google file creation; connect/download/edit/event writes ONCE; delete/disconnect ALWAYS | No | ToolResult v2 | API readback | None currently | 30 | executor | Connectors/policy | Typed effect plus external verification |
 | `obsidian_connector` | sensitive | FREE reading; ONCE writing; rest of ALWAYS | No | Text/JSON legacy | Partial Filesystem | History/manual | 30 | executor | Obsidian/policy | Preview + note evidence |
 | `permission_manager` | sensitive | FREE reading; ALWAYS changes | No | Special route | Store recharged | Restore preference | 30 | special | Policy/security | Common Atomic Store + Envelope |
 

@@ -4,7 +4,6 @@ from core.tools.definitions import ConfirmationPolicy, RiskLevel, ToolDefinition
 
 from .models import ExecutionContext, PermissionDecision, PermissionLevel
 
-
 _READ_FILE_ACTIONS = {
     "list", "read", "inspect", "browse", "inspect_folder", "read_folder",
     "open", "find", "largest", "disk_usage", "info",
@@ -44,11 +43,25 @@ _ACCOUNT_READ_ACTIONS = {
     "status",
 }
 _ACCOUNT_LOCAL_CHANGE_ACTIONS = {"connect", "download"}
-_ACCOUNT_EXTERNAL_ACTIONS = {
-    "append_document", "append_sheet", "append_slide", "create_document",
-    "create_file", "create_folder", "create_presentation",
-    "create_spreadsheet", "disconnect", "write_sheet",
+_ACCOUNT_CREATION_ACTIONS = {
+    "create_document", "create_file", "create_folder", "create_presentation",
+    "create_spreadsheet",
 }
+_ACCOUNT_EXTERNAL_CHANGE_ACTIONS = {
+    "append_document", "append_sheet", "append_slide", "create_event",
+    "update_event", "write_sheet",
+}
+_DESTRUCTIVE_ACTION_WORDS = {
+    "cancel", "clear", "delete", "disconnect", "drop", "erase", "forget",
+    "purge", "remove", "revoke", "trash", "uninstall",
+}
+
+
+def requires_fresh_confirmation(tool_name: str, operation: str) -> bool:
+    """Return True for destructive effects that cannot use bundled approval."""
+    normalized = f"{tool_name} {operation}".lower().replace("-", "_")
+    words = set(normalized.replace("_", " ").split())
+    return bool(words & _DESTRUCTIVE_ACTION_WORDS)
 _FREE_COMPUTER_ACTIONS = {
     "type", "smart_type", "click", "left_click", "double_click", "right_click",
     "move", "drag", "hotkey", "press", "scroll", "copy", "paste", "screenshot",
@@ -70,13 +83,17 @@ class PermissionPolicy:
 
     @staticmethod
     def minimum(tool: ToolDefinition, operation: str) -> PermissionLevel:
+        if requires_fresh_confirmation(tool.name, operation):
+            return PermissionLevel.CONFIRM_ALWAYS
         if tool.name == "account_connector":
             if operation in _ACCOUNT_READ_ACTIONS:
                 return PermissionLevel.FREE
+            if operation in _ACCOUNT_CREATION_ACTIONS:
+                return PermissionLevel.FREE
             if operation in _ACCOUNT_LOCAL_CHANGE_ACTIONS:
                 return PermissionLevel.CONFIRM_ONCE
-            if operation in _ACCOUNT_EXTERNAL_ACTIONS:
-                return PermissionLevel.CONFIRM_ALWAYS
+            if operation in _ACCOUNT_EXTERNAL_CHANGE_ACTIONS:
+                return PermissionLevel.CONFIRM_ONCE
             return PermissionLevel.CONFIRM_ALWAYS
         if tool.name in _FREE_TOOLS:
             return PermissionLevel.FREE
@@ -150,7 +167,15 @@ class PermissionPolicy:
             self.preferences.get(tool.name, PermissionLevel.FREE),
         )
         level = max(minimum, configured)
-        if context.is_remote and level < PermissionLevel.CONFIRM_ONCE:
+        remote_creation_exempt = (
+            tool.name == "account_connector"
+            and operation in _ACCOUNT_CREATION_ACTIONS
+        )
+        if (
+            context.is_remote
+            and not remote_creation_exempt
+            and level < PermissionLevel.CONFIRM_ONCE
+        ):
             level = PermissionLevel.CONFIRM_ONCE
         return level
 

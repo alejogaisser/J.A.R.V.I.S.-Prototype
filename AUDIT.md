@@ -782,3 +782,39 @@ README. The cloning command uses the current canonical URL.
   direct-construction routes that had bypassed the deferred `asyncio` load;
   `_load_asyncio_dependency()` now preserves lazy startup while making those
   routes self-sufficient, and all six regressions are covered.
+
+## Verified correction - 2026-07-31 - Google APIs and agile confirmations
+
+- **Root causes:** the confirmation gate only understood approval after staging
+  an action and both partial/full speech transcripts could revisit the pending
+  state. Separately, `account_connector` returned API exceptions as ordinary
+  strings beginning with `Connector error`; legacy normalization did not treat
+  that prefix as failure, so a failed or partial Google write could be reported
+  as successful.
+- **Policy:** Google Drive file/folder and native Docs/Sheets/Slides creation is
+  direct for local, UI and authenticated dashboard origins. One explicit
+  approval in the original request can authorize one non-destructive guarded
+  action from the same source. Delete, remove, clear, forget, trash, purge and
+  disconnect operations always require a fresh confirmation.
+- **Repeated-call control:** a confirmed execution keeps a sanitized
+  fingerprint/result for 10 seconds. An immediate identical model retry from
+  the same source receives the prior result and cannot execute or prompt again.
+- **Connectors:** `account_connector` returns typed `ToolResult` v2 with explicit
+  effect and verification states. Docs/Sheets/Slides creation retains the
+  verified initial-content update. Google Calendar now supports verified event
+  create, update and delete through the API; its expanded `calendar.events`
+  scope requires a one-time OAuth reauthorization for existing Calendar tokens.
+- **Safety:** Calendar does not send attendee update emails automatically
+  (`sendUpdates=none`). Automated tests inject providers and never open OAuth,
+  accounts, browser, microphone, camera, dashboard or Gemini. Destructive event
+  deletion remains freshly confirmed and verified by a 404/410 readback.
+- **Risk and rollback:** approval intent is phrase-based, source-bound, expires
+  after 45 seconds and is consumed once; unusual phrasing may still fall back to
+  the normal confirmation. Rollback removes the upfront gate/Calendar writes,
+  restores previous policy minima and legacy connector strings; no local data
+  migration is required. Remote files/events already created must be managed in
+  Google and are not silently removed.
+- **Verification:** `457 passed, 2 skipped, 137 subtests passed`; `pip check`,
+  full compilation, launcher help, repository quality gate, secret scan and
+  `git diff --check` passed.
+  One external `google.genai` deprecation warning remains unchanged.

@@ -195,12 +195,14 @@ config/google_oauth_client.example.json
 
 The real file must be named `config/google_oauth_client.json`.
 
-Enable the **Google Drive API**, **Google Docs API**, **Google Sheets API**, and
-**Google Slides API** in the same Google Cloud project. JARVIS reuses the Drive
+Enable the **Gmail API**, **Google Calendar API**, **Google Drive API**,
+**Google Docs API**, **Google Sheets API**, and **Google Slides API** in the same Google Cloud project. JARVIS reuses the Drive
 connector's OAuth owner and protected token instead of opening a parallel
 visual-automation path. Searches, reads, and exports are direct after account
-authorization. Creating or editing remote files goes through the central
-confirmation flow and verifies the effect through the API.
+authorization. Creating Google files is direct and every create/edit reports
+typed API verification. Edits and Calendar writes accept explicit approval in
+the original request; deletion, disconnection, clearing, and forgetting always
+require a fresh confirmation.
 
 ### Microsoft Outlook
 

@@ -14,6 +14,23 @@
 
 The order of the PDF conforms to the repository's evidence: before introducing general traceability, two security gaps observed in the current dispatch — remote origin and tool classification — must be closed by means of tests that fail first. `RequestContext` and atomic persistence can then be implemented without altering the visual behavior or Gemini protocol.
 
+### Incremental advance - 2026-07-31 - Google API and confirmation flow
+
+- Google file/folder and native Docs, Sheets and Slides creation no longer asks
+  for an extra confirmation; edits still use central policy.
+- Explicit approval authored in the original local/UI/dashboard request can
+  satisfy one non-destructive confirmation. Delete, clear, forget, disconnect,
+  remove and trash operations always require a fresh confirmation.
+- An identical model retry during the 10 seconds after a confirmed execution
+  reuses the sanitized result and cannot execute or request confirmation again.
+- `account_connector` now returns `ToolResult` v2, so API exceptions and partial
+  file creations cannot be normalized as successes.
+- Initial Docs/Sheets/Slides content verification is retained in the creation
+  result. Calendar adds API-verified create/update/delete event operations;
+  deletion remains `confirm_always`.
+- Automated verification uses injected/mocked providers only. Real OAuth smoke
+  remains a manual user test because tests must not open accounts or browsers.
+
 ### Incremental advance - 2026-07-30
 
 - The OAuth owner of `GoogleDriveConnector` was extended to native content of

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 from core.permissions import (
-    ExecutionContext, PermissionLevel, PermissionPolicy, PermissionStore, build_preview,
+    ExecutionContext,
+    PermissionLevel,
+    PermissionPolicy,
+    PermissionStore,
+    build_preview,
 )
 from core.tools import ConfirmationPolicy, RiskLevel, ToolDefinition
-
 
 SCHEMA = {"type": "OBJECT", "properties": {}}
 
@@ -78,7 +81,7 @@ class PermissionPolicyTests(unittest.TestCase):
             with self.subTest(tool=definition.name, args=args):
                 self.assertTrue(policy.evaluate(definition, args).allowed)
 
-    def test_drive_reads_are_free_and_writes_require_confirmation(self):
+    def test_google_file_creation_is_free_and_other_changes_stay_guarded(self):
         connector = tool("account_connector", risk=RiskLevel.READ_ONLY)
         policy = PermissionPolicy()
         for action in (
@@ -94,15 +97,35 @@ class PermissionPolicyTests(unittest.TestCase):
                 self.assertFalse(decision.allowed)
                 self.assertTrue(decision.requires_confirmation)
         for action in (
-            "create_file", "create_folder", "create_document", "append_document",
-            "create_spreadsheet", "write_sheet", "append_sheet",
-            "create_presentation", "append_slide", "disconnect",
+            "create_file", "create_folder", "create_document",
+            "create_spreadsheet", "create_presentation",
         ):
             with self.subTest(action=action):
                 decision = policy.evaluate(connector, {"action": action})
-                self.assertEqual(decision.policy, "confirm_always")
-                self.assertFalse(decision.allowed)
+                self.assertEqual(decision.policy, "free")
+                self.assertTrue(decision.allowed)
+        for action in (
+            "append_document", "write_sheet", "append_sheet", "append_slide",
+            "create_event", "update_event",
+        ):
+            with self.subTest(action=action):
+                decision = policy.evaluate(connector, {"action": action})
+                self.assertEqual(decision.policy, "confirm_once")
                 self.assertTrue(decision.requires_confirmation)
+        for action in ("disconnect", "delete_event"):
+            with self.subTest(action=action):
+                decision = policy.evaluate(connector, {"action": action})
+                self.assertEqual(decision.policy, "confirm_always")
+                self.assertTrue(decision.requires_confirmation)
+
+    def test_google_file_creation_is_also_direct_from_dashboard(self):
+        connector = tool("account_connector", risk=RiskLevel.EXTERNAL_EFFECT)
+        decision = PermissionPolicy().evaluate(
+            connector,
+            {"action": "create_spreadsheet"},
+            ExecutionContext(source="dashboard_text"),
+        )
+        self.assertTrue(decision.allowed)
 
     def test_computer_power_and_code_execution_remain_confirmed(self):
         policy = PermissionPolicy()
