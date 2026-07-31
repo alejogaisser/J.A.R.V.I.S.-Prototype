@@ -1179,6 +1179,10 @@ class JarvisLive:
         outcome: str | None = None,
         duration_ms: float | None = None,
     ) -> types.FunctionResponse:
+        # Production loads the SDK in __init__. Keep this boundary resilient
+        # for isolated adapters/tests that intentionally construct via __new__.
+        if types is None:
+            _load_live_sdk()
         payload = dict(response)
         payload["request_id"] = context.request_id
         response_outcome = outcome or (

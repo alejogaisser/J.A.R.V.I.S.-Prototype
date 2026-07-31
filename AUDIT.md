@@ -671,3 +671,20 @@ No iniciar todavía la extracción de audio, sesión o UI. El siguiente cambio d
 - Rollback: retirar `NOTICE.md` y el test, restaurar los textos previos, la
   plantilla de ejemplo y la entrada `/output/`. No hay migración de runtime,
   credenciales ni datos.
+
+### Integración sobre el main moderno
+
+- Los cambios se guardaron primero en dos commits recuperables y después se
+  portaron a una rama nacida del `main` moderno, que estaba 55 commits por
+  delante. No se sobrescribieron ni eliminaron las fases arquitectónicas.
+- Los conflictos se resolvieron conservando inyección de proveedores, eventos,
+  trazabilidad y mínimos de policy del main moderno. `read_workspace_file`
+  queda libre; `connect`/`download` requieren confirmación única y toda
+  escritura remota o desconexión requiere confirmación siempre.
+- La carga diferida del SDK mantiene `_function_response` autosuficiente para
+  adaptadores y tests que construyen `JarvisLive` sin ejecutar `__init__`.
+- Verificación sobre el árbol integrado: `434 passed, 3 skipped,
+  131 subtests passed`; dependencias, compilación y escaneo de secretos
+  correctos.
+- La integración es sólo local: no hubo push ni cambio de visibilidad. PyQt6
+  permanece sin cambios.

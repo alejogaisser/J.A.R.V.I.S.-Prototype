@@ -11,6 +11,8 @@
 - `output/` quedó excluido para evitar publicar artefactos generados;
 - se añadieron pruebas de regresión para créditos, placeholders, modelos y
   metadatos de publicación.
+- los cambios de Google Workspace, wake, arranque y publicación se portaron al
+  `main` moderno preservando sus contratos de policy, providers y trazabilidad.
 
 ## Publicación segura — 2026-07-23
 
