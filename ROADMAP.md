@@ -469,8 +469,8 @@ Los siguientes valores del PDF son objetivos provisionales, no resultados medido
   compatibilidad de PyQt6 GPLv3/comercial. Esta preparación no modifica PyQt6.
 - Integración local posterior: los cambios fueron portados sobre el `main`
   moderno sin retirar sus 55 commits de arquitectura. La suite integrada quedó
-  en `434 passed, 3 skipped, 131 subtests passed`; falta únicamente actualizar
-  el puntero local de `main`. No hubo push ni cambio de visibilidad.
+  en `434 passed, 3 skipped, 131 subtests passed`; el puntero local de `main`
+  se actualizó por fast-forward. No hubo push ni cambio de visibilidad.
 
 ## Quick wins previos al primer sprint
 

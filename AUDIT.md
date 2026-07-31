@@ -686,5 +686,6 @@ No iniciar todavía la extracción de audio, sesión o UI. El siguiente cambio d
 - Verificación sobre el árbol integrado: `434 passed, 3 skipped,
   131 subtests passed`; dependencias, compilación y escaneo de secretos
   correctos.
-- La integración es sólo local: no hubo push ni cambio de visibilidad. PyQt6
-  permanece sin cambios.
+- El puntero local de `main` se avanzó mediante fast-forward al árbol
+  verificado. No hubo push ni cambio de visibilidad; PyQt6 permanece sin
+  cambios.
