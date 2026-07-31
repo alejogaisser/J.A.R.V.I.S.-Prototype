@@ -1,0 +1,54 @@
+name: Feature request
+description: Propose a scoped improvement with its risks and alternatives
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Proposals must remain compatible with the project's safety model, attribution, and non-commercial conditions. Discuss large architectural changes before implementation.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user problem or limitation without prescribing a solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Explain the expected behavior and the smallest useful scope.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe existing workflows or simpler options you evaluated.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and affected boundaries
+      description: Identify likely UI, tool, permission, provider, data, or documentation boundaries.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and sensitive actions
+      description: Cover privacy, permissions, external effects, compatibility, dependencies, and rollback limits.
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Proposal confirmation
+      options:
+        - label: I searched existing issues, pull requests, documentation, and the roadmap for related work.
+          required: true
+        - label: I have not included secrets, personal data, account content, memory, or private logs.
+          required: true
+        - label: Any sensitive action in this proposal includes an explicit risk and confirmation requirement.
+          required: true
