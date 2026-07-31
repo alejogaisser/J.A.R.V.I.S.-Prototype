@@ -29,6 +29,8 @@ the scope and environment each document explicitly describes.
   [third-party notices](../THIRD_PARTY_NOTICES.md).
 - [Development process](development-process.md) — Maintainer responsibility,
   AI-assisted work, review expectations, and evidence requirements.
+- [Release notes for v2.0.0](releases/v2.0.0.md) — Tagged-version summary,
+  requirements, limitations, installation, and validation procedure.
 
 ## Tool and effect contracts
 
