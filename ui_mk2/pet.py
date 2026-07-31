@@ -65,7 +65,15 @@ class PetOverlayWindow(QWidget):
 
     def hide_pet(self) -> None:
         self._timer.stop()
+        self._reset_pointer_interaction()
         self.hide()
+
+    def _reset_pointer_interaction(self) -> None:
+        """Release any drag/grab before handing input back to the main window."""
+        self._drag_origin = None
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        if QWidget.mouseGrabber() is self:
+            self.releaseMouse()
 
     def set_state(
         self,
@@ -149,6 +157,10 @@ class PetOverlayWindow(QWidget):
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            # The coordinator hides this window synchronously from the signal.
+            # Release the implicit grab first so the restored app receives the
+            # next mouse event instead of leaving the hidden pet as grabber.
+            self._reset_pointer_interaction()
             self.open_requested.emit()
             event.accept()
             return

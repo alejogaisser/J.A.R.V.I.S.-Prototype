@@ -13,6 +13,7 @@ import threading
 import time
 import unicodedata
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from ctypes import wintypes
 from typing import Any
@@ -53,8 +54,11 @@ BLOCK_SIZE = 4_000
 OPENWAKEWORD_BLOCK_SIZE = 1_280
 MIN_WAKE_RMS = 45
 INPUT_DEVICE = None
+INPUT_SAMPLE_RATE = SAMPLE_RATE
+INPUT_CHANNELS = 1
+INPUT_DOWNSAMPLE_FACTOR = 1
 MIN_WAKE_CONFIDENCE = 0.65
-OPENWAKEWORD_THRESHOLD = 0.35
+OPENWAKEWORD_THRESHOLD = 0.08
 WAKE_AUDIO_WINDOW = 3.0
 OPENWAKEWORD_FOLLOWUP_THRESHOLD = 0.05
 NOISE_MULTIPLIER = 2.8
@@ -64,6 +68,7 @@ STREAM_STALL_TIMEOUT = 2.0
 MIC_RETRY_DELAY = 1.0
 STATUS_HEARTBEAT_INTERVAL = 15.0
 VOSK_FOLLOWUP_WINDOW = 4.0
+APP_STARTUP_GRACE = 15.0
 
 WAKE_PHRASES = ("hey jarvis",)
 VOSK_WAKE_ALIASES = (
@@ -84,6 +89,16 @@ _audio_last_callback = 0.0
 
 class AudioStreamStalled(RuntimeError):
     """Raised when PortAudio stays open but stops delivering microphone data."""
+
+
+@dataclass(frozen=True)
+class InputCaptureProfile:
+    """Concrete capture format normalized to mono 16 kHz before detection."""
+
+    device: int | None
+    sample_rate: int = SAMPLE_RATE
+    channels: int = 1
+    downsample_factor: int = 1
 
 
 class AsyncVoskFallback:
@@ -145,6 +160,7 @@ class AsyncVoskFallback:
 def apply_wake_config() -> None:
     """Load user-selectable phrases, model and voice threshold."""
     global MODEL_PATH, MIN_WAKE_RMS, MIN_WAKE_CONFIDENCE, WAKE_PHRASES, INPUT_DEVICE
+    global INPUT_SAMPLE_RATE, INPUT_CHANNELS, INPUT_DOWNSAMPLE_FACTOR
     global OPENWAKEWORD_THRESHOLD
     config = load_config()
     phrases = config.get("phrases", ["hey jarvis"])
@@ -157,10 +173,14 @@ def apply_wake_config() -> None:
     MODEL_PATH = model_path if model_path.is_absolute() else BASE_DIR / model_path
     MIN_WAKE_RMS = int(config.get("min_wake_rms", MIN_WAKE_RMS))
     configured_device = config.get("input_device")
-    INPUT_DEVICE = resolve_input_device(
+    input_profile = resolve_input_profile(
         int(configured_device) if configured_device is not None else None,
         str(config.get("input_device_name", "")).strip(),
     )
+    INPUT_DEVICE = input_profile.device
+    INPUT_SAMPLE_RATE = input_profile.sample_rate
+    INPUT_CHANNELS = input_profile.channels
+    INPUT_DOWNSAMPLE_FACTOR = input_profile.downsample_factor
     MIN_WAKE_CONFIDENCE = float(config.get("min_confidence", MIN_WAKE_CONFIDENCE))
     OPENWAKEWORD_THRESHOLD = float(
         config.get("wake_threshold", OPENWAKEWORD_THRESHOLD)
@@ -195,22 +215,77 @@ def validate_input_device(device: int | None) -> int | None:
         return None
 
 
-def resolve_input_device(device: int | None, preferred_name: str = "") -> int | None:
-    """Resolve a stable microphone name before considering a volatile index."""
+def _capture_profile_for_device(device: int) -> InputCaptureProfile | None:
+    """Prefer native WASAPI capture and normalize it after PortAudio."""
+    try:
+        info = sd.query_devices(device, "input")
+        max_channels = int(info.get("max_input_channels", 0))
+        if max_channels < 1:
+            return None
+        host_name = ""
+        try:
+            host_name = str(sd.query_hostapis(int(info.get("hostapi", -1)))["name"])
+        except (IndexError, KeyError, TypeError, ValueError):
+            pass
+        native_rate = int(round(float(info.get("default_samplerate", SAMPLE_RATE))))
+        factor = native_rate // SAMPLE_RATE if native_rate % SAMPLE_RATE == 0 else 0
+        if "wasapi" in host_name.casefold() and factor in {2, 3}:
+            channels = min(2, max_channels)
+            sd.check_input_settings(
+                device=device,
+                channels=channels,
+                dtype="int16",
+                samplerate=native_rate,
+            )
+            return InputCaptureProfile(device, native_rate, channels, factor)
+        if validate_input_device(device) is not None:
+            return InputCaptureProfile(device)
+    except Exception:
+        return None
+    return None
+
+
+def resolve_input_profile(
+    device: int | None,
+    preferred_name: str = "",
+) -> InputCaptureProfile:
+    """Resolve the best stable endpoint, preferring native WASAPI quality."""
     preferred = _device_key(preferred_name)
+    candidates: list[tuple[int, int, InputCaptureProfile, str]] = []
     if preferred:
         preferred_tokens = set(preferred.split())
+        default_input = sd.default.device[0]
         for index, info in enumerate(sd.query_devices()):
             name = _device_key(str(info.get("name", "")))
             if int(info.get("max_input_channels", 0)) < 1:
                 continue
             if not preferred_tokens.issubset(set(name.split())):
                 continue
-            valid = validate_input_device(index)
-            if valid is not None:
-                print(f"[WakeWord] Micrófono seleccionado: {info['name']} (ID {valid})")
-                return valid
-    return validate_input_device(device)
+            profile = _capture_profile_for_device(index)
+            if profile is None:
+                continue
+            native_rank = 0 if profile.downsample_factor > 1 else 1
+            default_rank = 0 if index == default_input else 1
+            candidates.append((native_rank, default_rank, profile, str(info["name"])))
+    if candidates:
+        _native_rank, _default_rank, profile, name = min(
+            candidates, key=lambda item: (item[0], item[1], item[2].device or -1)
+        )
+        print(
+            f"[WakeWord] Micrófono seleccionado: {name} (ID {profile.device}, "
+            f"{profile.sample_rate} Hz, {profile.channels} canal/es)"
+        )
+        return profile
+    if device is not None:
+        profile = _capture_profile_for_device(device)
+        if profile is not None:
+            return profile
+    return InputCaptureProfile(None)
+
+
+def resolve_input_device(device: int | None, preferred_name: str = "") -> int | None:
+    """Resolve a stable microphone name before considering a volatile index."""
+    return resolve_input_profile(device, preferred_name).device
 
 
 def acquire_single_instance() -> bool:
@@ -227,6 +302,31 @@ def acquire_single_instance() -> bool:
 # AUDIO
 # ─────────────────────────────────────────────────────────────────────────────
 
+def normalize_capture_audio(
+    audio_data: bytes,
+    *,
+    channels: int,
+    downsample_factor: int,
+) -> bytes:
+    """Convert native interleaved PCM to mono 16 kHz without a heavy DSP import."""
+    samples = np.frombuffer(audio_data, dtype=np.int16)
+    if channels > 1:
+        usable = samples.size - (samples.size % channels)
+        if usable <= 0:
+            return b""
+        interleaved = samples[:usable].reshape(-1, channels).astype(np.int32)
+        samples = np.mean(interleaved, axis=1).astype(np.int16)
+    if downsample_factor > 1:
+        usable = samples.size - (samples.size % downsample_factor)
+        if usable <= 0:
+            return b""
+        # A short boxcar low-pass is sufficient for the exact 48/32 -> 16 kHz
+        # integer ratios used by Windows microphone endpoints.
+        grouped = samples[:usable].reshape(-1, downsample_factor).astype(np.int32)
+        samples = np.mean(grouped, axis=1).astype(np.int16)
+    return samples.tobytes()
+
+
 def audio_callback(indata, frames, time_info, status) -> None:
     """
     Recibe audio del micrófono y lo coloca en una cola.
@@ -240,7 +340,13 @@ def audio_callback(indata, frames, time_info, status) -> None:
         print(f"[WakeWord] Advertencia de audio: {status}")
 
     try:
-        _audio_queue.put_nowait(bytes(indata))
+        normalized = normalize_capture_audio(
+            bytes(indata),
+            channels=INPUT_CHANNELS,
+            downsample_factor=INPUT_DOWNSAMPLE_FACTOR,
+        )
+        if normalized:
+            _audio_queue.put_nowait(normalized)
     except queue.Full:
         pass
 
@@ -287,7 +393,8 @@ def get_running_jarvis_pid() -> int | None:
     """
     current_pid = os.getpid()
 
-    for process in psutil.process_iter(["pid", "cmdline", "cwd"]):
+    candidates: list[tuple[int, float]] = []
+    for process in psutil.process_iter(["pid", "cmdline", "cwd", "create_time"]):
         try:
             process_id = process.info["pid"]
 
@@ -308,7 +415,8 @@ def get_running_jarvis_pid() -> int | None:
             )
 
             if (expected_main in command or relative_main) and process_is_active(process_id):
-                return int(process_id)
+                created_at = float(process.info.get("create_time") or 0.0)
+                candidates.append((int(process_id), created_at))
 
         except (
             psutil.NoSuchProcess,
@@ -317,7 +425,37 @@ def get_running_jarvis_pid() -> int | None:
         ):
             continue
 
+    for process_id, _created_at in candidates:
+        if process_has_visible_window(process_id):
+            return process_id
+    now = time.time()
+    for process_id, created_at in candidates:
+        if created_at <= 0.0 or now - created_at <= APP_STARTUP_GRACE:
+            return process_id
+    # A virtual-environment launcher can outlive its real Qt child after the
+    # last window closes. An old invisible wrapper must not pause wake forever.
     return None
+
+
+def process_has_visible_window(process_id: int) -> bool:
+    """Return whether this PID owns a visible top-level Windows surface."""
+    if sys.platform != "win32":
+        return True
+    user32 = ctypes.windll.user32
+    found = False
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def enum_callback(hwnd, _lparam):
+        nonlocal found
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == process_id and user32.IsWindowVisible(hwnd):
+            found = True
+            return False
+        return True
+
+    user32.EnumWindows(enum_callback, 0)
+    return found
 
 
 def process_is_active(process_id: int) -> bool:
@@ -841,10 +979,10 @@ def listen_for_openwakeword(
 
     with sd.RawInputStream(
         device=INPUT_DEVICE,
-        samplerate=SAMPLE_RATE,
-        blocksize=OPENWAKEWORD_BLOCK_SIZE,
+        samplerate=INPUT_SAMPLE_RATE,
+        blocksize=OPENWAKEWORD_BLOCK_SIZE * INPUT_DOWNSAMPLE_FACTOR,
         dtype="int16",
-        channels=1,
+        channels=INPUT_CHANNELS,
         callback=audio_callback,
     ):
         while True:
@@ -928,6 +1066,8 @@ def listen_for_openwakeword(
                     phrase="Hey Jarvis",
                     rms=round(rms),
                     input_device=INPUT_DEVICE,
+                    input_sample_rate=INPUT_SAMPLE_RATE,
+                    input_channels=INPUT_CHANNELS,
                 )
                 last_status_heartbeat = now
 
@@ -1017,10 +1157,10 @@ def listen_for_wake_word(model: VoskModel) -> bool:
 
     with sd.RawInputStream(
         device=INPUT_DEVICE,
-        samplerate=SAMPLE_RATE,
-        blocksize=BLOCK_SIZE,
+        samplerate=INPUT_SAMPLE_RATE,
+        blocksize=BLOCK_SIZE * INPUT_DOWNSAMPLE_FACTOR,
         dtype="int16",
-        channels=1,
+        channels=INPUT_CHANNELS,
         callback=audio_callback,
     ):
         while True:

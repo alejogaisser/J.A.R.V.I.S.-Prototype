@@ -91,14 +91,16 @@ flowchart TD
 
 1. `jarvis_launcher.py` processes the mode.
 2. In wake mode, it monitors `wake_word.py` and restarts with backoff if it fails.
-3. `wake_word.py` checks single instance, load OpenWakeWord and starts at
-listen; the Vosk backup is loaded into a thread daemon and attached to
-Recognizer when ready.
+3. `wake_word.py` checks single instance, resolves the best stable microphone
+endpoint and starts listening. On Windows it prefers the matching native
+WASAPI endpoint, mixes the microphone array and reduces integer native rates
+to mono 16 kHz before OpenWakeWord; Vosk still loads in a daemon thread.
 4. After detecting the phrase, release the stream and launch `main.py` on its surface
 The UI is born fullscreen; Pet Mode remains as an explicit transition from the
 Same meeting.
 5. `main.py` creates `QApplication`/`JarvisUI`, shows the first fullscreen frame
-and just then starts the thread daemon `jarvis-core`.
+and just then starts the thread daemon `jarvis-core`. Audio/event-loop imports,
+OpenCV hand tracking, GEO networking and WMI/GPU polling load after paint.
 6. `JarvisLive` loads the SDK in a deferred way, and `run()` creates the client
 Gemini, opens a Live session and lifts shipping, reception,
 playback, monitoring, proactivity and, if activated, dashboard.

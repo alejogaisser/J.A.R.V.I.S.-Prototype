@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -49,6 +52,76 @@ class Mk2IntegrationTests(unittest.TestCase):
         handoff = ui[ui.index("    def _open_from_pet"):ui.index("    def enter_pet_mode")]
         self.assertIn("self._pet.hide_pet()", handoff)
         self.assertIn("self._bring_main_window_to_front()", handoff)
+
+    def test_pet_releases_pointer_capture_before_returning_to_app(self):
+        pet = Path("ui_mk2/pet.py").read_text(encoding="utf-8")
+        reset = pet[
+            pet.index("    def _reset_pointer_interaction"):
+            pet.index("    def set_state")
+        ]
+        double_click = pet[
+            pet.index("    def mouseDoubleClickEvent"):
+            pet.index("    def closeEvent")
+        ]
+        self.assertIn("self._drag_origin = None", reset)
+        self.assertIn("if QWidget.mouseGrabber() is self:", reset)
+        self.assertIn("self.releaseMouse()", reset)
+        self.assertIn("self._reset_pointer_interaction()", double_click)
+        self.assertLess(
+            double_click.index("self._reset_pointer_interaction()"),
+            double_click.index("self.open_requested.emit()"),
+        )
+
+    def test_pet_round_trip_keeps_real_navigation_buttons_alive(self):
+        script = """
+from PyQt6 import sip
+from PyQt6.QtCore import Qt
+from PyQt6.QtTest import QTest
+from ui import JarvisUI
+
+ui = JarvisUI("face.png")
+app = ui._app
+app.processEvents()
+chat = ui._win._v1_chat_btn
+files = ui._win._v1_files_btn
+QTest.mouseClick(ui._win._v1_pet_btn, Qt.MouseButton.LeftButton)
+app.processEvents()
+assert ui._surface_mode == "pet"
+assert not ui._win._v1_pet_btn.isChecked()
+QTest.mouseDClick(ui._pet, Qt.MouseButton.LeftButton)
+QTest.qWait(30)
+app.processEvents()
+assert ui._surface_mode == "main"
+assert ui._win._v1_chat_btn is chat and not sip.isdeleted(chat)
+assert ui._win._v1_files_btn is files and not sip.isdeleted(files)
+QTest.mouseClick(chat, Qt.MouseButton.LeftButton)
+QTest.qWait(300)
+app.processEvents()
+assert ui._win._active_v1_panel == "chat"
+assert ui._win._right_panel.isVisible()
+assert ui._win._right_panel.maximumWidth() > 0
+QTest.mouseClick(files, Qt.MouseButton.LeftButton)
+QTest.qWait(300)
+app.processEvents()
+assert ui._win._active_v1_panel == "files"
+assert ui._win._right_panel.isVisible()
+"""
+        env = dict(os.environ)
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_top_navigation_is_interactive_and_routes_real_workspaces(self):
         ui = Path("ui.py").read_text(encoding="utf-8")
@@ -104,6 +177,7 @@ class Mk2IntegrationTests(unittest.TestCase):
     def test_pet_mode_is_reachable_by_button_and_thread_safe_signal(self):
         ui = Path("ui.py").read_text(encoding="utf-8")
         self.assertIn('_button("pet", "Pet Mode", self._request_pet_mode)', ui)
+        self.assertIn("self._v1_pet_btn.setCheckable(False)", ui)
         self.assertIn("_pet_mode_sig = pyqtSignal(str, str)", ui)
         self.assertIn("self._win._pet_mode_sig.connect(self._apply_pet_mode)", ui)
         enter = ui[ui.index("    def enter_pet_mode"):ui.index("    def exit_pet_mode")]

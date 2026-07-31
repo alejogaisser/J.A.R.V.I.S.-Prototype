@@ -17,7 +17,6 @@ if _platform.system() == "Windows":
     _subprocess.Popen = _Popen
 # ─────────────────────────────────────────────────────────────────────────────
 
-import asyncio
 import logging
 import os
 import re
@@ -32,13 +31,41 @@ from datetime import datetime
 from core.clock import local_now, prompt_datetime
 from pathlib import Path
 
-import sounddevice as sd
 from ui import JarvisUI
 from config.settings import get_settings
 
 genai = None
 types = None
+asyncio = None
+sd = None
 _LIVE_SDK_LOCK = threading.Lock()
+_RUNTIME_IMPORT_LOCK = threading.Lock()
+
+
+def _load_asyncio_dependency():
+    """Resolve asyncio lazily for runtime routes used outside the app runner."""
+    global asyncio
+    if asyncio is not None:
+        return asyncio
+    with _RUNTIME_IMPORT_LOCK:
+        if asyncio is None:
+            import asyncio as loaded_asyncio
+
+            asyncio = loaded_asyncio
+    return asyncio
+
+
+def _load_runtime_dependencies() -> None:
+    """Load audio/event-loop modules on the core thread after first paint."""
+    global sd
+    if asyncio is not None and sd is not None:
+        return
+    _load_asyncio_dependency()
+    with _RUNTIME_IMPORT_LOCK:
+        if sd is None:
+            import sounddevice as loaded_sounddevice
+
+            sd = loaded_sounddevice
 
 
 def _load_live_sdk() -> None:
@@ -1479,6 +1506,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             self._audit_request(request_context, "requested", name)
         else:
             execution_source = request_context.source
+        _load_asyncio_dependency()
         request_started_at = time.monotonic()
 
         if name in {"file_processor", "code_helper", "dev_agent", "desktop_control", "computer_control"}:
@@ -2707,6 +2735,7 @@ def main():
 
     def runner():
         ui.wait_for_api_key()
+        _load_runtime_dependencies()
         jarvis = JarvisLive(ui, runtime_events=runtime_events)
         try:
             asyncio.run(jarvis.run())

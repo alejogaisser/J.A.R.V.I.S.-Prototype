@@ -20,7 +20,6 @@ from ui_mk2.tokens import Palette, Motion, app_stylesheet, body_font, display_fo
 from ui_mk2.web_workspaces import GeoWorkspace
 from ui_mk2.memory_workspace import MemoryGraphWorkspace
 from ui_mk2.study import StudyWorkspace
-from actions.open_geo import OpenGeoClient
 from core.runtime_state import update_runtime_state
 from config.settings import get_settings, update_settings
 
@@ -143,9 +142,21 @@ class _SysMetrics:
         self._lock = threading.Lock()
         self._last_net = psutil.net_io_counters()
         self._last_net_t = time.time()
-        self._running = True
-        t = threading.Thread(target=self._loop, daemon=True)
-        t.start()
+        self._running = False
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        """Start hardware polling once, after the first UI frame is visible."""
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._running = True
+            self._thread = threading.Thread(
+                target=self._loop,
+                daemon=True,
+                name="jarvis-system-metrics",
+            )
+            self._thread.start()
 
     def _loop(self):
         while self._running:
@@ -269,6 +280,13 @@ class HandGestureTracker:
         self._pan_y = 0.0
         self._last_center: tuple[float, float] | None = None
         self._face_detector = None
+        self._face_detector_loaded = False
+
+    def _ensure_face_detector(self) -> None:
+        """Load OpenCV only when hand mode processes its first camera frame."""
+        if self._face_detector_loaded:
+            return
+        self._face_detector_loaded = True
         try:
             import cv2
             cascade = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -285,6 +303,8 @@ class HandGestureTracker:
     def process(self, frame) -> dict:
         import cv2
         import numpy as np
+
+        self._ensure_face_detector()
 
         small = cv2.resize(frame, (320, 180), interpolation=cv2.INTER_AREA)
         blurred = cv2.GaussianBlur(small, (7, 7), 0)
@@ -3091,6 +3111,8 @@ class MainWindow(QMainWindow):
     def _locate_geo_query(self, query: str) -> None:
         def resolve() -> None:
             try:
+                from actions.open_geo import OpenGeoClient
+
                 place = OpenGeoClient().resolve_place(query)
                 self._geo_focus_sig.emit(
                     float(place["latitude"]), float(place["longitude"]),
@@ -3433,6 +3455,8 @@ class MainWindow(QMainWindow):
         self._v1_geo_btn = _button("globe", "Geo", self.show_geo_workspace)
         self._v1_study_btn = _button("study", "Study", self.show_study_workspace)
         self._v1_pet_btn = _button("pet", "Pet Mode", self._request_pet_mode)
+        # Pet is a surface transition, not a persistent workspace selection.
+        self._v1_pet_btn.setCheckable(False)
 
         row.addStretch()
         right_status = QLabel("VOICE READY\nDOUBLE-ESC TO INTERRUPT")
@@ -3445,34 +3469,6 @@ class MainWindow(QMainWindow):
     def _request_pet_mode(self) -> None:
         """Request the App → Pet handoff from the visible navigation."""
         self._pet_mode_sig.emit(self.hud.state, "Pet Mode active.")
-
-        bar = QWidget()
-        bar.setObjectName("V1ControlBar")
-        bar.setFixedHeight(70)
-        bar.setStyleSheet(f"""
-            QWidget#V1ControlBar {{
-                background: {C.BG};
-                border-top: 1px solid {C.BORDER};
-            }}
-        """)
-        row = QHBoxLayout(bar)
-        row.setContentsMargins(0, 9, 0, 9)
-        row.setSpacing(10)
-        row.addStretch()
-
-        def _button(symbol: str, tooltip: str, callback) -> SymbolButton:
-            button = SymbolButton(symbol, tooltip)
-            button.clicked.connect(callback)
-            row.addWidget(button)
-            return button
-
-        self._v1_chat_btn = _button("chat", "Chat", lambda: self._toggle_v1_panel("chat"))
-        self._v1_files_btn = _button("file", "Files", lambda: self._toggle_v1_panel("files"))
-        self._v1_camera_btn = _button("camera", "Camera · select device", self._toggle_v1_camera)
-        self._v1_memory_btn = _button("brain", "Memory", self.show_memory_graph)
-        self._v1_geo_btn = _button("globe", "Geo", self.show_geo_workspace)
-        row.addStretch()
-        return bar
 
     def _toggle_v1_panel(self, panel: str) -> None:
         """Open lightweight V1 overlays without replacing the central core."""
@@ -4296,6 +4292,10 @@ class JarvisUI:
             self._win.showFullScreen()
             self._win.raise_()
             self._win.activateWindow()
+
+        # WMI/GPU polling can contend with Qt construction for hundreds of
+        # milliseconds. Start the existing metrics owner only after paint.
+        QTimer.singleShot(250, _metrics.start)
 
         # Windows often rejects activateWindow() when Python was started by the
         # background wake-word process. Retry after Qt has created a real HWND.
