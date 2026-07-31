@@ -672,6 +672,31 @@ nor was any branch forced to prevent a destructive operation.
 Example template and `/output/` input. No runtime migration,
 credentials or data.
 
+## CI correction - 2026-07-31 - Internationalized tool matrix
+
+- The publication translation changed the headers in
+  `docs/tool_migration_matrix.md` to English, while
+  `tests/test_tool_inventory.py` still required the former Spanish headers.
+  The `Quality` workflow therefore failed all 37 tool subtests with the same
+  `KeyError`; runtime behavior and registry metadata were not involved.
+- The test contract now follows the English matrix headers. The workflow also
+  uses `actions/checkout@v6` and `actions/setup-python@v6`, whose Node.js 24
+  runtime removes the Node.js 20 deprecation warning emitted by GitHub-hosted
+  runners.
+- The operational change-control parser now recognizes both the former Spanish
+  `Fase`/`Estado: completada` markers and the internationalized
+  `Phase`/`Status: completed` markers. This preserves compatibility with the
+  pre-translation roadmap while restoring the completed-phase safeguards.
+- Risk: low; test/document synchronization and CI action runtime only. No
+  application, permission, tool, audio, UI, provider, or account behavior is
+  changed.
+- Verification: `8 passed, 37 subtests passed` across the directed contracts;
+  the full baseline passed with `436 passed, 2 skipped, 134 subtests passed`,
+  clean Ruff/mypy, dependency consistency, compilation, secret scan,
+  inventories, launcher smoke checks and `git diff --check`. Rollback: restore
+  the previous header names, roadmap parser and action majors; this does not
+  migrate runtime state or user data.
+
 ### Integration on the modern main
 
 - Changes were first saved in two recoverable committs and then
