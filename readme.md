@@ -1,11 +1,36 @@
-# JARVIS — Mark LI
+# JARVIS — Mark LI v2.0.0
 
-**Current version: 2.0.0 — Mark LI**
+Windows desktop AI assistant prototype with real-time voice, local wake-word
+activation, persistent memory, permission-controlled tools, computer
+automation, and third-party integrations.
 
-A desktop personal assistant for Windows featuring real-time voice
-conversation, local wake-word activation, a holographic interface,
-user-controlled memory, vision, scientific tools, automation, and integrations
-with external services.
+[![Quality](https://github.com/alejogaisser/J.A.R.V.I.S.-Prototype/actions/workflows/quality.yml/badge.svg)](https://github.com/alejogaisser/J.A.R.V.I.S.-Prototype/actions/workflows/quality.yml)
+[![Python 3.12–3.14](https://img.shields.io/badge/Python-3.12%E2%80%933.14-3776AB?logo=python&logoColor=white)](#requirements)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](#requirements)
+[![License: non-commercial](https://img.shields.io/badge/License-non--commercial-6f42c1)](LICENSE.md)
+
+> **Prototype status:** JARVIS can control applications, files, and connected
+> services. Keep confirmations enabled and review every sensitive action before
+> authorizing it. Never publish keys, OAuth credentials, memory, or private
+> configuration.
+
+![JARVIS Mark LI Core interface](docs/media/jarvis-mark-li-core.png)
+
+## Core capabilities
+
+- Real-time Gemini Live voice conversations with local “Hey Jarvis” activation
+  through OpenWakeWord and a configurable Vosk fallback.
+- Mark LI desktop interface with Core, Pet Mode, vision, and specialized Study
+  and GEO workspaces.
+- Permission-controlled automation for applications, windows, input devices,
+  files, web tasks, and reminders.
+- User-controlled persistent memory and a graph built from stored memories.
+- Optional Obsidian, Google Workspace, and Microsoft Outlook integrations.
+- Local dashboard for phone access, commands, audio, and file transfer.
+
+[Installation](#installation) · [Architecture](ARCHITECTURE.md) ·
+[Security](SECURITY.md) · [Roadmap](ROADMAP.md) ·
+[Contributing](#contributing)
 
 Mark LI is a substantial evolution of the earlier project. It reorganizes the
 interface, audio lifecycle, memory, permissions, and tool registry while
@@ -14,34 +39,6 @@ preserving attribution to **Mark XLVIII** by
 
 The previous published version is preserved under the `v1.5-legacy` tag. See
 [CHANGELOG.md](CHANGELOG.md) for the major changes in each release.
-
-> JARVIS can control applications, files, and connected services. Review every
-> confirmation before authorizing sensitive actions, and never publish your
-> keys or private configuration.
-
-## Highlights
-
-- Low-latency voice conversations powered by Gemini Live.
-- Direct startup or local “Hey Jarvis” activation through OpenWakeWord, with
-  Vosk as a fallback.
-- Automatic microphone recovery after mute, silence, or driver lockups.
-- Immediate response interruption with `Esc` or from the interface.
-- Mark LI interface with Core, Pet Mode, and specialized workspaces.
-- Continuous screen and camera capture within the primary session.
-- Control of applications, windows, keyboard, mouse, volume, brightness, and
-  files.
-- Web search, news, weather, flights, YouTube, and reminders.
-- User-controlled persistent memory and a graph built only from real memories.
-- Study tools for mathematics, 2D/3D plots, matrices, physics, chemistry, and
-  educational anatomy.
-- GEO workspace with open maps, geocoding, routing, and weather.
-- Integration with an Obsidian vault.
-- OAuth connectors for Gmail, Google Calendar, Google Drive, Google Docs,
-  Google Sheets, Google Slides, and Outlook.
-- Local dashboard for using JARVIS from a phone and sending commands, audio,
-  and files.
-- Central tool system with risk-based permissions and confirmations.
-- Development agent, file processing, and coding assistance.
 
 ## Requirements
 
@@ -269,6 +266,13 @@ python -m compileall -q .
 ├── tests/                     # Automated tests
 └── utils/                     # Paths and temporary files
 ```
+
+## Contributing
+
+Contributions should be proposed from a fork through a focused pull request.
+Before submitting one, review [SECURITY.md](SECURITY.md), run the relevant
+tests, and confirm that the change contains no secrets, personal configuration,
+memory data, or private logs.
 
 ## Credits and license
 
