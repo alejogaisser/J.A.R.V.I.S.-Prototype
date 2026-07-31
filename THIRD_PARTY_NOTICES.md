@@ -1,71 +1,72 @@
-# Avisos de terceros
+# Third-Party Notices
 
-JARVIS Mark LI incluye o utiliza componentes cuyos derechos pertenecen a sus
-respectivos autores.
+JARVIS Mark LI includes or uses components whose rights belong to their
+respective authors.
 
 ## Mark XLVIII
 
-Este proyecto deriva de **Mark XLVIII**, creado por
-[FatihMakes](https://github.com/FatihMakes), a partir del
-[commit `d178f6b`](https://github.com/FatihMakes/Mark-L/commit/d178f6b) del
-repositorio público `FatihMakes/Mark-L`.
+This project derives from **Mark XLVIII**, created by
+[FatihMakes](https://github.com/FatihMakes), based on
+[commit `d178f6b`](https://github.com/FatihMakes/Mark-L/commit/d178f6b) from
+the public `FatihMakes/Mark-L` repository.
 
-El autor original declara uso personal y no comercial bajo Creative Commons
-Attribution-NonCommercial 4.0 International (CC BY-NC 4.0). La atribución se
-conserva en el README, `LICENSE.md` y `NOTICE.md`. Las condiciones publicadas
-por el autor original prevalecen sobre cualquier resumen incluido aquí.
+The original author states personal, non-commercial use under Creative Commons
+Attribution-NonCommercial 4.0 International (CC BY-NC 4.0). Attribution is
+preserved in the README, `LICENSE.md`, and `NOTICE.md`. The original author's
+published terms prevail over any summary included here.
 
-Entre los archivos inicialmente conservados sin cambios se encontraba
-`config/jarvis.ico`; por lo tanto, no se reclama autoría propia sobre ese
-recurso.
+`config/jarvis.ico` was among the files initially retained without changes;
+therefore, this project makes no independent authorship claim over that asset.
 
 ## openWakeWord
 
-El detector de palabra de activación utiliza
+The wake-word detector uses
 [openWakeWord](https://github.com/dscripka/openWakeWord).
 
-- El código de openWakeWord está publicado bajo Apache License 2.0.
-- Los modelos preentrenados incluidos por openWakeWord están publicados bajo
-  Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+- openWakeWord source code is published under the Apache License 2.0.
+- Pre-trained models distributed by openWakeWord are published under Creative
+  Commons Attribution-NonCommercial-ShareAlike 4.0 International
   (CC BY-NC-SA 4.0).
-- Los archivos distribuidos en `models/openwakeword/` son
-  `embedding_model.onnx`, `melspectrogram.onnx` y `hey_jarvis_v0.1.onnx`.
+- The files distributed under `models/openwakeword/` are
+  `embedding_model.onnx`, `melspectrogram.onnx`, and
+  `hey_jarvis_v0.1.onnx`.
 
-Consultá el repositorio y la documentación del modelo
-[hey_jarvis](https://github.com/dscripka/openWakeWord/blob/main/docs/models/hey_jarvis.md)
-para conocer la procedencia y las condiciones completas.
+See the repository and the
+[hey_jarvis model documentation](https://github.com/dscripka/openWakeWord/blob/main/docs/models/hey_jarvis.md)
+for full provenance and terms.
 
 ## CryptoJS
 
-`dashboard/static/crypto-js.min.js` contiene
-[CryptoJS](https://github.com/brix/crypto-js), distribuido bajo la licencia
-MIT:
+`dashboard/static/crypto-js.min.js` contains
+[CryptoJS](https://github.com/brix/crypto-js), distributed under the MIT
+License:
 
 Copyright (c) 2009-2013 Jeff Mott
 
 Copyright (c) 2013-2016 Evan Vosberg
 
-Se permite, sin cargo, a cualquier persona que obtenga una copia de este
-software y de los archivos de documentación asociados (el “Software”), usar
-el Software sin restricciones, incluidos los derechos de usar, copiar,
-modificar, fusionar, publicar, distribuir, sublicenciar y/o vender copias, y
-permitir que las personas a quienes se proporcione el Software hagan lo mismo,
-sujeto a la inclusión del aviso de copyright y este aviso de permiso en todas
-las copias o partes sustanciales.
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the “Software”), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to inclusion of the copyright notice and this permission notice in
+all copies or substantial portions of the Software.
 
-EL SOFTWARE SE PROPORCIONA “TAL CUAL”, SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O
-IMPLÍCITA, INCLUIDAS, ENTRE OTRAS, LAS GARANTÍAS DE COMERCIABILIDAD, IDONEIDAD
-PARA UN FIN PARTICULAR Y NO INFRACCIÓN. EN NINGÚN CASO LOS AUTORES O TITULARES
-DEL COPYRIGHT SERÁN RESPONSABLES POR RECLAMOS, DAÑOS U OTRAS
-RESPONSABILIDADES, YA SEA EN UNA ACCIÓN CONTRACTUAL, EXTRACONTRACTUAL O DE
-OTRO TIPO, QUE SURJA DEL SOFTWARE, SU USO U OTRAS OPERACIONES CON ÉL.
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
-## Dependencias instalables
+## Installable dependencies
 
-Las bibliotecas declaradas en los archivos de requisitos no se redistribuyen
-como código fuente dentro de este repositorio. Cada una conserva la licencia
-publicada por su propio mantenedor.
+Libraries declared in the requirements files are not redistributed as source
+code within this repository. Each retains the license published by its own
+maintainer.
 
-PyQt6 y PyQt6-WebEngine se instalan como dependencias externas y se ofrecen por
-sus mantenedores bajo GPLv3 o licencias comerciales. Este aviso documenta esa
-dependencia, pero no modifica ni sustituye sus condiciones.
+PyQt6 and PyQt6-WebEngine are installed as external dependencies and are
+offered by their maintainers under GPLv3 or commercial licenses. This notice
+documents the dependency but does not modify or replace its terms.

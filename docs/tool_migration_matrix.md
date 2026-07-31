@@ -1,72 +1,72 @@
-# Matriz de migración de herramientas
+# Tool migration matrix
 
-## Contrato
+## Contract
 
-Snapshot del registro de 37 `ToolDefinition` al 2026-07-28. La tabla describe
-el comportamiento actual, no el nivel deseado. `Sin contrato` significa que
-el runtime todavía no dispone de evidencia/verificación o rollback tipados.
+Snapshot from the 37 `ToolDefinition` registry at 2026-07-28.
+the current behavior, not the desired level. `No contract` means that
+runtime still has no typed evidence/verification or rollback.
 
-Desde la Fase 8 todos los handlers `executor` reciben `UiCommandFacade`, no
-`JarvisUI`. Esto cierra el acceso directo a widgets pero no convierte por sí
-solo sus retornos legacy en resultados verificables.
+Since Phase 8 all `executor` handlers receive `UiCommandFacade`, no
+`JarvisUI`. This closes the shortcut to widgets but does not by itself
+convert their legacy returns into verifiable results.
 
-El test `tests/test_tool_inventory.py` compara nombres, riesgo, ruta y timeout
-contra `main.py` y `core/tools/builtins.py`. Una tool nueva no puede incorporarse
-sin añadir una fila y declarar sus límites.
+The `tests/test_tool_inventory.py` test compares names, risk, route and timeout
+against `main.py` and `core/tools/builtins.py`. A new tool cannot be incorporated
+without adding a row and declaring its limits.
 
-| Tool | Risk | Policy actual | Preview | Retorno actual | Verificación | Rollback | Timeout s | Route | Cobertura | Migración pendiente |
+| Tool | Risk | Current Policy | Preview | Current return | Verification | Rollback | Timeout s | Route | Coverage | Pending migration |
 | --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- |
-| `open_app` | local_change | FREE | No | Texto legacy | Sin contrato | Cierre manual | 30 | executor | Seguridad estática | Evidencia de proceso/ventana |
-| `web_search` | read_only | FREE | No | Texto legacy | Fuentes en texto | No aplica | 30 | executor | Clock + provider fakes/fallback | Citas tipadas |
-| `system_status` | read_only | FREE | No | Texto legacy | Lectura puntual | No aplica | 30 | executor | Policy | Resultado estructurado |
-| `weather_report` | read_only | FREE | No | Texto legacy | Fuente en texto | No aplica | 30 | executor | Indirecta | Provider inyectable |
-| `send_message` | external_effect | CONFIRM_ALWAYS | Sí | Texto legacy | Sin contrato | No disponible | 30 | executor | Policy/preview | ID remoto + estado de entrega |
-| `reminder` | external_effect | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Manual | 30 | executor | Policy parametrizada | Verificar persistencia |
-| `youtube_video` | read_only | FREE | No | Texto legacy | Sin contrato | Cerrar navegador | 30 | executor | Sin prueba directa | Resultado y destino tipados |
-| `screen_process` | read_only | FREE | No | Ruta especial | Captura parcial + owner de cooldown | No aplica | 30 | special | Seguridad + runtime owner | Envelope común + latencia |
-| `close_camera` | read_only | FREE | No | Ruta especial | Owner libera frame pendiente; UI implícita | Reabrir cámara | 30 | special | Seguridad + runtime owner | Evento/verificación de cámara |
-| `camera_control` | read_only | FREE | No | Ruta especial | Owner de backpressure; estado UI implícito | Acción inversa | 30 | special | Cámara + runtime owner | Riesgo por operación + evento |
-| `pet_mode` | local_change | FREE | No | Texto legacy | Señal Qt encolada | Salir de Pet | 30 | executor | UI + afinidad Qt | Resultado tipado |
-| `interface_control` | local_change | FREE | No | Texto legacy | Confirmación del slot Qt | Acción inversa | 30 | executor | Interfaz + afinidad Qt | Resultado tipado |
-| `visual_mouse` | read_only | FREE | No | Ruta especial | UIA/imagen parcial | No disponible | 30 | special | Seguridad estática | Riesgo real + envelope común |
-| `computer_settings` | sensitive | FREE; power CONFIRM_ALWAYS | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Policy/seguridad | Matriz por operación |
-| `browser_control` | sensitive | Lectura/navegación FREE; interacción ONCE; desconocida ALWAYS | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Policy parametrizada | Preview y verificación de submit |
-| `file_controller` | sensitive | Por acción | Sí | `ToolResult` v2 en create/copy/move de archivos; resto legacy | Ruta, tamaño y SHA-256; ausencia de origen en move | Papelera para create/copy; movimiento inverso para move | 30 | executor | Seguridad + verifier piloto | Verificación recursiva y migrar operaciones restantes |
-| `desktop_control` | sensitive | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Según operación | 30 | executor | Sin prueba directa | Clasificación por operación |
-| `code_helper` | sensitive | explain FREE; write/edit/optimize ONCE; resto ALWAYS | No | Texto legacy | Rutina cruda registrada no se ejecuta | VCS/manual | 120 | executor | Policy/scripts | Migrar rutinas a acciones declarativas allowlisted |
-| `dev_agent` | sensitive | CONFIRM_ONCE | Sí, proyecto nuevo sin ejecutar | Texto compatible + `AgentResult` interno | Workspace/archivos/bytes/evidencia tipados | Automático para archivos creados por la tarea | 120 | executor | Policy + `AgentSupervisor` | Timeout cancelable del provider; sandbox real antes de habilitar ejecución |
-| `computer_control` | sensitive | Acciones comunes FREE; resto ONCE | No | Texto legacy | UIA/imagen parcial | No disponible | 30 | executor | Seguridad parcial | Riesgo por acción + límites |
-| `game_updater` | external_effect | CONFIRM_ONCE | No | Texto legacy | Sin contrato | Gestor externo | 120 | executor | Seguridad estática | Estado de instalación verificable |
-| `flight_finder` | read_only | FREE | No | Texto legacy | Fuentes en texto | No aplica | 30 | executor | Sin prueba directa | Provider + esquema de resultados |
-| `shutdown_jarvis` | sensitive | FREE | No | Ruta especial | State machine idempotente con deadline | Reinicio manual | 30 | special | Policy + lifecycle owner | Policy sensible + envelope común |
-| `file_processor` | sensitive | Lectura FREE; escritura ONCE; ejecución ALWAYS | No | Texto/archivo legacy | Sin contrato | Según operación | 30 | executor | Policy parametrizada | Verificación de artefactos |
-| `save_memory` | local_change | Bypass de policy | No | Ruta especial | Lectura posterior no contractual | Forget/manual | 30 | special | Memoria indirecta | Pasar por policy y executor |
-| `memory_list` | read_only | FREE | No | Lista/dict legacy | Datos cargados | No aplica | 30 | executor | Memoria | Resultado paginado/tipado |
-| `memory_search` | read_only | FREE | No | Lista/dict legacy | Datos cargados | No aplica | 30 | executor | Memoria | Resultado paginado/tipado |
-| `memory_update` | local_change | CONFIRM_ONCE | No | Bool/dict legacy | Persistencia parcial | Historial | 30 | executor | Policy/memoria | Evidencia + versión |
-| `memory_forget` | sensitive | CONFIRM_ALWAYS | No | Bool/dict legacy | Persistencia parcial | `memory_restore` | 30 | executor | Policy/memoria | Evidencia + versión |
-| `memory_restore` | local_change | CONFIRM_ONCE | No | Bool/dict legacy | Persistencia parcial | `memory_forget` | 30 | executor | Policy/memoria | Evidencia + versión |
-| `memory_graph` | read_only | FREE | No | Texto legacy | Reindexado implícito vía señal Qt | No aplica | 30 | executor | Grafo/UI + afinidad Qt | Métricas |
-| `geo_map` | read_only | FREE | No | Dict/texto legacy | Respuesta del provider; presentación encolada | No aplica | 30 | executor | GEO + afinidad Qt | Provider tipado |
-| `math_engine` | read_only | FREE | No | Texto/archivo legacy | Cálculo local parcial | No aplica | 30 | executor | Math/seguridad | Resultado/artefacto tipado |
-| `study_engine` | local_change | FREE | No | Texto/archivo legacy | Parcial por operación | Según artefacto | 30 | executor | Study | Riesgo y provider por operación |
-| `account_connector` | external_effect | Lectura FREE; connect/download ONCE; create/disconnect ALWAYS | No | Texto/JSON legacy | Provider parcial | Según operación | 30 | executor | Conectores/policy | Preview y verificación externa |
-| `obsidian_connector` | sensitive | Lectura FREE; escritura ONCE; resto ALWAYS | No | Texto/JSON legacy | Filesystem parcial | Historial/manual | 30 | executor | Obsidian/policy | Preview + evidencia de nota |
-| `permission_manager` | sensitive | Lectura FREE; cambios ALWAYS | No | Ruta especial | Store recargado | Restaurar preferencia | 30 | special | Policy/seguridad | Store atómico + envelope común |
+| `open_app` | local_change | FREE | No | Legacy text | No contract | Manual closure | 30 | executor | Static safety | Evidence of process/window |
+| `web_search` | read_only | FREE | No | Legacy text | Text sources | Not applicable | 30 | executor | Clock + provider fakes/fallback | Typed dates |
+| `system_status` | read_only | FREE | No | Legacy text | Point-in-time reading | Not applicable | 30 | executor | Policy | Structured result |
+| `weather_report` | read_only | FREE | No | Legacy text | Source in text | Not applicable | 30 | executor | Indirect | Provider injection |
+| `send_message` | external_effect | CONFIRM_ALWAYS | Yes | Legacy text | No contract | Not available | 30 | executor | Policy/review | Remote ID + delivery status |
+| `reminder` | external_effect | CONFIRM_ONCE | No | Legacy text | No contract | Manual | 30 | executor | Parametrized policy | Verify persistence |
+| `youtube_video` | read_only | FREE | No | Legacy text | No contract | Close browser | 30 | executor | No direct proof | Typed result and destination |
+| `screen_process` | read_only | FREE | No | Special route | Partial capture + cooldown owner | Not applicable | 30 | special | Safety + runtime owner | Common envelope + latency |
+| `close_camera` | read_only | FREE | No | Special route | Owner releases pending frame; implicit UI | Reopen Camera | 30 | special | Safety + runtime owner | Event/camera verification |
+| `camera_control` | read_only | FREE | No | Special route | Backpressure owner; implicit UI status | Reverse action | 30 | special | Camera + runtime owner | Risk per operation + event |
+| `pet_mode` | local_change | FREE | No | Legacy text | Qt sign glued | Get out of Pet | 30 | executor | UI + Qt affinity | Typed result |
+| `interface_control` | local_change | FREE | No | Legacy text | Confirmation of the Qt slot | Reverse action | 30 | executor | Interface + Qt affinity | Typed result |
+| `visual_mouse` | read_only | FREE | No | Special route | AI/UI partial image | Not available | 30 | special | Static safety | Real risk + common envelope |
+| `computer_settings` | sensitive | FREE; power CONFIRM_ALWAYS | No | Legacy text | No contract | Depending on operation | 30 | executor | Policy/security | Matrix per operation |
+| `browser_control` | sensitive | FREE reading/navigation; ONCE interaction; unknown ALWAYS | No | Legacy text | No contract | Depending on operation | 30 | executor | Parametrized policy | Submission preview and verification |
+| `file_controller` | sensitive | By action | Yes | `ToolResult` v2 for create/copy/move; rest legacy | Route, size and SHA-256; absence of moving origin | Create/copy bin; reverse motion for move | 30 | executor | Safety + pilot verifier | Recursive verification and migration of remaining operations |
+| `desktop_control` | sensitive | CONFIRM_ONCE | No | Legacy text | No contract | Depending on operation | 30 | executor | No direct proof | Classification by operation |
+| `code_helper` | sensitive | explain FREE; write/edit/optimize ONCE; rest ALWAYS | No | Legacy text | Registered raw routine is not executed | VCS/manual | 120 | executor | Policy/scripts | Migrate routines to declarative actions allowed |
+| `dev_agent` | sensitive | CONFIRM_ONCE | Yes, new project not executed | Supported text + `AgentResult` internal | Workspace/archives/bytes/typed evidence | Automatic for files created by the task | 120 | executor | Policy + `AgentSupervisor` | Provider cancelable timeout; real sandbox before enabling execution |
+| `computer_control` | sensitive | Common actions FREE; rest ONCE | No | Legacy text | AI/UI partial image | Not available | 30 | executor | Partial security | Risk per action + limits |
+| `game_updater` | external_effect | CONFIRM_ONCE | No | Legacy text | No contract | External installer | 120 | executor | Static safety | Verification of installation status |
+| `flight_finder` | read_only | FREE | No | Legacy text | Text sources | Not applicable | 30 | executor | No direct proof | Provider + result scheme |
+| `shutdown_jarvis` | sensitive | FREE | No | Special route | Idempotent state machine with deadline | Manual restart | 30 | special | Policy + lifecycle owner | Shared sensitive policy + envelope |
+| `file_processor` | sensitive | FREE reading; ONCE writing; ALWAYS execution | No | Text/legacy file | No contract | Depending on operation | 30 | executor | Parametrized policy | Verification of artifacts |
+| `save_memory` | local_change | Policy bypass | No | Special route | Non-contractual subsequent reading | Forget/manual | 30 | special | Indirect memory | Pass policy and executor |
+| `memory_list` | read_only | FREE | No | List/dict legacy | Loaded data | Not applicable | 30 | executor | Memory | Paged/typed result |
+| `memory_search` | read_only | FREE | No | List/dict legacy | Loaded data | Not applicable | 30 | executor | Memory | Paged/typed result |
+| `memory_update` | local_change | CONFIRM_ONCE | No | Bool/dict legacy | Partial persistence | History | 30 | executor | Policy/memory | Evidence + version |
+| `memory_forget` | sensitive | CONFIRM_ALWAYS | No | Bool/dict legacy | Partial persistence | `memory_restore` | 30 | executor | Policy/memory | Evidence + version |
+| `memory_restore` | local_change | CONFIRM_ONCE | No | Bool/dict legacy | Partial persistence | `memory_forget` | 30 | executor | Policy/memory | Evidence + version |
+| `memory_graph` | read_only | FREE | No | Legacy text | Implicit reindexing via Qt signal | Not applicable | 30 | executor | Graph/UI + Qt affinity | Metrics |
+| `geo_map` | read_only | FREE | No | Dict/text legacy | Provider response; coupled presentation | Not applicable | 30 | executor | GEO + Qt affinity | Typed provider |
+| `math_engine` | read_only | FREE | No | Text/legacy file | Partial local calculation | Not applicable | 30 | executor | Math/security | Result/typed artefact |
+| `study_engine` | local_change | FREE | No | Text/legacy file | Partial per operation | According to artifact | 30 | executor | Study | Risk and provider per operation |
+| `account_connector` | external_effect | FREE reading; connect/download ONCE; create/disconnect ALWAYS | No | Text/JSON legacy | Partial Provider | Depending on operation | 30 | executor | Connectors/policy | Preview and external verification |
+| `obsidian_connector` | sensitive | FREE reading; ONCE writing; rest of ALWAYS | No | Text/JSON legacy | Partial Filesystem | History/manual | 30 | executor | Obsidian/policy | Preview + note evidence |
+| `permission_manager` | sensitive | FREE reading; ALWAYS changes | No | Special route | Store recharged | Restore preference | 30 | special | Policy/security | Common Atomic Store + Envelope |
 
-## Rutas especiales
+## Special routes
 
-Siete herramientas evitan el handler normal del `ToolExecutor`:
+Seven tools avoid the normal handler of the `ToolExecutor`:
 `screen_process`, `close_camera`, `camera_control`, `visual_mouse`,
-`shutdown_jarvis`, `save_memory` y `permission_manager`. Deben migrarse por
-lotes pequeños al mismo envelope de validación, policy, ejecución, auditoría y
-resultado, conservando sus requisitos de UI/lifecycle.
+`shutdown_jarvis`, `save_memory` and `permission_manager`. Must be migrated by
+small lots to the same speed of validation, policy, execution, audit and
+result, preserving your UI/lifecycle requirements.
 
-## Prioridad derivada
+## Derived priority
 
-1. Propagar el origen remoto y añadir tests de dashboard.
-2. Corregir `file_processor`, `code_helper`, browser, reminder y escrituras de
-   conectores.
-3. Incorporar `RequestContext` antes de migrar rutas especiales.
-4. Extender por lotes el piloto ya activo de verificación de archivos sin
-   inferir efectos de los retornos legacy.
+1. Spread the remote source and add dashboard tests.
+2. Correct `file_processor`, `code_helper`, browser, reminder and deeds
+connectors.
+3. Incorporate `RequestContext` before migrating special routes.
+4. Extend by batch the already active pilot of file verification without
+Infer the effects of legacy returns.

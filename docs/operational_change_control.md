@@ -1,58 +1,58 @@
-# Control operativo de cambios
+# Operational change control
 
-Este gate convierte la sección 16 del PDF rector en un contrato comprobable
-para fases arquitectónicas. No reemplaza el juicio técnico ni demuestra actos
-externos: obliga a registrar la evidencia y falla si un cierre queda
-incompleto o incoherente.
+This gate converts section 16 of the governing PDF into a verifiable contract
+for architectural phases. It does not replace technical judgment or demonstrate acts
+external: obligates to record evidence and fails if a closure is left
+incomplete or inconsistent.
 
-## Alcance
+## Scope
 
-`docs/operational_change_control.json` contiene:
+`docs/operational_change_control.json` contains:
 
-- los 11 mandatos operativos `OP-01` a `OP-11`;
-- las 8 preguntas previas a refactorizar `REF-01` a `REF-08`;
-- un registro por fase completada desde la fase 15.
+- the 11 operating mandates `OP-01` to `OP-11`;
+- all 8 questions prior to refactoring `REF-01` to `REF-08`;
+- a phase-by-phase registration completed from phase 15.
 
-Cada registro consigna motivo, objetivo, archivos, riesgos, pruebas, métricas,
-rollback, owner, paso por policy, verificación del efecto, comportamiento ante
-cancelación/timeout/reconexión, compatibilidad, beneficio de abstracciones,
-límites de evidencia y estado de la nota Obsidian.
+Each record records motive, objective, files, risks, tests, metrics,
+rollback, owner, policy pass, effect check, ante behavior
+cancellation/timeout/reconnection, compatibility, benefit of abstractions,
+limits of evidence and status of Obsidian note.
 
-El gate comprueba:
+The gate checks:
 
-- inventario exacto y sin duplicados;
-- evidencia y archivos existentes, relativos y contenidos en el repositorio;
-- ausencia de rutas sensibles en los registros;
-- fases secuenciales y un único registro por fase;
-- resultados aprobados y nota Obsidian actualizada antes de aceptar una fase
-  marcada como completada en `ROADMAP.md`;
-- confirmación y preview obligatorios cuando un cambio se declara destructivo;
-- beneficio explícito para cualquier abstracción.
+- accurate and unduplicated inventory;
+- existing evidence and files, relative and contained in the repository;
+- the absence of sensitive routes in the registers;
+- sequential phases and a single register per phase;
+- approved results and note Obsidian updated before accepting a phase
+marked as completed in `ROADMAP.md`;
+- mandatory confirmation and preview when a change is declared destructive;
+- explicit benefit for any abstraction.
 
-## Uso
+## Use
 
 ```powershell
 python scripts/check_operational_change_control.py --repo-root .
 ```
 
-El baseline ejecuta este comando antes de pytest. Para una fase nueva:
+The database executes this command before pytest. For a new phase:
 
-1. crear el registro con tests y Obsidian en `pending`;
-2. implementar y ejecutar pruebas dirigidas;
-3. registrar resultados y métricas reales, distinguiendo mocks de hardware;
-4. actualizar la nota Obsidian;
-5. cambiar esos estados a `passed`/`updated`;
-6. recién entonces marcar la fase completada en `ROADMAP.md`.
+1. create the record with tests and Obsidian in `pending`;
+2. implement and execute targeted tests;
+3. record actual results and metrics, distinguishing hardware mocks;
+4. update the Obsidian note;
+5. change those states to `passed`/`updated`;
+6. just then mark the completed phase in `ROADMAP.md`.
 
-## Límites manuales
+## Manual limits
 
-CI no puede demostrar que un operador leyó `AGENTS.md`, observó `git status` o
-actualizó un archivo externo de Obsidian. El contrato conserva esas
-obligaciones y exige declararlas, pero la evidencia final debe revisarse en el
-handoff. Tampoco transforma una prueba mockeada en verificación de hardware.
+IC cannot prove that an operator read `AGENTS.md`, observed `git status` or
+has updated an external archive of Obsidian.
+obligations and requires them to be declared, but the final evidence should be reviewed in the
+Handoff. Nor does it transform a hacked test into hardware verification.
 
 ## Rollback
 
-Retirar la llamada de `scripts/validate_baseline.ps1` desactiva el gate sin
-cambiar runtime. Revertir todos los archivos de esta fase restaura el baseline
-anterior; no hay migración de datos ni adaptador productivo involucrado.
+Remove call from `scripts/validate_baseline.ps1` disables gate without
+change runtime. Reversing all files of this phase restores the baseline
+previous; no data migration or productive adapter involved.

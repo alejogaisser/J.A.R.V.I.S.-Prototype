@@ -1,59 +1,59 @@
-# Control automático de secretos
+# Automated secret scanning
 
-## Objetivo
+## Objective
 
-`scripts/check_secrets.py` impide que el ciclo normal de validación publique
-archivos privados conocidos o credenciales con formatos de alta confianza. No
-lee archivos ignorados ni imprime el texto que produjo una coincidencia.
+`scripts/check_secrets.py` prevents the normal validation cycle from publishing
+known private files or credentials with high confidence formats. No
+reads ignored files or prints the text that produced a match.
 
-## Fuentes inspeccionadas
+## Sources inspected
 
-- Cada ruta devuelta por `git ls-files`.
-- El contenido del working tree para archivos sin cambios staged.
-- El blob exacto del índice para archivos agregados o modificados en staging.
+- Each route returned by `git ls-files`.
+- The content of the working tree for unchanged files.
+- The exact index blob for files added or modified in tagging.
 
-Usar el blob staged evita que una credencial preparada para commit quede
-oculta por una copia posterior y segura en el working tree. Los symlinks que
-resuelven fuera del repositorio hacen fallar el chequeo.
+Using the blob staged prevents a credential prepared to commit from remaining
+hidden by a back and secure copy in the working tree. The symlinks that
+solve outside the repository make the check fail.
 
-## Políticas
+## Policy
 
-El gate rechaza archivos `.env*`, configuración real de API/OAuth,
-certificados, auditorías reales, memoria personal y logs. También detecta
-formas de alta confianza de claves Google, GitHub, OpenAI, AWS y Slack, además
-de encabezados de claves privadas.
+The gate rejects `.env*` files, real API/OAuth configuration,
+certificates, real audits, personal memory and logs. It also detects
+high-confidence forms of Google, GitHub, OpenAI, AWS and Slack keys, plus
+of private keyheads.
 
-Cada hallazgo contiene únicamente:
+Each finding contains only:
 
-- ruta versionada;
-- línea, cuando corresponde;
-- identificador de regla;
-- fuente `working-tree` o `staged`.
+- route versioned;
+- line, where applicable;
+- rule identifier;
+- source `working-tree` or `staged`.
 
-El valor coincidente nunca forma parte del resultado.
+Matching value is never part of the result.
 
-## Ejecución
+## Implementation
 
 ```powershell
 python scripts/check_secrets.py --repo-root .
 ```
 
-`scripts/validate_baseline.ps1` ejecuta este comando después de `compileall` y
-antes de los tests.
+`scripts/validate_baseline.ps1` executes this command after `compileall` and
+before the tests.
 
-## Límites
+## Limits
 
-- Los archivos no versionados no se inspeccionan: `.gitignore` y la revisión
-  local siguen siendo obligatorios.
-- Se priorizan formatos de alta confianza para evitar falsos positivos; no es
-  un análisis genérico de entropía.
-- El gate no limpia el historial ni revoca credenciales.
-- Una credencial que alcanzó un commit o remoto debe rotarse aunque después se
-  elimine.
+- Unversed files are not inspected: `.gitignore` and revision
+They remain mandatory at the local level.
+- High-confidence formats are prioritized to avoid false positives; it is not
+a generic entropy analysis.
+- The gate does not clear the history or revoke credentials.
+- A credential that reached a commit or remote should be rotated even after
+Delete.
 
 ## Rollback
 
-La integración es independiente del runtime. Ante un falso positivo, ajustar
-una regla y conservar una prueba de regresión. Retirar temporalmente la llamada
-del baseline no modifica JARVIS, pero elimina una barrera preventiva y debe
-quedar documentado.
+The integration is independent of the runtime. Faced with a false positive, adjust
+a rule and retain a regression test. Withdraw the call temporarily
+baseline does not modify JARVIS, but removes a preventive barrier and must
+to be documented.

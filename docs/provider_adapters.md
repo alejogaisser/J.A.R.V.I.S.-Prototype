@@ -1,53 +1,53 @@
-# Adaptadores de proveedores
+# Provider adapters
 
-## Límite
+## Limit
 
-Los casos de uso no deben importar SDKs de modelos, leer credenciales ni elegir
-modelos. `core.providers` declara cuatro puertos:
+Use cases should not import SDKs from models, read credentials, or choose
+models. `core.providers` declares four ports:
 
 - `LiveConversationProvider`;
 - `TextGenerationProvider`;
 - `VisionAnalysisProvider`;
 - `GroundedSearchProvider`.
 
-La Fase 9 migra productivamente sólo `web_search`. Los otros tres contratos
-permiten migraciones posteriores sin cambiar de una vez audio, cámara o las
-acciones que generan texto.
+Phase 9 migrates productively only `web_search`. The other three contracts
+allow subsequent migrations without changing at once audio, camera or
+actions that generate text.
 
-## Piloto de búsqueda
+## Search Pilot
 
-`JarvisLive` construye `GoogleGroundedSearchProvider` después de que la
-configuración local está disponible y lo inyecta en ambos caminos de
-`web_search`. La acción sólo llama `provider.search(query)` y conserva
-DuckDuckGo como backend independiente.
+`JarvisLive` builds `GoogleGroundedSearchProvider` after the
+local configuration is available and injects it into both paths of
+`web_search`. The action only calls `provider.search(query)` and preserves
+Duck DuckGo as a standalone backend.
 
-El adaptador es dueño de:
+The adapter owns:
 
-- modelos primario y fallback;
-- timeout HTTP en milisegundos;
-- configuración de Google grounded search;
-- extracción y validación de la respuesta;
-- clasificación de timeout, cuota, fallo transitorio y fallo permanente.
+- primary and fallback models;
+- HTTP timeout in milliseconds;
+- Google settings grounded search;
+- extraction and validation of the response;
+- Timeout classification, quota, transient failure and permanent failure.
 
-Un 5xx transitorio puede probar el siguiente modelo. Un 429 no hace model
-hopping: se convierte en `ProviderQuotaError` para que el caso de uso cambie de
-backend. Un 403 u otro error permanente tampoco reintenta otro modelo.
+A transient 5xx can test the next model. A 429 does not model
+hopping: becomes `ProviderQuotaError` so that the case of use changes from
+backend. A 403 or other permanent error also does not retry another model.
 
-## Seguridad
+## Security
 
-La credencial sólo entra en `from_api_key()` y no se guarda en errores,
-resultados o logs. Los tests usan clientes falsos; no leen `api_keys.json`, no
-abren red y no registran prompts ni respuestas reales.
+The credential only enters `from_api_key()` and is not saved in errors,
+results or logs. Tests use fake clients; do not read `api_keys.json`, no
+open network and do not record prompts or real answers.
 
 ## Rollback
 
-La firma pública de `web_search` conserva sus argumentos previos y añade un
-provider opcional. Retirar el piloto requiere reinyectar un adaptador de
-compatibilidad; DDG sigue funcionando cuando no hay provider.
+The public firm `web_search` retains its previous arguments and adds a
+optional provider. Removing the pilot requires re-injecting an adapter
+compatibility; DDG still works when there is no provider.
 
-## Verificación
+## Verification
 
-`tests/test_provider_adapters.py` cubre contratos, inyección, fallback de
-backend, fallback de modelo, timeout, cuota, errores permanentes y respuestas
-vacías. `tests/test_clock.py` usa un provider falso para verificar la fecha de
-las noticias sin SDK ni red.
+`tests/test_provider_adapters.py` covers contracts, injection, failback
+backend, model fallback, timeout, quota, permanent errors and answers
+empty. `tests/test_clock.py` uses a fake provider to verify the date of
+news without SDK or network.

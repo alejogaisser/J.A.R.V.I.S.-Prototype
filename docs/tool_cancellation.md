@@ -1,47 +1,47 @@
-# Cancelación e aislamiento de herramientas
+# Cancellation and isolation of tools
 
-## Contrato cooperativo
+## Cooperative contract
 
-`ToolExecutor` crea un `CancellationToken` por ejecución. Sólo lo entrega a un
-handler marcado como cancelable cuya firma acepte explícitamente
-`cancellation_token`; los handlers heredados continúan recibiendo únicamente
-sus argumentos.
+`ToolExecutor` creates a `CancellationToken` per execution. It only delivers it to a
+handler marked as cancelable whose signature explicitly accepts
+`cancellation_token`; inherited handlers continue to receive only
+Your arguments.
 
-Una ejecución con `RequestContext` puede señalarse mediante
-`ToolExecutor.cancel(request_id)`. El timeout usa la misma señal. El executor
-espera una gracia acotada para que el handler limpie recursos y declare su
-estado:
+An execution with `RequestContext` can be marked by
+`ToolExecutor.cancel(request_id)`. Timeout uses the same signal.
+waits for a limited grace for the handler to clean up resources and declare his
+status:
 
-- `ToolCancelled` transporta efecto, verificación, rollback y evidencia;
-- una respuesta estructurada producida después de la señal conserva sus estados;
-- falta de reconocimiento queda `cancellation_unacknowledged` y
-  `effect=unknown`.
+- `ToolCancelled` carries effect, verification, rollback and evidence;
+- a structured response produced after the signal retains its states;
+- lack of recognition remains `cancellation_unacknowledged` and
+`effect=unknown`.
 
-El token es thread-safe, de un solo uso y admite callbacks. No interrumpe
-threads por la fuerza.
+The token is thread-safe, single-use and supports callbacks. It does not interrupt
+Threds by force.
 
-## Procesos
+## Processes
 
-`run_cancellable_process()` inicia un proceso sin `shell`, consulta el token y
-el timeout, y antes de retornar termina y recolecta el árbol creado. El cleanup
-usa el PID exacto de `Popen` y sus descendientes mediante `psutil`; nunca busca
-procesos por nombre.
+`run_cancellable_process()` starts a process without `shell`, consult the token and
+the timeout, and before returning it ends and collects the created tree.
+uses the exact PID of `Popen` and its descendants by `psutil`; never searches
+processes by name.
 
-El primer piloto fue el comando de ejecución de proyectos de `dev_agent`. En
-Fase 13 esa ejecución automática se retiró: el agente conserva checkpoints
-entre planificación y escrituras contenidas, y `AgentSupervisor` elimina los
-archivos creados por la tarea si falla o se cancela. El runner sigue disponible
-para tools explícitas que ejecuten procesos confiables y allowlisted.
+The first pilot was the `dev_agent` project execution command.
+Phase 13 that automatic execution was withdrawn: the agent retains checkpoints
+between planning and contained scripts, and `AgentSupervisor` removes the
+files created by the task if it fails or cancels. The runner is still available
+for explicit tools that run reliable and allowed processes.
 
-## Límites
+## Limits
 
-- Los handlers sin parámetro de cancelación mantienen el comportamiento legacy.
-- Python no permite detener con seguridad un thread arbitrario; un handler que
-  ignore el token puede continuar.
-- Las llamadas bloqueantes de modelo todavía dependen del timeout externo del
-  ToolExecutor; Python no puede terminar su thread por fuerza.
-- `dev_agent` ya no instala, abre editor ni ejecuta el preview. Habilitarlo
-  requerirá un sandbox de sistema operativo y otra confirmación, no sólo `cwd`.
-- El rollback automático cubre únicamente archivos nuevos propiedad de la
-  tarea; proyectos existentes se rechazan antes de escribir.
-- `cancel(request_id)` requiere una ejecución activa con `RequestContext`.
+- Handlers with no cancellation parameter maintain legacy behavior.
+- Python does not allow you to safely stop an arbitrary thread; a handler who
+ignore the token can continue.
+- Model blocking calls still depend on the external timeout of the
+ToolExecutor; Python cannot finish your thread by force.
+- `dev_agent` no longer installs, opens editor, or executes the preview.
+will require an operating system sandbox and another confirmation, not just `cwd`.
+- Automatic rollback covers only new files owned by the
+task; existing projects are rejected before writing.
+- `cancel(request_id)` requires active execution with `RequestContext`.

@@ -1,45 +1,46 @@
-# Aviso de autoría y procedencia
+# Attribution and Provenance Notice
 
-## Proyecto original
+## Original project
 
-JARVIS Mark LI es una adaptación no comercial de **Mark XLVIII**, creado por
+JARVIS Mark LI is a non-commercial adaptation of **Mark XLVIII**, created by
 [FatihMakes](https://github.com/FatihMakes).
 
-- Fuente de referencia:
+- Reference source:
   [`FatihMakes/Mark-L`, commit `d178f6b`](https://github.com/FatihMakes/Mark-L/commit/d178f6b).
-- Licencia declarada por el autor original:
+- License stated by the original author:
   [Creative Commons Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/).
-- Condición esencial: uso personal y no comercial, con atribución e indicación
-  de modificaciones.
+- Essential condition: personal, non-commercial use with attribution and an
+  indication of modifications.
 
-Los derechos sobre el material original permanecen con FatihMakes y los demás
-titulares correspondientes.
+Rights in the original material remain with FatihMakes and the other
+applicable rights holders.
 
-## Adaptación Mark LI
+## Mark LI adaptation
 
 Copyright © 2026 Alejo Gaisser
-([`@alejogaisser`](https://github.com/alejogaisser), anteriormente
-`@AlejoGaisser07`) sobre sus contribuciones originales y modificaciones.
+([`@alejogaisser`](https://github.com/alejogaisser), formerly
+`@AlejoGaisser07`) for his original contributions and modifications.
 
-Entre los cambios sustanciales de Mark LI se encuentran:
+Substantial Mark LI changes include:
 
-- arquitectura de herramientas, permisos, trazabilidad y resultados tipados;
-- interfaz Mark LI, workspaces y transición entre aplicación y Pet Mode;
-- detector local “Hey Jarvis”, supervisión y recuperación de audio;
-- memoria, seguridad, auditoría y control operativo;
-- conectores y operaciones verificadas para servicios externos;
-- pruebas automatizadas, documentación técnica y mejoras de lifecycle.
+- tool architecture, permissions, traceability, and typed results;
+- the Mark LI interface, workspaces, and transition between the application
+  and Pet Mode;
+- the local “Hey Jarvis” detector, supervision, and audio recovery;
+- memory, security, auditing, and operational control;
+- connectors and verified operations for external services;
+- automated tests, technical documentation, and lifecycle improvements.
 
-El historial Git y `CHANGELOG.md` contienen el detalle cronológico. La licencia
-de las modificaciones sólo cubre derechos que correspondan a su autor y no
-relicencia material preexistente o de terceros.
+The Git history and `CHANGELOG.md` provide the chronological details. The
+license for these modifications covers only rights owned by their author and
+does not relicense pre-existing or third-party material.
 
-## Terceros y marcas
+## Third parties and trademarks
 
-Los componentes externos conservan sus propias licencias, documentadas en
+External components retain their own licenses, documented in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Este es un proyecto independiente. No está afiliado, patrocinado ni aprobado
-por Marvel Entertainment, Marvel Studios, The Walt Disney Company ni por los
-titulares de las marcas asociadas a JARVIS o Iron Man. Las marcas, nombres y
-personajes de terceros pertenecen a sus respectivos titulares.
+This is an independent project. It is not affiliated with, sponsored by, or
+endorsed by Marvel Entertainment, Marvel Studios, The Walt Disney Company, or
+any owner of trademarks associated with JARVIS or Iron Man. Third-party
+trademarks, names, and characters belong to their respective owners.

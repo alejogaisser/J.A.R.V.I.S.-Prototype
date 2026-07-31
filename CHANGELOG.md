@@ -1,52 +1,73 @@
-# Historial de versiones
+# Changelog
 
-## Preparación de publicación pública — 2026-07-31
+## English documentation — 2026-07-31
 
-- se agregó `NOTICE.md` con la procedencia exacta de Mark XLVIII, su autor,
-  licencia y commit de referencia;
-- la atribución de Mark LI identifica a Alejo Gaisser mediante su cuenta actual
-  `@alejogaisser` y conserva `@AlejoGaisser07` como alias histórico;
-- se aclaró que Mark LI publica código fuente para uso personal y no comercial,
-  sin reclamar derechos sobre material original o de terceros;
-- se incorporó un aviso de no afiliación con Marvel/Disney;
-- la plantilla OAuth de Google ahora usa placeholders inequívocos;
-- `output/` quedó excluido para evitar publicar artefactos generados;
-- se añadieron pruebas de regresión para créditos, placeholders, modelos y
-  metadatos de publicación.
-- los cambios de Google Workspace, wake, arranque y publicación se portaron al
-  `main` moderno preservando sus contratos de policy, providers y trazabilidad.
+- translated the public-facing README, license, attribution notice, security
+  policy, third-party notices, and changelog into English;
+- translated `ARCHITECTURE.md`, `ROADMAP.md`, `AUDIT.md`, and every technical
+  guide under `docs/` into English;
+- preserved commands, paths, API names, legal meaning, authorship, and the
+  previous maintainer alias;
+- preserved Markdown tables, diagrams, code blocks, links, and contractual
+  identifiers; local-only instructions and the private Obsidian project log
+  remain in Spanish.
 
-## Publicación segura — 2026-07-23
+## Public release preparation — 2026-07-31
 
-- se incorporaron la licencia del proyecto, los avisos de terceros y la
-  política de seguridad;
-- se excluyeron del versionado las instrucciones locales de desarrollo;
-- se preparó la eliminación de rutas personales de todos los commits y tags
-  públicos sin alterar el código de las versiones.
+- added `NOTICE.md` with the exact provenance, author, license, and reference
+  commit for Mark XLVIII;
+- identified Alejo Gaisser through the current `@alejogaisser` account while
+  preserving `@AlejoGaisser07` as the historical alias;
+- clarified that Mark LI publishes source code for personal, non-commercial
+  use without claiming rights over original or third-party material;
+- added a non-affiliation notice for Marvel and Disney;
+- replaced Google OAuth example values with unambiguous placeholders;
+- excluded `output/` to prevent generated artifacts from being published;
+- added regression tests for credits, placeholders, models, and publication
+  metadata;
+- ported the Google Workspace, wake, startup, and publication changes to the
+  modern `main` branch while preserving its policy, provider, and traceability
+  contracts.
+
+## Safe publication — 2026-07-23
+
+- added the project license, third-party notices, and security policy;
+- excluded local development instructions from version control;
+- prepared the removal of personal paths from all public commits and tags
+  without changing the code in those versions.
 
 ## 2.0.0 — Mark LI — 2026-07-23
 
-Mark LI consolida la evolución actual de JARVIS como una actualización mayor:
+Mark LI consolidates the current evolution of JARVIS as a major update:
 
-- nueva interfaz holográfica con Core, Pet Mode y workspaces;
-- activación local “Hey Jarvis” con OpenWakeWord y fallback Vosk;
-- corrección del desfase entre voz y score neuronal, sin reducir los umbrales contra falsos positivos;
-- recuperación automática del stream de audio después de mute, silencio o bloqueo del driver;
-- memoria controlable, vencimientos y grafo exclusivo de recuerdos reales;
-- registro central de herramientas, permisos por riesgo y confirmaciones de voz;
-- Study para matemática, física, química, anatomía y visualizaciones 2D/3D;
-- GEO con mapas abiertos, geocodificación, rutas y clima;
-- sesión principal compartida para voz y cámara;
-- conectores reforzados para Google y Outlook;
-- diagnóstico sanitizado, supervisión del detector y ciclo de cierre recuperable;
-- 211 pruebas automatizadas, 28 subpruebas aprobadas y una prueba opcional omitida en el entorno validado.
+- new holographic interface with Core, Pet Mode, and workspaces;
+- local “Hey Jarvis” activation with OpenWakeWord and Vosk fallback;
+- corrected the offset between voice input and neural score without reducing
+  false-positive thresholds;
+- automatic audio stream recovery after mute, silence, or driver lockups;
+- user-controlled memory, expiration, and a graph containing only real
+  memories;
+- central tool registry, risk-based permissions, and voice confirmations;
+- Study workspace for mathematics, physics, chemistry, anatomy, and 2D/3D
+  visualizations;
+- GEO workspace with open maps, geocoding, routing, and weather;
+- shared primary session for voice and camera;
+- hardened Google and Outlook connectors;
+- sanitized diagnostics, detector supervision, and recoverable shutdown;
+- 211 automated tests, 28 passing subtests, and one optional test skipped in
+  the validated environment.
 
-Esta versión reemplaza a la anterior como contenido predeterminado de `main`. Los archivos privados, credenciales, memoria personal, logs, workspaces locales y modelos Vosk no forman parte del repositorio.
+This release replaces the previous version as the default content of `main`.
+Private files, credentials, personal memory, logs, local workspaces, and Vosk
+models are not part of the repository.
 
 ## 1.5 — Legacy
 
-Última versión anterior a la migración Mark LI. Permanece congelada en el tag `v1.5-legacy`, desde donde puede consultarse o descargarse sin mantener una copia duplicada dentro de `main`.
+The last version before the Mark LI migration remains frozen under the
+`v1.5-legacy` tag. It can be inspected or downloaded from there without
+keeping a duplicate copy on `main`.
 
-## Origen
+## Origin
 
-JARVIS Mark LI deriva de Mark XLVIII, creado por FatihMakes, y conserva su atribución y licencia no comercial.
+JARVIS Mark LI derives from Mark XLVIII, created by FatihMakes, and preserves
+its attribution and non-commercial license.

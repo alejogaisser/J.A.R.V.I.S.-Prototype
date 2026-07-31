@@ -1,95 +1,95 @@
-# Supervisión y health de workers
+# Supervision and health of workers
 
-## Alcance
+## Scope
 
-La Fase 12 implementa el `P2 Workers` del documento rector. El nuevo
-`services.workers.WorkerSupervisor` administra workers existentes mediante
-callbacks tipados de `start`, `stop` y `health`; no reemplaza su trabajo ni
-introduce un segundo runtime.
+Phase 12 implements the `P2 Workers` of the governing document.
+`services.workers.WorkerSupervisor` administers existing workers through
+typed callbacks of `start`, `stop` and `health`; does not replace your work or
+enter a second runtime.
 
-Los pilotos son:
+The pilots are:
 
-- sesiones Playwright de `actions.browser_control`;
-- sesión Live heredada de `actions.screen_processor`.
+- Playwright sessions of `actions.browser_control`;
+- Live session inherited from `actions.screen_processor`.
 
-No se modifican Gemini Live principal, PCM, cámara física, UI visual, wake word
-ni providers.
+No change Gemini Live principal, PCM, physical camera, visual UI, wake word
+No suppliers.
 
-## Contrato
+## Contract
 
-Cada `WorkerSpec` declara un nombre seguro, callbacks, presupuesto de reinicios
-y backoff. El supervisor expone snapshots inmutables con:
+Each `WorkerSpec` declares a secure name, callbacks, reset budget
+and backoff. The supervisor exposes immutable snapshots with:
 
-- fase (`stopped`, `starting`, `running`, `degraded`, `restarting`,
-  `stopping` o `failed`);
-- intención de ejecución;
-- health actual;
-- starts, restarts y failures;
-- último error sanitizado y tiempo monotónico de transición.
+- phase (`stopped`, `starting`, `running`, `degraded`, `restarting`,
+`stopping` or `failed`);
+- intention to implement;
+- current health;
+- start, subtract and failure;
+- last sanitized error and transition monotonic time.
 
-`start()`, `cancel()` y `close()` son idempotentes. Un monitor local realiza
-health checks acotados y publica `WorkerStateChanged` sin payloads. Los eventos
-sólo contienen nombre, fase y contadores allowlisted.
+`start()`, `cancel()` and `close()` are idepotent. A local monitor performs
+health checks limited and publishes `WorkerStateChanged` without payloads. Events
+only contain name, phase and counters allowed.
 
-## Regla anti-duplicación
+## Anti-duplication rule
 
-Un worker muerto o no responsivo se detiene antes de consumir presupuesto de
-restart. El supervisor sólo reinicia si el adaptador demuestra que el recurso
-anterior dejó de estar healthy y `stop()` no informó error.
+A dead or non-responsive worker stops before consuming budget
+restart. The supervisor only restarts if the adapter proves that the resource
+previous was no longer healthy and `stop()` reported no error.
 
-Si cleanup falla o el worker sigue vivo:
+If cleanup fails or the worker is still alive:
 
-1. la fase pasa a `failed`;
-2. se desactiva la intención de ejecución;
-3. no se inicia otro worker;
-4. el fallo queda disponible en health y logging.
+1. the phase passes to `failed`;
+2. the intention to execute is deactivated;
+3. no other worker is started;
+4. the bug is available in health and logging.
 
-Esta regla prefiere degradación visible sobre threads, loops o procesos
-duplicados.
+This rule prefers visible degradation over threads, loops or processes
+duplicates.
 
-## Piloto de navegador
+## Browser Pilot
 
-`_BrowserSession.stop()` ahora cierra contexto y Playwright, detiene el event
-loop y hace `join` del thread. `start()` limpia estado anterior y puede crear un
-thread nuevo. Health envía un callback al loop y exige respuesta dentro del
-timeout; `thread.is_alive()` por sí solo no se considera evidencia suficiente.
+`_BrowserSession.stop()` now closes context and Playwright, stops event
+loop and makes `join` from thread. `start()` clean state above and can create a
+new thread. Health sends a callback to the loop and demands response within the
+timeout; `thread.is_alive()` alone is not considered sufficient evidence.
 
-`_SessionRegistry` registra cada navegador con el supervisor, desregistra al
-cerrar y ofrece snapshots. El composition root ejecuta el cleanup global al
-salir.
+`_SessionRegistry` registers each browser with the supervisor, unregisters to
+close and offer snapshots. Composition root runs the global cleanup at
+Get out.
 
-## Piloto de visión
+## Vision Pilot
 
-`_VisionSession` conserva la tarea raíz de su event loop. `stop()` la cancela,
-espera el thread y deja que los `finally` existentes cierren el stream de audio.
-El loop también responde a un ping de health. La conexión, modelos, blobs y
-reintentos internos de Gemini permanecen heredados.
+`_VisionSession` retains the root task of its event loop. `stop()` cancels it,
+wait for the thread and let the existing `finally` shut down the audio stream.
+The loop also responds to a health ping. Connection, models, blobs and
+Gemini's internal attempts remain inherited.
 
-## Pruebas
+## Evidence
 
-`tests/test_worker_supervisor.py` usa fakes y loops sin hardware para cubrir:
+`tests/test_worker_supervisor.py` uses hardware-free fakes and loops to cover:
 
-- doble start/cancel/close;
-- concurrencia de start;
-- worker muerto y no responsivo;
-- backoff y presupuesto agotado;
-- fallo de startup y cleanup;
-- bloqueo de restart cuando habría duplicación;
-- orden y sanitización de eventos;
-- logging allowlisted;
-- restart/cierre real de loops browser y visión sin Playwright, cámara, audio,
-  red ni Gemini;
-- cleanup configurado en `main.py`.
+- double start/cancell/close;
+- start attendance;
+- dead and non-responsible worker;
+- backoff and exhausted budget;
+- startup and cleanup failure;
+- blocking of restart when there would be duplication;
+- order and sanitization of events;
+- logging allowed;
+- real restore/close loops browser and vision without Playwright, camera, audio,
+network or Gemini;
+- cleanup configured in `main.py`.
 
-El baseline local de la fase aprobó 369 tests y 104 subtests.
+The local phase baseline approved 369 tests and 104 subtests.
 
-## Riesgos y rollback
+## Risks and rollback
 
-Los callbacks de health deben ser breves. El supervisor no puede terminar por
-fuerza un thread Python arbitrario: esa responsabilidad queda en el adaptador.
-Los pilotos usan cancelación del loop y join acotado; un fallo queda `failed` y
-no se reinicia.
+Health callbacks should be brief. The supervisor cannot end up with
+force an arbitrary Python thread: that responsibility is left in the adapter.
+Pilots use loop and joint cancellation; a bug is left `failed` and
+It doesn't restart.
 
-Rollback: retirar la configuración/cleanup del composition root y volver a
-invocar `start()`/`close()` directamente en los dos adaptadores. El supervisor
-no altera sus payloads ni APIs funcionales.
+Rollback: Remove the configuration/cleanup from the composition root and return to
+invoke `start()`/`close()` directly into the two adapters.
+does not alter your payloads or functional APIs.

@@ -1,54 +1,68 @@
 # JARVIS — Mark LI
 
-**Versión actual: 2.0.0 — Mark LI**
+**Current version: 2.0.0 — Mark LI**
 
-Asistente personal de escritorio para Windows con conversación por voz en tiempo real, activación local, interfaz holográfica, memoria controlable, visión, herramientas científicas, automatizaciones e integraciones con servicios externos.
+A desktop personal assistant for Windows featuring real-time voice
+conversation, local wake-word activation, a holographic interface,
+user-controlled memory, vision, scientific tools, automation, and integrations
+with external services.
 
-Mark LI es una evolución amplia del proyecto anterior: reorganiza la interfaz, el ciclo de audio, la memoria, los permisos y el registro de herramientas, pero conserva la atribución a **Mark XLVIII**, de [FatihMakes](https://github.com/FatihMakes/Mark-XLVIII).
+Mark LI is a substantial evolution of the earlier project. It reorganizes the
+interface, audio lifecycle, memory, permissions, and tool registry while
+preserving attribution to **Mark XLVIII** by
+[FatihMakes](https://github.com/FatihMakes/Mark-XLVIII).
 
-La versión anterior publicada permanece preservada mediante el tag `v1.5-legacy`. Los cambios principales de cada versión están documentados en [CHANGELOG.md](CHANGELOG.md).
+The previous published version is preserved under the `v1.5-legacy` tag. See
+[CHANGELOG.md](CHANGELOG.md) for the major changes in each release.
 
-> El proyecto puede controlar aplicaciones, archivos y servicios conectados. Revisá las confirmaciones antes de autorizar acciones sensibles y nunca publiques tus claves o configuraciones privadas.
+> JARVIS can control applications, files, and connected services. Review every
+> confirmation before authorizing sensitive actions, and never publish your
+> keys or private configuration.
 
-## Funciones principales
+## Highlights
 
-- Conversación de voz de baja latencia mediante Gemini Live.
-- Inicio directo o activación local “Hey Jarvis” mediante OpenWakeWord, con Vosk como respaldo.
-- Recuperación automática del micrófono después de mute, silencio o bloqueo del driver.
-- Interrupción inmediata de la respuesta mediante `Esc` o desde la interfaz.
-- Interfaz Mark LI con Core, Pet Mode y workspaces especializados.
-- Captura de pantalla y cámara continua dentro de la sesión principal.
-- Control de aplicaciones, ventanas, teclado, mouse, volumen, brillo y archivos.
-- Búsqueda web, noticias, clima, vuelos, YouTube y recordatorios.
-- Memoria persistente controlable y grafo formado exclusivamente por recuerdos reales.
-- Study para matemática, gráficos 2D/3D, matrices, física, química y anatomía educativa.
-- GEO con mapas, geocodificación, rutas y clima mediante servicios abiertos.
-- Integración con un vault de Obsidian.
-- Conectores OAuth para Gmail, Google Calendar, Google Drive y Outlook.
-- Dashboard local para usar JARVIS desde el teléfono, enviar comandos, audio y archivos.
-- Sistema central de herramientas con permisos y confirmaciones según el nivel de riesgo.
-- Agente de desarrollo, procesamiento de archivos y ayuda con código.
+- Low-latency voice conversations powered by Gemini Live.
+- Direct startup or local “Hey Jarvis” activation through OpenWakeWord, with
+  Vosk as a fallback.
+- Automatic microphone recovery after mute, silence, or driver lockups.
+- Immediate response interruption with `Esc` or from the interface.
+- Mark LI interface with Core, Pet Mode, and specialized workspaces.
+- Continuous screen and camera capture within the primary session.
+- Control of applications, windows, keyboard, mouse, volume, brightness, and
+  files.
+- Web search, news, weather, flights, YouTube, and reminders.
+- User-controlled persistent memory and a graph built only from real memories.
+- Study tools for mathematics, 2D/3D plots, matrices, physics, chemistry, and
+  educational anatomy.
+- GEO workspace with open maps, geocoding, routing, and weather.
+- Integration with an Obsidian vault.
+- OAuth connectors for Gmail, Google Calendar, Google Drive, Google Docs,
+  Google Sheets, Google Slides, and Outlook.
+- Local dashboard for using JARVIS from a phone and sending commands, audio,
+  and files.
+- Central tool system with risk-based permissions and confirmations.
+- Development agent, file processing, and coding assistance.
 
-## Requisitos
+## Requirements
 
-| Componente | Requisito |
+| Component | Requirement |
 | --- | --- |
-| Sistema operativo | Windows 10/11 recomendado; algunas funciones también contemplan macOS y Linux |
-| Python | 3.12 a 3.14, 64 bits |
-| Hardware | Micrófono; cámara opcional |
-| Servicio de IA | Clave de Gemini API |
-| Palabra de activación | Modelos OpenWakeWord incluidos; Vosk es el respaldo configurable |
+| Operating system | Windows 10/11 recommended; some features also support macOS and Linux |
+| Python | 3.12 to 3.14, 64-bit |
+| Hardware | Microphone; optional camera |
+| AI service | Gemini API key |
+| Wake word | Bundled OpenWakeWord models; configurable Vosk fallback |
 
-## Instalación
+## Installation
 
-Cloná el repositorio y entrá a la carpeta:
+Clone the repository and enter its directory:
 
 ```powershell
 git clone https://github.com/alejogaisser/J.A.R.V.I.S.-Prototype.git
 cd J.A.R.V.I.S.-Prototype
 ```
 
-Creá un entorno virtual e instalá las dependencias:
+Create a virtual environment and install the dependencies:
 
 ```powershell
 py -3.12 -m venv .venv
@@ -58,140 +72,151 @@ python -m pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
-También se puede ejecutar el instalador incluido:
+You may also run the bundled installer:
 
 ```powershell
 python setup.py
 ```
 
-## Configuración inicial
+## Initial configuration
 
-Copiá el archivo de ejemplo y completá tu clave de Gemini:
+Copy the example file and add your Gemini key:
 
 ```powershell
 Copy-Item config\api_keys.example.json config\api_keys.json
 ```
 
-Ejemplo mínimo:
+Minimal example:
 
 ```json
 {
   "vision_model": "gemini-3.5-flash",
   "vision_fallback_model": "gemini-3.1-flash-lite",
-  "gemini_api_key": "TU_CLAVE",
+  "gemini_api_key": "YOUR_KEY",
   "os_system": "windows",
   "camera_index": 0
 }
 ```
 
-`config/api_keys.json` está ignorado por Git. No lo agregues manualmente al repositorio.
+`config/api_keys.json` is ignored by Git. Never add it to the repository.
 
-## Ejecución
+## Running JARVIS
 
-### Inicio directo
+### Direct startup
 
 ```powershell
 python jarvis_launcher.py --mode direct
 ```
 
-### Activación por voz
+### Voice activation
 
-Los tres modelos ONNX necesarios para “Hey Jarvis” están incluidos en `models/openwakeword/`. Ejecutá:
+The three ONNX models required for “Hey Jarvis” are bundled in
+`models/openwakeword/`. Run:
 
 ```powershell
 python jarvis_launcher.py --mode wake
 ```
 
-OpenWakeWord comienza a escuchar apenas carga el detector dedicado; Vosk se
-prepara en segundo plano y se adjunta después como respaldo. Al detectar la
-frase, JARVIS restaura y abre la aplicación base en pantalla completa. La UI
-muestra su primer frame antes de cargar el SDK de Gemini; el saludo inicial se
-reintenta si la primera sesión se interrumpe. Pet Mode se activa únicamente
-desde la propia interfaz o mediante una orden explícita durante la sesión.
+OpenWakeWord starts listening as soon as its dedicated detector is ready. Vosk
+loads in the background and is attached later as a fallback. When the phrase
+is detected, JARVIS restores and opens the base application in full-screen
+mode. The UI renders its first frame before loading the Gemini SDK, and the
+initial greeting is retried if the first session is interrupted. Pet Mode is
+enabled only from the interface or through an explicit command during a
+session.
 
-Para ejecutar temporalmente el detector con diagnóstico visible:
+To temporarily run the detector with visible diagnostics:
 
 ```powershell
 python jarvis_launcher.py --mode wake --console
 ```
 
-Las frases personalizadas usan Vosk como respaldo. Descargá un modelo compatible dentro de `models/` y configurá su ruta:
+Custom phrases use Vosk as a fallback. Download a compatible model into
+`models/` and configure its path:
 
 ```powershell
-python jarvis_launcher.py --configure --phrases "oye jarvis" --model "models/vosk-model-small-en-us-0.15" --sensitivity 180
+python jarvis_launcher.py --configure --phrases "hey jarvis" --model "models/vosk-model-small-en-us-0.15" --sensitivity 180
 ```
 
-La configuración generada se guarda en `config/wake_word.json` y no se publica en Git.
+The generated configuration is stored in `config/wake_word.json` and is not
+committed to Git.
 
-## Integraciones opcionales
+## Optional integrations
 
 ### Obsidian
 
-Copiá el ejemplo y configurá la ruta de tu vault:
+Copy the example and configure your vault path:
 
 ```powershell
 Copy-Item config\obsidian.example.json config\obsidian.json
 ```
 
-Las escrituras y modificaciones requieren confirmación por seguridad.
+Writes and modifications require confirmation for safety.
 
-### Google
+### Google Workspace
 
-Para Gmail, Google Calendar y Google Drive, incluidos Google Docs, Sheets y
-Presentations, creá credenciales OAuth de aplicación de escritorio y guardalas
-con la estructura indicada en:
+For Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, and
+Google Slides, create desktop OAuth credentials and save them using the
+structure shown in:
 
 ```text
 config/google_oauth_client.example.json
 ```
 
-El archivo real debe llamarse `config/google_oauth_client.json`.
+The real file must be named `config/google_oauth_client.json`.
 
-En el mismo proyecto de Google Cloud habilitá **Google Drive API**, **Google
-Docs API**, **Google Sheets API** y **Google Slides API**. JARVIS reutiliza el
-owner OAuth y el token protegido del conector de Drive; no abre una ruta de
-automatización visual paralela. Las búsquedas, lecturas y exportaciones son
-directas después de autorizar la cuenta. Crear o editar archivos remotos pasa
-por la confirmación central y verifica el efecto mediante la API.
+Enable the **Google Drive API**, **Google Docs API**, **Google Sheets API**, and
+**Google Slides API** in the same Google Cloud project. JARVIS reuses the Drive
+connector's OAuth owner and protected token instead of opening a parallel
+visual-automation path. Searches, reads, and exports are direct after account
+authorization. Creating or editing remote files goes through the central
+confirmation flow and verifies the effect through the API.
 
 ### Microsoft Outlook
 
-Registrá una aplicación en Microsoft Entra y creá:
+Register an application in Microsoft Entra and create:
 
 ```text
 config/microsoft_oauth_client.json
 ```
 
-Usá `config/microsoft_oauth_client.example.json` como referencia. Los tokens OAuth se almacenan en el gestor de credenciales del sistema mediante `keyring`, no en el repositorio.
+Use `config/microsoft_oauth_client.example.json` as a reference. OAuth tokens
+are stored in the operating system credential manager through `keyring`, not
+in the repository.
 
-## Permisos y seguridad
+## Permissions and security
 
-Las herramientas se clasifican por riesgo. Las acciones destructivas o sensibles —por ejemplo, borrar o mover archivos, enviar mensajes, modificar Obsidian o ejecutar tareas de desarrollo— solicitan confirmación.
+Tools are classified by risk. Destructive or sensitive actions—such as
+deleting or moving files, sending messages, modifying Obsidian, or running
+development tasks—require confirmation.
 
-La política local se puede personalizar a partir de:
+Customize the local policy from:
 
 ```powershell
 Copy-Item config\permissions.example.json config\permissions.json
 ```
 
-No desactives confirmaciones para herramientas sensibles sin revisar previamente su alcance.
+Do not disable confirmations for sensitive tools without reviewing their full
+scope.
 
-## Archivos privados y respaldo
+## Private files and backups
 
-El `.gitignore` excluye, entre otros:
+The `.gitignore` excludes, among other items:
 
-- claves API y archivos `.env`;
-- clientes OAuth y certificados locales;
-- configuración personal y auditoría de conectores;
-- memoria personal de JARVIS;
-- modelos Vosk;
-- entornos virtuales, cachés y logs.
+- API keys and `.env` files;
+- OAuth clients and local certificates;
+- personal configuration and connector audit data;
+- JARVIS personal memory;
+- Vosk models;
+- virtual environments, caches, and logs.
 
-Estos archivos **no se recuperan al clonar el repositorio**. Guardalos en una copia privada y cifrada antes de reinstalar el sistema. Nunca los publiques en GitHub, aunque el repositorio sea privado.
+These files **are not restored when you clone the repository**. Keep an
+encrypted private backup before reinstalling your system. Never publish them
+to GitHub, even in a private repository.
 
-## Pruebas
+## Testing
 
-Instalá las dependencias de desarrollo (incluyen el runtime y pytest):
+Install the development dependencies, which include the runtime and pytest:
 
 ```powershell
 python -m pip install -r requirements-dev.txt
@@ -201,72 +226,72 @@ python -m pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-La línea base completa y reproducible (dependencias, launcher, imports, tool
-inventory, sintaxis, tests y diff) se ejecuta con:
+Run the complete reproducible baseline—dependencies, launcher, imports, tool
+inventory, syntax, tests, and diff—with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\validate_baseline.ps1 `
   -Python .\.venv\Scripts\python.exe
 ```
 
-Consultá [docs/baseline.md](docs/baseline.md) para el alcance, limitaciones y
-procedimiento de instalación limpia, y
-[docs/tool_migration_matrix.md](docs/tool_migration_matrix.md) para el
-inventario contractual de las 37 herramientas.
+See [docs/baseline.md](docs/baseline.md) for scope, limitations, and the clean
+installation procedure, and
+[docs/tool_migration_matrix.md](docs/tool_migration_matrix.md) for the
+contractual inventory of the 37 tools.
 
-Para comprobar únicamente la sintaxis del proyecto:
+To check project syntax only:
 
 ```powershell
 python -m compileall -q .
 ```
 
-## Estructura del proyecto
+## Project structure
 
 ```text
 .
-├── main.py                    # Sesión principal, audio y despacho de herramientas
-├── jarvis_launcher.py         # Inicio directo o por palabra de activación
-├── wake_word.py               # OpenWakeWord, fallback Vosk y diagnóstico acústico
-├── ui.py                      # Interfaz gráfica PyQt6
-├── ui_mk2/                    # Core, Pet y workspaces visuales Mark LI
-├── actions/                   # Acciones disponibles para JARVIS
-├── connectors/                # Gmail, Calendar, Drive y Outlook
+├── main.py                    # Primary session, audio, and tool dispatch
+├── jarvis_launcher.py         # Direct or wake-word startup
+├── wake_word.py               # OpenWakeWord, Vosk fallback, and audio diagnostics
+├── ui.py                      # PyQt6 graphical interface
+├── ui_mk2/                    # Mark LI Core, Pet Mode, and visual workspaces
+├── actions/                   # Actions available to JARVIS
+├── connectors/                # Gmail, Calendar, Drive, and Outlook
 ├── core/
-│   ├── permissions/           # Política, niveles de riesgo y confirmaciones
-│   ├── tools/                 # Registro y ejecución central de herramientas
-│   ├── installer.py           # Instalación de componentes opcionales
-│   ├── security.py            # Reglas adicionales de seguridad
-│   └── prompt.txt             # Personalidad e instrucciones del asistente
-├── dashboard/                 # Panel web local y conexión con el teléfono
-├── memory/                    # Gestores de memoria persistente y scripts
-├── models/openwakeword/       # Modelos ONNX mínimos para “Hey Jarvis”
-├── config/                    # Ejemplos y configuración local ignorada
-├── tests/                     # Pruebas automatizadas
-└── utils/                     # Rutas y archivos temporales
+│   ├── permissions/           # Policy, risk levels, and confirmations
+│   ├── tools/                 # Central tool registry and execution
+│   ├── installer.py           # Optional component installation
+│   ├── security.py            # Additional security rules
+│   └── prompt.txt             # Assistant personality and instructions
+├── dashboard/                 # Local web panel and phone connection
+├── memory/                    # Persistent-memory managers and scripts
+├── models/openwakeword/       # Minimal ONNX models for “Hey Jarvis”
+├── config/                    # Examples and ignored local configuration
+├── tests/                     # Automated tests
+└── utils/                     # Paths and temporary files
 ```
 
-## Créditos y licencia
+## Credits and license
 
-JARVIS Mark LI deriva de **Mark XLVIII**, creado por
-[FatihMakes](https://github.com/FatihMakes). La versión original de referencia
-es el [commit `d178f6b`](https://github.com/FatihMakes/Mark-L/commit/d178f6b).
-Esta adaptación conserva el uso personal y no comercial establecido por el
-autor original e identifica sus modificaciones en [NOTICE.md](NOTICE.md).
+JARVIS Mark LI derives from **Mark XLVIII**, created by
+[FatihMakes](https://github.com/FatihMakes). The reference version is
+[commit `d178f6b`](https://github.com/FatihMakes/Mark-L/commit/d178f6b).
+This adaptation preserves the original author's personal, non-commercial use
+terms and identifies its modifications in [NOTICE.md](NOTICE.md).
 
-Las contribuciones y modificaciones de Mark LI corresponden a
-[Alejo Gaisser (`@alejogaisser`)](https://github.com/alejogaisser),
-anteriormente `@AlejoGaisser07`.
+The Mark LI contributions and modifications are by
+[Alejo Gaisser (`@alejogaisser`)](https://github.com/alejogaisser), formerly
+`@AlejoGaisser07`.
 
-Las modificaciones originales de Mark LI se publican, en la medida en que sus
-derechos correspondan al mantenedor, bajo
-[Creative Commons BY-NC 4.0](LICENSE.md). Es código fuente público para uso
-personal y no comercial; no se presenta como un proyecto open source conforme
-a la definición OSI.
+To the extent that the maintainer owns the relevant rights, the original Mark
+LI modifications are published under
+[Creative Commons BY-NC 4.0](LICENSE.md). This is publicly available source
+code for personal, non-commercial use; it is not represented as open-source
+software under the OSI definition.
 
-Los modelos de wake word y demás componentes externos mantienen licencias
-propias. Consultá [los avisos de terceros](THIRD_PARTY_NOTICES.md) y la
-[política de seguridad](SECURITY.md) antes de publicar un fork.
+Wake-word models and other external components remain subject to their own
+licenses. Review [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
+[SECURITY.md](SECURITY.md) before publishing a fork.
 
-Este proyecto es independiente y no está afiliado, patrocinado ni aprobado por
-Marvel Entertainment, Marvel Studios, The Walt Disney Company ni por los
-titulares de las marcas asociadas a JARVIS o Iron Man.
+This independent project is not affiliated with, sponsored by, or endorsed by
+Marvel Entertainment, Marvel Studios, The Walt Disney Company, or any owner
+of trademarks associated with JARVIS or Iron Man.

@@ -1,67 +1,67 @@
-# Eventos tipados de runtime
+# Typed runtime events
 
-## Alcance
+## Scope
 
-La Fase 11 implementa el `P2 Event bus` del PDF únicamente para hechos que
-cruzan fronteras. `core.events.EventBus` conecta owners de runtime, dashboard,
-composition root y logging sin transportar comandos ni sustituir llamadas
-locales.
+Phase 11 implements the PDF `P2 Event bus` only for facts that
+`core.events.EventBus` connects runners time, dashboard,
+composition root and logging without transporting commands or replacing calls
+local.
 
-Eventos actuales:
+Current events:
 
-- `SessionStateChanged`: conexión, desconexión y reconexión;
-- `AudioInterruptionChanged`: inicio, liberación y reset de una interrupción;
-- `VisionAnalysisChanged`: inicio, fin y reset de análisis;
-- `ShutdownStateChanged`: solicitud y comienzo efectivo del cierre;
-- `DashboardConnected`: conexión por PIN, QR o dispositivo conocido;
-- `InputReceived`: presencia de texto/wake remoto, nunca su contenido.
+- `SessionStateChanged`: connection, disconnection and reconnection;
+- `AudioInterruptionChanged`: start, release and reset of an interruption;
+- `VisionAnalysisChanged`: start, end and reset of analysis;
+- `ShutdownStateChanged`: request and effective start of closure;
+- `DashboardConnected`: connection by PIN, QR or known device;
+- `InputReceived`: presence of remote text/wake, never its content.
 
-## Invariantes
+## Invariants
 
-- Los eventos son dataclasses inmutables con `event_id`, UTC y tiempo
-  monotónico.
-- `request_id` sólo se incluye cuando ya existe un identificador seguro; visión
-  y shutdown conservan el de la tool que originó la transición.
-- No se publican texto, prompts, audio, imágenes, tokens, device IDs ni cuerpos.
-- Los owners construyen el evento dentro del lock y lo publican después de
-  liberarlo.
-- Los handlers se copian bajo lock y se ejecutan en orden, sin mantener el lock
-  del bus.
-- Un handler fallido no impide los siguientes ni revierte la transición.
-- La entrega es síncrona: un subscriber debe ser breve o encolar su propio
-  trabajo.
+- Events are immutable dataclasses with `event_id`, UTC and time
+monotonic.
+- `request_id` is only included when a secure identifier already exists; vision
+and shutdown retain that of the tool that originated the transition.
+- No text, prompts, audio, images, tokens, device IDs or bodies are published.
+- Owners build the event inside the lock and post it after
+release him.
+- Handlers are copied under lock and executed in order, without keeping the lock
+from the bus.
+- A failed handler does not prevent the following or reverse the transition.
+- Delivery is synchronous: a subscriber should be brief or glue his own
+I work.
 
-## Compatibilidad
+## Compatibility
 
-El composition root consume `DashboardConnected` en lugar de registrar un
-callback directo. `DashboardServer.set_connect_callback()` y
-`set_wake_callback()` permanecen como adaptadores heredados para consumidores
-externos, pero JARVIS ya no depende de ellos.
+The composition root consumes `DashboardConnected` instead of registering a
+direct callback. `DashboardServer.set_connect_callback()` and
+`set_wake_callback()` remain as legacy adapters for consumers
+But JARVIS no longer depends on them.
 
-`StructuredRuntimeLog.record_runtime_event()` consume la metadata allowlisted
-y correlaciona por `event_id`/`request_id`. El logging continúa siendo best
-effort y no recibe payload sensible.
+`StructuredRuntimeLog.record_runtime_event()` consumes the metadata allowed
+and correlation by `event_id`/`request_id`. Logging continues to be best
+Effort and does not receive sensitive payload.
 
-## Pruebas
+## Evidence
 
-`tests/test_runtime_events.py` cubre:
+`tests/test_runtime_events.py` covers:
 
-- orden, desuscripción y reentrancia;
-- publicación concurrente;
-- aislamiento de excepciones;
-- eventos reales de los cuatro owners;
-- correlación de visión/shutdown;
-- compatibilidad de callbacks del dashboard;
-- ausencia de datos de comando/token/device;
-- serialización allowlisted;
-- composición sin callback directo dashboard→runtime.
+- order, desubscription and re-entry;
+- concurrent publication;
+- isolation of exceptions;
+- real events of the four owners;
+- vision/shutdown correlation;
+- dashboard callback compatibility;
+- absence of command/taken/device data;
+- serialization allowed;
+- composition without direct callback dashboard→runtime.
 
-## Riesgos y rollback
+## Risks and rollback
 
-El bus es local al proceso y no persiste ni reintenta eventos. La entrega
-síncrona no es adecuada para IO lento. Los callbacks heredados de wake y cámara
-siguen fuera de este piloto.
+The bus is local to the process and does not persist or retry events.
+synchronous is not suitable for slow IO. Callbacks inherited from wake and camera
+They're still out of this pilot.
 
-Rollback: construir `RuntimeServices` sin un bus compartido, retirar la
-suscripción del logger y volver temporalmente al setter de conexión del
-dashboard. Los owners y sus APIs públicas conservan defaults compatibles.
+Rollback: build `RuntimeServices` without a shared bus, remove the
+logger subscription and temporarily return to the connection setter
+dashboard. Owners and their public APIs retain supported defaults.

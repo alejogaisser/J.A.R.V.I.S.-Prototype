@@ -47,7 +47,7 @@ class PublicReleaseMetadataTests(unittest.TestCase):
                 content = (ROOT / relative_path).read_text(encoding="utf-8")
                 self.assertIn("FatihMakes", content)
                 self.assertIn(UPSTREAM_COMMIT_URL, content)
-                self.assertIn("no comercial", content.casefold())
+                self.assertIn("non-commercial", content.casefold())
 
     def test_non_affiliation_disclaimer_is_visible(self):
         for relative_path in ("LICENSE.md", "NOTICE.md", "readme.md"):
@@ -55,7 +55,7 @@ class PublicReleaseMetadataTests(unittest.TestCase):
                 content = (ROOT / relative_path).read_text(encoding="utf-8")
                 self.assertIn("Marvel", content)
                 self.assertIn("The Walt Disney Company", content)
-                self.assertIn("no está afiliado", content.casefold())
+                self.assertIn("not affiliated", content.casefold())
 
     def test_current_maintainer_identity_preserves_previous_alias(self):
         for relative_path in ("LICENSE.md", "NOTICE.md", "readme.md"):

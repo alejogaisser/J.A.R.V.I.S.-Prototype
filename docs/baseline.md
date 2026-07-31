@@ -1,27 +1,27 @@
-# Línea base reproducible
+# Reproducible baseline
 
-## Alcance
+## Scope
 
-Esta línea base cubre instalación, imports, sintaxis, arranque no interactivo y
-suite automatizada. No abre Gemini Live ni usa micrófono, cámara, navegador,
-cuentas, dashboard LAN o herramientas con efectos reales.
+This base line covers installation, imports, syntax, non-interactive booting and
+Automated suite. Do not open Gemini Live nor use microphone, camera, browser,
+accounts, LAN dashboard or tools with real effects.
 
-Entorno de referencia auditado el 2026-07-28:
+Reference environment audited on 2026-07-28:
 
 - Windows 10/11, 64 bits;
 - Python 3.14.6;
-- 37 declaraciones de herramientas;
-- 213 tests y 65 subtests aprobados desde un worktree y entorno virtual
-  limpios después de esta etapa;
-- una advertencia externa de `google-genai` sobre Python 3.17.
+- 37 tool statements;
+- 213 tests and 65 subtests approved from a worktree and virtual environment
+clean after this stage;
+- an external warning from `google-genai` on Python 3.17.
 
-Python 3.12 es la versión recomendada para una instalación nueva. Python
-3.13-3.14 se admite cuando todas las ruedas de las dependencias estén
-disponibles para Windows.
+Python 3.12 is the recommended version for a new installation.
+3.13-3.14 is supported when all the wheels of the dependencies are
+available for Windows.
 
-## Instalación limpia
+## Clean installation
 
-Desde PowerShell, en la raíz del repositorio:
+From PowerShell, at the root of the repository:
 
 ```powershell
 py -3.12 -m venv .venv
@@ -32,98 +32,98 @@ python -m playwright install chromium
 Copy-Item config\api_keys.example.json config\api_keys.json
 ```
 
-La copia de configuración sirve sólo como plantilla. El chequeo de línea base
-no necesita una clave real y nunca debe versionarse `config/api_keys.json`.
+The configuration copy serves only as a template. The base line check
+does not need a real key and must never be versioned `config/api_keys.json`.
 
-## Validación reproducible
+## Reproducible validation
 
-Con el entorno virtual activo:
+With the active virtual environment:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\validate_baseline.ps1
 ```
 
-También se puede indicar un intérprete explícito:
+An explicit interpreter may also be indicated:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\validate_baseline.ps1 `
   -Python .\.venv\Scripts\python.exe
 ```
 
-Para una iteración rápida que conserva todos los chequeos salvo la suite
-completa:
+For a quick iteration that keeps all the checkups except the suite
+complete:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\validate_baseline.ps1 `
   -Python .\.venv\Scripts\python.exe -SkipFullTests
 ```
 
-El comando ejecuta, en orden:
+The command executes, in order:
 
 1. `python -m pip check`;
 2. `python jarvis_launcher.py --help`;
-3. imports del núcleo, launcher, memoria y wake word;
-4. import de `main.py` con Qt offscreen y comprobación de 37 tools;
-5. `compileall` sobre el código y los tests;
-6. contrato de inventario de herramientas;
-7. suite completa, salvo uso de `-SkipFullTests`;
+3. kernel, launcher, memory and wake word imports;
+4. import of `main.py` with Qt offscreen and 37 tool check;
+5. `compileall` on code and tests;
+6. tool inventory contract;
+7. complete suite, except for use of `-SkipFullTests`;
 8. `git diff --check`.
 
-## Capacidades y dependencias
+## Capacities and dependencies
 
-`requirements.txt` representa el runtime principal publicado.
-`requirements-dev.txt` lo incluye y agrega `pytest`, necesario para ejecutar la
-suite y el comando de validación. Algunas rutas
-de procesamiento avanzado cargan dependencias opcionales sólo cuando se usan.
-La auditoría detectó imports opcionales de `python-docx`, `pandas`, `openpyxl`,
-`PyPDF2`/`pdfplumber`, `pydub`, `faster-whisper`, `kokoro`, `miniaudio` y
-`torch`. No se agregan al conjunto principal hasta verificar por capacidad:
+`requirements.txt` represents the main published runtime.
+`requirements-dev.txt` includes it and adds `pytest`, necessary to run the
+suite and validation command. Some routes
+Advanced processing load optional dependencies only when used.
+The audit detected optional imports of `python-docx`, `pandas`, `openpyxl`,
+`PyPDF2`/`pdfplumber`, `pydub`, `faster-whisper`, `kokoro`, `miniaudio` and
+`torch`. They are not added to the main set until verified by capacity:
 
-- que la ruta sea alcanzable desde una tool registrada;
-- que exista una rueda compatible con Python soportado;
-- que el costo de instalación sea proporcional;
-- que la ausencia produzca un error claro y no un fallo de arranque.
+- the route can be reached from a registered tool;
+- there is a supported Python-compatible wheel;
+- the installation cost is proportional;
+- the absence produces a clear error and not a boot failure.
 
-`beautifulsoup4` permanece declarado aunque no se observó uso de runtime. Su
-retiro queda pendiente hasta confirmar que no sea una dependencia prevista de
-una capacidad opcional.
+`beautifulsoup4` remains declared although no use of runtime was observed.
+Retirement is pending pending confirmation that it is not a planned
+an optional capacity.
 
-## Baseline de comportamiento
+## Behaviour baseline
 
-| Frontera | Comprobación automatizada | Limitación |
+| Border | Automated check | Limitation |
 | --- | --- | --- |
-| Launcher | `--help` termina correctamente | No inicia procesos hijos |
-| Imports | núcleo, wake, memoria y `main.py` importan | No valida hardware |
-| UI | `main.py` importa con `QT_QPA_PLATFORM=offscreen` | No verifica interacción visual |
-| Tools | 37 declaraciones coinciden con la matriz | No ejecuta efectos reales |
-| Sintaxis | `compileall` del árbol Python | No reemplaza lint o type checking |
-| Dependencias | `pip check` | Verificación de instalación limpia se registra por ejecución |
-| Regresiones | suite completa | Red, Gemini, cuentas y SO se mockean |
+| Launcher | `--help` finishes correctly | Does not initiate child processes |
+| Imports | kernel, wake, memory and `main.py` import | Not Validate Hardware |
+| UI | `main.py` imports with `QT_QPA_PLATFORM=offscreen` | No visual interaction verified |
+| Tools | 37 statements match matrix | Does not execute real effects |
+| Syntax | `compileall` of Python Tree | Does not replace lint or type checking |
+| Units | `pip check` | Clean installation check is recorded by execution |
+| Regressions | Complete suite | Red, Gemini, accounts and SO get jacked |
 
-Las métricas de wake, interrupción, reconexión y shutdown requieren hardware o
-fault injection específico y siguen pendientes en `ROADMAP.md`.
+Wake metrics, interruption, reconnection and shutdown require hardware or
+failure specific injection and still pending in `ROADMAP.md`.
 
-## Resultado de la ejecución de referencia
+## Outcome of the baseline implementation
 
-Se creó un entorno virtual nuevo con Python 3.14.6 y se instalaron
-`requirements-dev.txt` y Chromium para Playwright. La validación completa
-terminó con:
+A new virtual environment was created with Python 3.14.6 and installed
+`requirements-dev.txt` and Chromium for Playwright. Full validation
+ended with:
 
-- `pip check`: sin dependencias rotas;
-- launcher `--help`: correcto;
-- smoke imports: correcto;
-- `main.py` offscreen: correcto, 37 tools;
-- `compileall`: correcto;
-- inventario: 1 test y 37 subtests aprobados;
-- suite: 213 tests y 65 subtests aprobados;
-- `git diff --check`: sin errores.
+- `pip check`: no broken dependencies;
+- launcher `--help`: correct;
+- smoke imports: correct;
+- `main.py` offscreen: correct, 37 tools;
+- `compileall`: correct;
+- inventory: 1 test and 37 subtests approved;
+- Suite: 213 tests and 65 subtests approved;
+- `git diff --check`: no errors.
 
-La primera ejecución limpia expuso que
-`tests/test_script_memory.py` dependía de `memory/scripts.json`, un archivo
-personal ignorado. El test ahora crea su rutina en `TemporaryDirectory`, por
-lo que no lee ni modifica memoria real.
+The first clean execution stated that
+`tests/test_script_memory.py` depended on `memory/scripts.json`, a file
+The test now creates its routine in `TemporaryDirectory`, by
+which does not read or modify real memory.
 
 ## Rollback
 
-Esta etapa no modifica el runtime. Puede revertirse eliminando este documento,
-la matriz, el test de sincronización y el script de validación.
+This stage does not modify the runtime. It can be reversed by deleting this document,
+the matrix, the synchronization test and the validation script.

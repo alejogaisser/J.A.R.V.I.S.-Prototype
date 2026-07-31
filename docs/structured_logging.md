@@ -1,77 +1,77 @@
-# Logging estructurado de runtime
+# Structured runtime logging
 
-## Alcance
+## Scope
 
-`core.structured_logging.StructuredRuntimeLog` es el owner de logs generales
-del proceso principal. Complementa, sin reemplazar:
+`core.structured_logging.StructuredRuntimeLog` is the owner of general logs
+of the main process. It complements, but does not replace:
 
-- `RequestAuditSink`, que conserva las fases sanitizadas de cada tool call;
-- `CrashReporter` y `faulthandler`, que preservan diagnóstico de fallos fatales;
-- la consola específica de wake word, necesaria para soporte de audio.
+- `RequestAuditSink`, which preserves the sanitized phases of each tool call;
+- `CrashReporter` and `faulthandler`, which preserves diagnosis of fatal failures;
+- the specific wake word console, required for audio support.
 
-Este incremento no convierte masivamente los `print()` heredados.
+This increase does not massively convert the inherited `print()`.
 
-## Salidas
+## Outputs
 
-Por defecto cada evento se publica como una línea JSON en:
+By default each event is posted as a JSON line in:
 
-- la consola de diagnóstico;
+- the diagnostic console;
 - `logs/runtime.jsonl`.
 
-El archivo usa `RotatingFileHandler`, un máximo de 1 MiB y tres backups. La
-carpeta `logs/` continúa ignorada por Git.
+The file uses `RotatingFileHandler`, up to 1 MiB and three backups.
+`logs/` folder remains ignored by Git.
 
-## Contrato
+## Contract
 
-Campos base:
+Base fields:
 
 - `timestamp` UTC;
 - `level`;
 - `event`;
 - `component`;
-- `message` sanitizado y acotado, cuando existe.
+- `message` sanitized and tapered, when it exists.
 
-Si el productor entrega un `RequestContext`, se agregan `request_id`, `source`
-y `tool_call_id`. La metadata adicional se restringe a una allowlist de
-estado, operación, duración, código de error, superficie y motivo. Cuerpos,
-argumentos, prompts y campos desconocidos se descartan.
+If the producer delivers a `RequestContext`, `request_id`, `source` are added
+and `tool_call_id`. The additional metadata is restricted to a list of
+status, operation, duration, error code, surface and motive.
+arguments, prompts and unknown fields are discarded.
 
-`main.py`, como composition root temporal, configura el owner y registra:
+`main.py`, as the temporary composition root, configures the owner and registers:
 
 - `application_started`;
 - `runner_failed`;
 - `application_stopped`.
 
-## Sanitización
+## Sanitization
 
-`redact_diagnostic_text()` cubre asignaciones sensibles y parámetros de URL,
-además de formatos de alta confianza de Google, GitHub, OpenAI, AWS y Slack y
-encabezados de claves privadas. El valor coincidente nunca debe llegar al
-archivo ni a la consola.
+`redact_diagnostic_text()` covers sensitive mappings and URL parameters,
+in addition to high-confidence formats from Google, GitHub, OpenAI, AWS and Slack and
+Private keyheads. Matching value should never reach the
+file or console.
 
-## Degradación y concurrencia
+## Degradation and competition
 
-Los handlers estándar de `logging` serializan escrituras entre threads. Si el
-archivo no puede abrirse, la consola permanece activa. Si ninguna salida puede
-configurarse, `record()` devuelve `False`; el arranque continúa.
+`logging` standard handlers serialize scripts between threads.
+file cannot be opened, console remains active. If no output can
+configure, `record()` returns `False`; boot continues.
 
-## Límites
+## Limits
 
-- Los `print()` heredados todavía no llevan nivel ni correlación.
-- `RequestAuditSink` conserva su archivo separado y todavía no rota.
-- `CrashReporter` conserva su formato de traceback y archivo separado.
-- No se midió hardware ni se inició Gemini, wake, cámara o micrófono.
+- The inherited `print()` still have no level or correlation.
+- `RequestAuditSink` keeps its file separate and not yet rotated.
+- `CrashReporter` retains its separate traceback and file format.
+- No hardware was measured or Gemini, wake, camera or microphone started.
 
-## Medición local
+## Local measurement
 
-En el entorno limpio de validación, 1.000 eventos secuenciales con archivo
-JSONL, consola desactivada y límite de 1 MiB tomaron 64,829 ms en total
-(0,064829 ms por evento). Es una microprueba de overhead del writer, no una
-medición de latencia de JARVIS ni de hardware interactivo.
+In the clean validation environment, 1,000 sequential events with file
+JSONL, disabled console and 1 MiB limit took 64,829 ms in total
+(0,064829 ms per event). It is a microoverhead test of the writer, not a
+JARVIS latency measurement or interactive hardware.
 
 ## Rollback
 
-Retirar la construcción y las tres llamadas de `main.py` restaura el
-comportamiento previo sin afectar `RequestAuditSink`, crash reports ni runtime.
-El módulo puede permanecer sin consumidores hasta corregir el problema que
-motivó el rollback.
+Remove construction and all three calls from `main.py` restores the
+previous behavior without affecting `RequestAuditSink`, crash reports or runtime.
+The module can remain without consumers until correcting the problem that
+It motivated the rollback.

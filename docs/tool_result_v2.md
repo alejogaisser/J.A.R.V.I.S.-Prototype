@@ -1,61 +1,61 @@
 # ToolResult v2
 
-## Estados independientes
+## Independent States
 
-`ToolResult` conserva los campos heredados `success`, `message`, `data`,
-`error_code` y `request_id`, y añade un contrato versionado:
+`ToolResult` retains the inherited fields `success`, `message`, `data`,
+`error_code` and `request_id`, and adds a versioned contract:
 
-- `execution_status`: `succeeded`, `failed`, `rejected`, `timed_out` o
-  `cancelled`;
-- `effect_status`: `none`, `not_applied`, `applied`, `partial` o `unknown`;
-- `verification_status`: `not_requested`, `verified`, `failed` o `unknown`;
-- `rollback_status`: disponibilidad o resultado del rollback;
+- `execution_status`: `succeeded`, `failed`, `rejected`, `timed_out` or
+`cancelled`;
+- `effect_status`: `none`, `not_applied`, `applied`, `partial` or `unknown`;
+- `verification_status`: `not_requested`, `verified`, `failed` or `unknown`;
+- `rollback_status`: availability or result of rollback;
 - `duration_ms`;
-- `evidence`: identificadores breves aportados por un verifier.
+- `evidence`: short identifiers provided by a verifier.
 
-`to_dict()` y `from_dict()` producen y validan el esquema 2. Estados
-contradictorios, versiones desconocidas y duraciones negativas se rechazan.
+`to_dict()` and `from_dict()` produce and validate scheme 2.
+Contradictory, unknown versions and negative durations are rejected.
 
-## Adaptación heredada
+## Inherited adaptation
 
-Las tools existentes pueden seguir devolviendo texto, booleanos, mappings,
-`None` o el `ToolResult` anterior:
+Existing tools can continue to return text, booleans, mappings,
+`None` or the previous `ToolResult`:
 
-- una lectura heredada exitosa se adapta como `succeeded/none`;
-- una tool con posible efecto que sólo devuelve éxito textual queda
-  `succeeded/unknown`;
-- un fallo heredado no inventa que el efecto fue revertido o no aplicado;
-- un resultado v2 retornado por el handler conserva efecto, verificación,
-  rollback y evidencia;
-- el executor completa `request_id` y duración medida.
+- a successful legacy reading adapts as `succeeded/none`;
+- a tool with possible effect that only returns textual success
+`succeeded/unknown`;
+- an inherited failure does not invent that the effect was reversed or not applied;
+- a result v2 returned by the handler retains effect, verification,
+rollback and evidence;
+- the complete executor `request_id` and measured duration.
 
-La compatibilidad `success/message/data/error_code` continúa disponible durante
-la migración por lotes de las 37 tools.
+`success/message/data/error_code` compatibility remains available during
+Batch migration of the 37 tools.
 
-## Timeout y errores
+## Timeout and errors
 
-Un timeout siempre se representa como `execution_status=timed_out`. Para un
-handler legacy no cooperativo conserva `effect_status=unknown` y evidencia
-`cancellation_unacknowledged`, porque el thread puede seguir ejecutándose.
+A timeout is always represented as `execution_status=timed_out`.
+handler legacy non-cooperative preserves `effect_status=unknown` and evidence
+`cancellation_unacknowledged`, because the thread can continue to run.
 
-Un handler opt-in recibe `CancellationToken`. Si reconoce la señal dentro de la
-gracia del executor, `ToolCancelled` conserva el efecto, verificación, rollback
-y evidencia realmente observados y añade `cancellation_acknowledged`. Una
-cancelación explícita usa `execution_status=cancelled`; se localiza por el
-`request_id` activo.
+An opt-in handler receives `CancellationToken`. If you recognize the signal inside the
+executor grace, `ToolCancelled` retains effect, verification, rollback
+and evidence actually observed and adds `cancellation_acknowledged`.
+explicit cancellation uses `execution_status=cancelled`; it is located by the
+`request_id` active.
 
-Una solicitud rechazada antes de invocar el handler usa
-`rejected/not_applied`. Una excepción durante el handler usa `failed/unknown`.
+An application rejected before invoking the handler uses
+`rejected/not_applied`. An exception during handler uses `failed/unknown`.
 
-## Integración
+## Integration
 
-Las rutas normal y especial incluyen metadata v2 en `FunctionResponse` y en el
-evento `completed` del audit sink. No se serializa `data` dentro de esa metadata
-de respuesta.
+Normal and special routes include v2 metadata in `FunctionResponse` and in the
+`completed` event of the sink audit. `data` is not serialized within that metadata
+response.
 
-La Fase 5 incorpora el primer verifier concreto: `create_file`, `copy` y
-`move` de archivos regulares capturan ruta resuelta, tamaño y SHA-256. Una copia
-o movimiento sólo queda `applied/verified` si la evidencia de destino coincide
-con la fuente; `move` exige además que el origen ya no exista. Si el efecto no
-se observa, el mensaje no lo presenta como verificado. Las operaciones de
-directorios conservan temporalmente el adaptador legacy.
+Phase 5 incorporates the first concrete verifier: `create_file`, `copy` and
+`move` regular files capture resolve path, size and SHA-256. A copy
+o movement only remains `applied/verified` if the fate evidence matches
+with the source; `move` further requires that the source no longer exists. If the effect does not
+is observed, the message does not present it as verified.
+directories temporarily retain the legacy adapter.

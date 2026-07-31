@@ -1,494 +1,494 @@
-# Roadmap incremental de JARVIS Mark LI
+# JARVIS Mark LI incremental roadmap
 
-## Principios de ejecución
+## Principles of implementation
 
-- No reescribir desde cero.
-- Un cambio acotado por fase y una frontera técnica a la vez.
-- Preservar wake word, interrupción de audio, UI, memoria, visión, recordatorios y herramientas funcionales.
-- No retirar legado hasta demostrar equivalencia y rollback.
-- No iniciar una migración masiva de herramientas hasta completar una matriz real de las 37 `ToolDefinition`.
-- Antes de cada fase: `git status`, baseline, archivos sensibles fuera del diff y tests relevantes.
-- No hacer commit o push sin solicitud explícita.
+- Do not rewrite from scratch.
+- A phase-by-phase change and a technical frontier at the same time.
+- Preserve wake word, audio interrupt, UI, memory, vision, reminders and functional tools.
+- Do not withdraw legacy until proven equivalence and rollback.
+- Do not start a massive tool migration until you complete a real array of the 37 `ToolDefinition`.
+- Before each phase: `git status`, baseline, sensitive files outside the diff and relevant tests.
+- Do not commit or push without explicit request.
 
-## Prioridad inmediata
+## Immediate priority
 
-El orden del PDF se ajusta a la evidencia del repositorio: antes de introducir trazabilidad general hay que cerrar dos huecos de seguridad observados en el dispatch actual —origen remoto y clasificación de herramientas— mediante tests que fallen primero. Después se puede implementar `RequestContext` y persistencia atómica sin alterar el comportamiento visual ni el protocolo Gemini.
+The order of the PDF conforms to the repository's evidence: before introducing general traceability, two security gaps observed in the current dispatch — remote origin and tool classification — must be closed by means of tests that fail first. `RequestContext` and atomic persistence can then be implemented without altering the visual behavior or Gemini protocol.
 
-### Avance incremental - 2026-07-30
+### Incremental advance - 2026-07-30
 
-- El owner OAuth de `GoogleDriveConnector` se amplió a contenido nativo de
-  Google Docs, Sheets y Slides mediante un servicio interno inyectable; no se
-  agregó una herramienta ni una autenticación paralela.
-- Las operaciones externas de creación y edición de `account_connector`
-  ahora tienen mínimo `confirm_once`; lectura, búsqueda y descarga permanecen
-  libres después de OAuth, y desconectar queda en `confirm_always`.
-- Se agregaron lecturas acotadas, límites de tamaño/celdas, auditoría sin
-  cuerpos y verificación por lectura posterior o rango/página observado.
-- Smoke real aprobado: Docs, Sheets y Slides completaron creación, escritura y
-  lectura; los tres artefactos temporales fueron enviados a papelera y
-  verificados como `trashed=true`.
-- Esto completa sólo la clasificación de riesgo del conector dentro de Fase 1.
-  Siguen pendientes el origen remoto extremo a extremo y el resto de las
-  herramientas subclasificadas.
+- The OAuth owner of `GoogleDriveConnector` was extended to native content of
+Google Docs, Sheets and Slides using an internal injectable service; do not
+added a tool or parallel authentication.
+- The external creation and editing operations of `account_connector`
+now have minimum `confirm_once`; read, search and download remain
+Free after OAuth, and disconnect is left in `confirm_always`.
+- Added narrow readings, size limits/cells, audit without
+bodies and verification by later reading or range/page observed.
+- Real Smoke Approved: Docs, Sheets and Slides Completed Creation, Writing and
+reading; all three temporary artifacts were sent to wastebasket and
+verified as `trashed=true`.
+- This completes only the connector risk classification within Phase 1.
+The remote end-to-end origin and the rest of the
+subclassified tools.
 
-## Fases
+## Phases
 
-### Fase 0 - Línea base reproducible e inventario
+### Phase 0 - Reproducible baseline and inventory
 
-- **Estado:** completada e integrada en `main` el 2026-07-28 desde
-  `codex/01-baseline-inventory`.
-- **Objetivo:** documentar una instalación limpia, distinguir dependencias principales/opcionales/legacy, medir baseline y completar la matriz de 37 herramientas y rutas especiales.
-- **Archivos previstos:** `requirements.txt`, `readme.md`, posible `requirements-optional.txt` o extras, `docs/baseline.md`, `docs/tool_migration_matrix.md`, tests de imports.
-- **Riesgo:** bajo; una corrección de dependencias puede ser pesada en Python 3.14.
-- **Dependencias:** hardware y una instalación limpia separada; no usar credenciales reales.
-- **Criterio de aceptación:** entorno nuevo instala; launcher `--help`, imports y UI offscreen funcionan; cada herramienta tiene retorno, risk, policy, preview, verify, rollback, timeout, ruta y tests registrados.
-- **Pruebas:** `pip check`, smoke imports, `compileall`, suite completa, prueba de instalación en entorno vacío.
-- **Rollback:** revertir sólo documentación/manifest; no tocar runtime.
-- **Evidencia:** instalación nueva en Python 3.14.6; `requirements-dev.txt`;
-  `scripts/validate_baseline.ps1`; matriz sincronizada por test; `pip check`,
-  launcher, imports, UI offscreen, `compileall`, 213 tests y 65 subtests
-  aprobados. Las dependencias opcionales continúan explícitamente pendientes.
+- **Status:** completed and integrated into `main` on 2026-07-28 since
+`codex/01-baseline-inventory`.
+- **Objective:** Document a clean installation, distinguish main/optional/legacy dependencies, measure baseline and complete the array of 37 special tools and paths.
+- **Intended files:** `requirements.txt`, `readme.md`, possible `requirements-optional.txt` or extras, `docs/baseline.md`, `docs/tool_migration_matrix.md`, import tests.
+- **Risk:** low; a dependency correction can be heavy in Python 3.14.
+- **Dependencies:** hardware and a separate clean installation; do not use actual credentials.
+- **Criterio of acceptance:** new environment installs; launcher `--help`, imports and UI offscreen work; each tool has return, risk, policy, preview, verify, rollback, timeout, path and registered tests.
+- **Tests:** `pip check`, smoke imports, `compileall`, complete suite, installation test in empty environment.
+- **Rollback:**reverse only documentation/manifest; do not play runtime.
+- **Evidence:** new installation in Python 3.14.6; `requirements-dev.txt`;
+`scripts/validate_baseline.ps1`; test synchronized matrix; `pip check`,
+launcher, imports, UI offscreen, `compileall`, 213 tests and 65 subtests
+Optional units remain explicitly pending.
 
-### Fase 1 - Cerrar origen y clasificación de riesgo
+### Phase 1 - Close source and risk classification
 
-- **Estado:** completada e integrada en `main` el 2026-07-28 desde
-  `codex/02-origin-risk`.
-- **Objetivo:** impedir que entradas remotas se evalúen como locales y corregir herramientas subclasificadas (`file_processor`, `code_helper`, browser, reminder y escrituras de conectores).
-- **Archivos previstos:** `main.py`, `dashboard/server.py`, `core/permissions/models.py`, `core/permissions/policy.py`, `core/tools/builtins.py`, tests de policy/seguridad.
-- **Riesgo:** alto; puede añadir confirmaciones a flujos hoy libres.
-- **Dependencias:** matriz de herramientas y definición explícita de origen.
-- **Criterio de aceptación:** todo comando conserva `local`, `dashboard_text`, `dashboard_audio`, `ui` o `wake`; ninguna acción de escritura/ejecución queda con `READ_ONLY/FREE` por omisión.
-- **Pruebas:** integración dashboard -> function call -> policy; tabla parametrizada de mínimos por operación; pruebas negativas sin efectos reales.
-- **Rollback:** revertir el mapping de riesgo/origen; conservar los tests como especificación de decisión.
-- **Evidencia:** `InputSource` distingue `local`, `ui`, `wake`,
-  `dashboard_text` y `dashboard_audio`; los turnos remotos conservan su origen
-  hasta policy y confirmación; `save_memory` ya no evita policy; matriz de
-  mínimos parametrizada para processor, code, browser, reminder, conectores y
-  creación/copia de archivos. Baseline limpio: 226 tests y 102 subtests
-  aprobados, inventario de 37 tools, `compileall`, imports, launcher y
-  `pip check`; el mismo baseline fue repetido con éxito sobre el merge
-  `900c7c7`.
+- **Status:** completed and integrated into `main` on 2026-07-28 since
+`codex/02-origin-risk`.
+- **Objective:** prevent remote entries from being evaluated as local and correct subclassified tools (`file_processor`, `code_helper`, browser, reminder and connector writing).
+- **Intended files:**`main.py`,`dashboard/server.py`,`core/permissions/models.py`,`core/permissions/policy.py`,`core/tools/builtins.py`,policy/security tests.
+- **Risk:** high; you can add confirmations to today's free flows.
+- **Dependencies:** matrix of tools and explicit definition of origin.
+- **Criterio of acceptance:**all commands retain `local`, `dashboard_text`, `dashboard_audio`, `ui` or `wake`; no writing/execution action remains with `READ_ONLY/FREE` by default.
+- **Tests:** Dashboard integration -> function call -> policy; parameterized table of minimums per operation; negative tests without real effects.
+- **Rollback:** reverse the risk/origin mapping; keep the tests as decision specification.
+- **Evidence:** `InputSource` distinguishes `local`, `ui`, `wake`,
+`dashboard_text` and `dashboard_audio`; remote shifts retain their origin
+up to policy and confirmation; `save_memory` no longer prevents policy; matrix of
+Parametrized minimums for processor, code, browser, reminder, connectors and
+file creation/copying. Clean baseline: 226 tests and 102 subtests
+approved, 37 tool inventory, `compileall`, imports, launcher and
+`pip check`; the same line was successfully repeated on the merge
+`900c7c7`.
 
-### Fase 2 - `RequestContext` y trazabilidad estructurada
+### Phase 2 - `RequestContext` and structured traceability
 
-- **Estado:** completada e integrada en `main` el 2026-07-28 desde
-  `codex/03-request-context`.
-- **Objetivo:** correlación extremo a extremo sin cambiar Gemini Live, audio ni UI visual.
-- **Archivos previstos:** nuevo `core/request_context.py`, `core/tools/definitions.py`, `core/tools/executor.py`, `core/permissions/*`, `main.py`, nuevo sink de auditoría sanitizado, `docs/request_lifecycle.md`.
-- **Riesgo:** medio-alto; toca el camino central de herramientas.
-- **Dependencias:** Fase 1 y contrato de eventos.
-- **Criterio de aceptación:** `request_id` único en requested, policy, confirmation, started, completed y response; logs sin tokens, cuerpos, memoria ni argumentos sensibles.
-- **Pruebas:** unicidad, propagación, sanitización, fallos del sink, correlación en ruta normal/especial.
-- **Rollback:** adapters con context opcional; feature flag para sink.
-- **Evidencia:** `RequestContext` único llega a policy, confirmación, executor,
-  `ToolResult` y `FunctionResponse`; rutas normal y especial emiten
-  `requested`, `policy`, `confirmation`, `started`, `completed` y `response`.
-  El sink JSONL usa allowlist, no recibe argumentos, tolera fallos y puede
-  desactivarse. Baseline: 236 tests y 102 subtests aprobados antes y después
-  del merge `19a2adc`.
+- **Status:** completed and integrated into `main` on 2026-07-28 since
+`codex/03-request-context`.
+- **Objective:** end-to-end correlation without changing Gemini Live, audio or visual UI.
+- **Intended files:** new `core/request_context.py`, `core/tools/definitions.py`, `core/tools/executor.py`, `core/permissions/*`, `main.py`, new Sanitized Audit Synk, `docs/request_lifecycle.md`.
+- **Risk:** medium-high; touches the central path of tools.
+- **Dependencies:** Phase 1 and event contract.
+- **Criteria of acceptance:** `request_id` unique in requested, policy, confirmation, started, completed and responded; logs without tokens, bodies, memory or sensitive arguments.
+- **Tests:** singleness, propagation, sanitization, sink failures, normal/special route correlation.
+- **Rollback:** adapters with optional context; feature flag for sink.
+- **Evidence:** `RequestContext` unique comes to policy, confirmation, executor,
+`ToolResult` and `FunctionResponse`; normal and special routes emit
+`requested`, `policy`, `confirmation`, `started`, `completed` and `response`.
+The sink JSONL uses allowlist, does not receive arguments, tolerates failures and can
+deactivated. Baseline: 236 tests and 102 subtests approved before and after
+of the merge `19a2adc`.
 
-### Fase 3 - Persistencia atómica de permisos
+### Phase 3 - Atomic permission persistence
 
-- **Estado:** completada e integrada en `main` el 2026-07-28 desde
-  `codex/04-atomic-permission-store`.
-- **Objetivo:** evitar JSON parcial y fallar cerrado.
-- **Archivos previstos:** `core/permissions/store.py`, tests de permisos y fault injection.
-- **Riesgo:** medio; afecta preferencias de seguridad.
-- **Dependencias:** ninguna de runtime Live.
-- **Criterio de aceptación:** temporal en mismo volumen, flush/fsync cuando corresponda, `os.replace`, backup/recuperación y validación antes de publicar.
-- **Pruebas:** corte simulado, JSON corrupto, error de escritura, versión desconocida, concurrencia básica.
-- **Rollback:** lector compatible con versión anterior y copia del archivo previo.
-- **Evidencia:** temporal en el mismo directorio, `flush`/`fsync`, relectura y
-  validación antes de `os.replace`; backup sólo de un primario válido y
-  recuperación primaria/backup/defaults. Lock compartido por ruta para
-  concurrencia entre instancias del proceso. Baseline: 247 tests y 102 subtests
-  aprobados antes y después del merge `f4fe895`.
+- **Status:** completed and integrated into `main` on 2026-07-28 since
+`codex/04-atomic-permission-store`.
+- **Objective:** avoid partial JSON and fail closed.
+- **Intended files:** `core/permissions/store.py`, permission tests and default injection.
+- **Risk:** medium; affects security preferences.
+- **Dependencies:** none of runtime Live.
+- **Criteria of acceptance:** temporary in the same volume, flush/fsync where applicable, `os.replace`, backup/recovery and validation before publication.
+- **Tests:** simulated cutting, corrupt JSON, writing error, unknown version, basic continuance.
+- **Rollback:** reader compatible with previous version and copy of previous file.
+- **Evidence:** temporary in the same directory, `flush`/`fsync`, rereading and
+validation before `os.replace`; backup of only one valid primary and
+primary recovery/backup/defaults. Track-shared lock for
+competition between instances of the process. Baseline: 247 tests and 102 subtests
+approved before and after the `f4fe895` merge.
 
-### Fase 4 - `ToolResult` v2 compatible
+### Phase 4 - `ToolResult` v2 compatible
 
-- **Estado:** completada e integrada en `main` el 2026-07-28 desde
-  `codex/05-tool-result-v2`.
-- **Objetivo:** separar ejecución, efecto y verificación.
-- **Archivos previstos:** `core/tools/definitions.py`, `executor.py`, adapters de normalización, tests; sin migrar las 37 tools.
-- **Riesgo:** alto; contrato transversal.
-- **Dependencias:** `RequestContext`.
-- **Criterio de aceptación:** legacy adapters conservan comportamiento; estados de ejecución/efecto/verificación y latencia no se infieren de texto.
-- **Pruebas:** matriz semántica, serialización, timeouts, errores, compatibilidad con retornos legacy.
-- **Rollback:** mantener el constructor/adapter v1 hasta finalizar la migración.
-- **Evidencia:** enums independientes para ejecución, efecto, verificación y
-  rollback; duración y evidencia serializables; adaptadores de texto, bool,
-  mapping, `None` y v2. Timeout declara efecto desconocido, rechazo previo
-  declara no aplicado y las 37 tools conservan campos legacy. Baseline: 257
-  tests y 102 subtests aprobados antes y después del merge `d150a2a`.
+- **Status:** completed and integrated into `main` on 2026-07-28 since
+`codex/05-tool-result-v2`.
+- **Objective:**separate execution, effect and verification.
+- **Intended files:** `core/tools/definitions.py`, `executor.py`, standardization adaptors, tests; without migrating the 37 tools.
+- **Risk:** high; cross-sectional contract.
+- **Dependencies:** `RequestContext`.
+- **Criteria of acceptance:** legacy adapters retain behavior; states of execution/effect/verification and latency are not inferred from text.
+- **Tests:** semantic matrix, serialization, timeouts, errors, compatibility with legacy returns.
+- **Rollback:** hold the constructor/adapter v1 until the migration ends.
+- **Evidence:** independent enums for execution, effect, verification and
+rollback; serialization duration and evidence; text adapters, bool,
+mapping, `None` and v2. Timeout declares unknown effect, previous rejection
+declare not applied and the 37 tools retain legacy fields. Baseline: 257
+tests and 102 subtests approved before and after the `d150a2a` merge.
 
-### Fase 5 - Piloto de verificación
+### Phase 5 - Verification pilot
 
-- **Estado:** completada e integrada en `main` el 2026-07-28 desde
-  `codex/06-file-verification-pilot`.
-- **Objetivo:** implementar verifier para dos o tres operaciones seguras de `file_controller`.
-- **Archivos previstos:** `actions/file_controller.py`, nuevo módulo de verificadores, `core/tools/*`, tests.
-- **Riesgo:** medio.
-- **Dependencias:** ToolResult v2 y matriz.
-- **Criterio de aceptación:** crear/copiar/mover reportan ruta resuelta y evidencia; un efecto no observado no se comunica como verificado.
-- **Pruebas:** `tmp_path`, hash/tamaño, destino conflictivo, rollback por papelera/movimiento inverso.
-- **Rollback:** desactivar verifier y volver al adapter legacy sin cambiar handlers.
-- **Evidencia de rama:** `create_file`, `copy` y `move` sobre archivos regulares
-  devuelven `ToolResult` v2 con ruta resuelta, tamaño y SHA-256 observados.
-  Los conflictos se rechazan sin sobrescritura; un destino no observable queda
-  `verification=failed`; directorios siguen en el adaptador legacy. Pruebas
-  focalizadas: 67 tests y 22 subtests aprobados. El baseline posterior al merge
-  `fa664e4` aprobó 264 tests y 104 subtests.
+- **Status:** completed and integrated into `main` on 2026-07-28 since
+`codex/06-file-verification-pilot`.
+- **Objective:** implement verifier for two or three secure operations of `file_controller`.
+- **Intended files:**`actions/file_controller.py`, new verifier module, `core/tools/*`, tests.
+- **Risk:** medium.
+- **Dependencies:** ToolResult v2 and matrix.
+- **Criteria of acceptance:** create/copy/move report resolved path and evidence; an unobserved effect is not reported as verified.
+- **Tests:** `tmp_path`, hash/size, conflicting destination, rollback by trash/reverse movement.
+- **Rollback:**disable verifier and return to adaptor legacy without changing handlers.
+- **Branch evidence:** `create_file`, `copy` and `move` on regular files
+return `ToolResult` v2 with resolved path, size and SHA-256 observed.
+Conflicts are rejected without overwriting; an unobservable destiny remains
+`verification=failed`; directories are still in the legacy adapter.
+Focused: 67 tests and 22 subtests approved.
+`fa664e4` approved 264 tests and 104 subtests.
 
-### Fase 6 - Cancelación y aislamiento de herramientas
+### Phase 6 - Cancellation and isolation of tools
 
-- **Estado:** completada e integrada en `main` el 2026-07-28 desde
-  `codex/07-tool-cancellation`.
-- **Objetivo:** que timeout no signifique sólo dejar de esperar mientras el thread continúa.
-- **Archivos previstos:** `core/tools/executor.py`, contratos de cancelación, pilotos de acciones largas, tests de fault injection.
-- **Riesgo:** alto.
-- **Dependencias:** ToolResult v2.
-- **Criterio de aceptación:** handlers cooperativos reciben señal; procesos hijos se terminan de forma acotada; efectos parciales quedan explícitos.
-- **Pruebas:** handler bloqueado, subprocess timeout, cancelación, cleanup y ausencia de threads/procesos huérfanos.
-- **Rollback:** mantener executor anterior para herramientas aún no migradas.
-- **Evidencia de rama:** `CancellationToken` thread-safe y cancelación por
-  `request_id`; el executor espera cleanup durante una gracia acotada y conserva
-  efecto/rollback declarados por el handler. El runner de procesos termina y
-  recolecta el árbol iniciado por JARVIS. `dev_agent` es el primer piloto:
-  incorpora checkpoints y su proceso de proyecto no queda ejecutándose tras
-  timeout. El baseline posterior al merge `9e1e97a` aprobó 273 tests y 104
-  subtests.
+- **Status:** completed and integrated into `main` on 2026-07-28 since
+`codex/07-tool-cancellation`.
+- **Objective:** that timeout does not mean just to stop waiting while the thread continues.
+- **Intended files:** `core/tools/executor.py`, cancellation contracts, long stock pilots, fail-injection tests.
+- **Risk:** high.
+- **Dependencies:** ToolResult v2.
+- **Criteria of acceptance:** cooperative handlers receive signal; child processes are finished in a limited way; partial effects are explicit.
+- **Tests:** handler blocked, subprocess timeout, cancellation, cleanup and absence of threads/orphan processes.
+- **Rollback:** hold previous executor for tools not yet migrated.
+- **Branch evidence:** `CancellationToken` thread-safe and cancellation by
+`request_id`; the executor expects cleanup during a limited grace and preserves
+effect/rollback declared by the handler. The process runner ends and
+collects the tree initiated by JARVIS. `dev_agent` is the first pilot:
+incorporates checkpoints and your project process is not running after
+timeout. The post-merge baseline `9e1e97a` approved 273 tests and 104
+subtests.
 
-### Fase 7 - Ownership de sesión, audio, visión y lifecycle
+### Phase 7 - Session, audio, vision, and lifecycle ownership
 
-- **Estado:** completada e integrada en `main` el 2026-07-28 desde
-  `codex/08-session-lifecycle`.
-- **Objetivo:** extraer servicios con un único escritor por estado sin cambiar el protocolo Gemini.
-- **Archivos previstos:** nuevos `services/session.py`, `audio.py`, `vision.py`, `lifecycle.py`; `main.py`; tests.
-- **Riesgo:** muy alto.
-- **Dependencias:** trazabilidad, eventos mínimos y baseline de latencia.
-- **Criterio de aceptación:** owners documentados; reconexión, interrupción y shutdown mantienen métricas; `main.py` compone en vez de implementar.
-- **Pruebas:** fault injection de red/mic/cámara, doble sesión, audio en cola, shutdown y recuperación.
-- **Rollback:** facade que delega al comportamiento heredado por servicio.
-- **Evidencia de rama:** `RuntimeServices` compone owners separados de sesión,
-  audio, visión y lifecycle. Reconexión preserva el checkpoint y reinicia sólo
-  transitorios; generaciones evitan liberar una interrupción nueva desde una
-  tarea vieja; cámara aplica backpressure; shutdown es idempotente y conserva
-  deadline/métricas. `main.py` conserva el transporte y protocolo existentes,
-  pero delega esos estados. El baseline posterior al merge `49e0677` aprobó 283
-  tests y 104 subtests.
+- **Status:** completed and integrated into `main` on 2026-07-28 since
+`codex/08-session-lifecycle`.
+- **Objective:** extract services with a single writer per state without changing the Gemini protocol.
+- **Intended files:** new `services/session.py`, `audio.py`, `vision.py`, `lifecycle.py`; `main.py`; tests.
+- **Risk:** very high.
+- **Dependencies:** traceability, minimal events and latency baseline.
+- **Criteria of acceptance:** documented owners; reconnection, interruption and shutdown maintain metrics; `main.py` composes instead of implementing.
+- **Tests:** fail injection of network/mic/camera, double session, audio in queue, shutdown and recovery.
+- **Rollback:** facade delegating to inherited behavior by service.
+- **Branch evidence:** `RuntimeServices` composes separate session owners,
+audio, vision and lifecycle. Reconnection preserves checkpoint and restarts only
+transitions; generations avoid releasing a new interruption from a
+old task; camera applies backpressure; shutdown is idempotent and preserves
+`main.py` retains existing transport and protocol,
+The post-merge baseline `49e0677` approved 283
+tests and 104 subtests.
 
-### Fase 8 - Frontera de UI
+### Phase 8 - UI boundary
 
-- **Estado:** completada e integrada en `main`.
-- **Objetivo:** todas las mutaciones de widgets en el hilo Qt; UI emite comandos y consume snapshots.
-- **Archivos previstos:** `ui.py`, `ui_mk2/*`, presenters/ViewModels y workers.
-- **Riesgo:** alto.
-- **Dependencias:** servicios y eventos tipados mínimos.
-- **Criterio de aceptación:** ningún handler de `ToolExecutor` muta widgets desde `to_thread`; filesystem/red/subprocess salen de la capa visual.
-- **Pruebas:** Qt offscreen, afinidad de thread, cierre de cámara, cambios rápidos de panel y Pet/Main.
-- **Rollback:** señales/facades compatibles con métodos actuales.
-- **Evidencia de rama:** `core/ui_boundary.py` define una fachada mínima para
-  handlers; `main.py` deja de entregar `JarvisUI` a las tools; teléfono, Study,
-  archivo seleccionado y cámara cruzan el límite mediante señales, snapshots o
-  locks. `tests/test_ui_thread_boundary.py` cubre superficie pública, afinidad
-  Qt real y regresiones estáticas, junto con las suites Mk II/Mk III. El commit
-  de implementación `10000db` se integró mediante `a7370bd`; el baseline previo
-  al merge aprobó 290 tests y 104 subtests.
+- **Status:** completed and integrated in `main`.
+- **Objective:** all widget mutations in the Qt thread; UI emits commands and consumes snapshots.
+- **Intended files:** `ui.py`, `ui_mk2/*`, presenters/ViewModels and workers.
+- **Risk:** high.
+- **Dependencies:** minimum typed services and events.
+- **Criteria of acceptance:** no `ToolExecutor` handler switches widgets from `to_thread`; filesystem/network/subprocess exit the visual layer.
+- **Tests:** Qt offscreen, thread affinity, camera closure, quick panel changes and Pet/Main.
+- **Rollback:** Signals/facades compatible with current methods.
+- **Branch evidence:** `core/ui_boundary.py` defines a minimum façade for
+handlers; `main.py` stops delivering `JarvisUI` to tools; phone, Study,
+selected file and camera cross the limit by means of signals, snapshots or
+locks. `tests/test_ui_thread_boundary.py` covers public surface, affinity
+Real Qt and static regressions, along with Mk II/Mk III suites.
+`10000db` implementation was integrated using `a7370bd`; the previous baseline
+al merge approved 290 tests and 104 subtests.
 
-### Fase 9 - Adaptadores de proveedores
+### Phase 9 - Provider adapters
 
-- **Estado:** completada e integrada en `main`.
-- **Objetivo:** separar Live, texto, visión y búsqueda; inyectar interfaces en acciones.
-- **Archivos previstos:** `core/model_fallback.py`, nuevos adapters, acciones piloto, `main.py`.
-- **Riesgo:** medio-alto.
-- **Dependencias:** contratos y configuración central.
-- **Criterio de aceptación:** la acción piloto no importa `google.genai`, no elige modelos ni lee secretos.
-- **Pruebas:** fake providers, timeouts, fallback, error permanente/transitorio y cuota.
-- **Rollback:** adapter que envuelve las llamadas actuales.
-- **Evidencia de rama:** `core/providers` declara puertos estables para las
-  cuatro capacidades y un adaptador Google de búsqueda. `web_search` es el
-  piloto: recibe el provider desde `JarvisLive`, conserva DDG como fallback y
-  no conoce SDK, clave ni modelos. Las migraciones concretas de Live, texto y
-  visión quedan como lotes posteriores sobre los contratos ya definidos. El
-  commit `f47954b` se integró mediante `9bffe3e`; el baseline aprobó 301 tests y
-  104 subtests.
+- **Status:** completed and integrated in `main`.
+- **Objective:** to separate Live, text, vision and search; to inject interfaces into actions.
+- **Intended files:** `core/model_fallback.py`, new adaptors, pilot actions, `main.py`.
+- **Risk:** medium-high.
+- **Dependencies:** contracts and central configuration.
+- **Criteria of acceptance:**The pilot action does not matter `google.genai`, does not choose models or read secrets.
+- **Tests:** fake suppliers, timeouts, failback, permanent/transitory error and quota.
+- **Rollback:**Adjuster that wraps current calls.
+- **Branch evidence:** `core/providers` declares stable ports for the
+four capabilities and a Google search adapter. `web_search` is the
+pilot: receives the provider from `JarvisLive`, preserves DDG as fallback and
+does not know SDK, key or models. Live concrete migrations, text and
+The vision remains as subsequent batches on the contracts already defined.
+commit `f47954b` was integrated by `9bffe3e`; the baseline approved 301 tests and
+104 subtests.
 
-### Fase 10 - Configuración, observabilidad y calidad continuas
+### Phase 10 - Continuous configuration, observability and quality
 
-- **Estado:** completada. `codex/11-settings-bootstrap` implementó el bootstrap de
-  settings y `codex/12-secret-scanning` agrega el chequeo preventivo de
-  secretos. `codex/13-structured-logging` incorpora consola y archivo JSONL
-  rotativo. `codex/14-quality-ci` limita Ruff/mypy a la superficie migrada y
-  agrega CI Windows y `codex/15-settings-consumers` consolida todos los
-  consumidores y escritores heredados.
-- **Objetivo:** configuración validada, logging estructurado, chequeos incrementales y CI.
-- **Archivos previstos:** nuevo módulo de settings, acciones migradas por lotes, logging, `pyproject.toml`, CI.
-- **Riesgo:** medio.
-- **Dependencias:** RequestContext.
-- **Criterio de aceptación:** lectura única de secretos/config por proceso; consola + archivo rotativo; lint/type checking sólo sobre superficie migrada; chequeo de secretos.
-- **Pruebas:** configuración ausente/malformada, redacción, rotación, import check y CI.
-- **Rollback:** adapters de configuración y logging con defaults compatibles.
-- **Evidencia de rama:** `config.settings.AppSettings` es inmutable, oculta la
-  clave en `repr`, valida tipos/OS y cachea una instancia por archivo.
-  `main.py`, UI, actions, dashboard, memoria y el cliente LLM consumen el mismo
-  snapshot cacheado. `update_settings()` valida, preserva extras y publica por
-  temporal + `fsync` + `os.replace`; UI, visión y memoria ya no escriben el
-  archivo directamente. Una prueba de ownership impide reintroducir lectores
-  paralelos. `scripts/check_secrets.py` inspecciona el contenido versionado y
-  el blob staged, rechaza rutas sensibles y credenciales de alta confianza sin
-  imprimir el valor detectado; el baseline lo ejecuta antes de la suite.
-  `StructuredRuntimeLog` conserva niveles, campos allowlisted y `request_id`
-  opcional en consola + JSONL con rotación; `main.py` publica inicio, error fatal
-  y cierre sin reemplazar todavía los `print()` de diagnóstico. Ruff y mypy
-  ejecutan una lista explícita, el baseline los incluye y GitHub Actions
-  reproduce ese baseline sobre Windows/Python 3.12 sin secretos ni hardware.
-  El cierre local aprobó 343 tests y 104 subtests.
+- **Status:** completed. `codex/11-settings-bootstrap` implemented the bootstrap of
+settings and `codex/12-secret-scanning` adds preventive checkup of
+`codex/13-structured-logging` incorporates JSONL console and file
+`codex/14-quality-ci` limits Ruff/mypy to the migrated surface and
+adds CI Windows and `codex/15-settings-consumers` consolidates all
+Inherited consumers and writers.
+- **Objective:** validated configuration, structured logging, incremental checks and IC.
+- **Intended files:** new setting module, batch-migrated actions, logging, `pyproject.toml`, CI.
+- **Risk:** medium.
+- **Dependencies:** RequestContext.
+- **Criteria of acceptance:** single reading of secrets/config by process; console + rotary file; lint/type checking only on migrated surface; secret checking.
+- **Tests:** absent/malformed configuration, writing, rotation, import check and IC.
+- **Rollback:** Configuration and Logging adapters with supported defaults.
+- **Branch evidence:** `config.settings.AppSettings` is immutable, hidden the
+key in `repr`, validates types/OS and caches one instance per file.
+`main.py`, UI, actions, dashboard, memory and LLM client consume the same
+snapshot cached. `update_settings()` validates, preserves extras and publishes by
+temporary + `fsync` + `os.replace`; UI, vision and memory no longer write the
+file directly. An ownership test prevents reintroduction of readers
+parallels. `scripts/check_secrets.py` inspects the versioned content and
+the blob staged, rejects sensitive routes and high confidence credentials without
+print the detected value; the baseline runs it before the suite.
+`StructuredRuntimeLog` retains levels, allowed fields and `request_id`
+optional in console + JSONL with rotation; `main.py` publishes start, fatal error
+and still unreplaced `print()` diagnostics. Ruff and mypy
+run an explicit list, the baseline includes them and GitHub Actions
+plays that database on Windows/Python 3.12 without secrets or hardware.
+The local closure approved 343 tests and 104 subtests.
 
-### Fase 11 - Eventos tipados limitados a fronteras
+### Phase 11 - Boundary-scoped typed events
 
-- **Estado:** completada en `codex/16-typed-runtime-events`.
-- **Objetivo:** disminuir callbacks cruzados y hacer probables los hechos de
-  sesión, audio, visión, lifecycle y dashboard sin eventizar lógica local.
-- **Archivos:** `core/events.py`, `services/*`, `dashboard/server.py`,
-  `core/structured_logging.py`, `main.py`, tests y documentación.
-- **Riesgo:** medio; cruza threads, pero no cambia transporte, audio físico ni UI visual.
-- **Dependencias:** owners de Fase 7, frontera UI de Fase 8 y logging de Fase 10.
-- **Criterio de aceptación:** eventos inmutables/sanitizados; publicación fuera
-  del lock; orden y desuscripción probados; observers fallidos no cambian
-  estado; conexión dashboard sin callback directo en el composition root.
-- **Pruebas:** concurrencia, reentrancia, fallo de subscriber, correlación,
-  compatibilidad del dashboard, logging allowlisted y suite completa.
-- **Rollback:** publishers nulos por default y setters heredados del dashboard.
-- **Evidencia de rama:** `EventBus` entrega hechos síncronos en orden, copia
-  subscribers bajo `RLock` y los invoca sin sostenerlo. Los owners publican
-  sesión, interrupción, análisis y shutdown; dashboard publica conexión e
-  ingreso remoto sin texto, token, audio, imagen o device ID. El logger consume
-  metadata allowlisted y visión/shutdown preservan `request_id`. El baseline
-  local aprobó 351 tests y 104 subtests.
+- **Status:** completed in `codex/16-typed-runtime-events`.
+- **Objective:** decrease cross callbacks and make the facts of
+session, audio, vision, lifecycle and dashboard without eventifying local logic.
+- **Files:** `core/events.py`, `services/*`, `dashboard/server.py`,
+`core/structured_logging.py`, `main.py`, tests and documentation.
+- **Risk:** medium; crosses threads, but does not change transport, physical audio or visual UI.
+- **Dependencies:** Phase 7 owners, Phase 8 UI border and Phase 10 logging.
+- **Criteria of acceptance:** immutable/sanitized events; publication out
+lock; tested order and subscription; failed observers do not change
+status; Dashboard connection without direct callback in the composition root.
+- **Tests:** continuance, reentrance, failure to subscribe, correlation,
+Dashboard compatibility, logging allowed and complete suite.
+- **Rollback:**null printers by default and setters inherited from dashboard.
+- **Branch evidence:** `EventBus` delivers synchronous facts in order, copy
+Subscribers under `RLock` and invoke them without holding it. Owners publish
+session, interruption, analysis and shutdown; dashboard publishes connection e
+remote input without text, token, audio, image or device ID. Logger consumes
+metadata allowed and view/shutdown preserve `request_id`.
+local approved 351 tests and 104 subtests.
 
-#### Estabilización posterior - rutas seguras de Obsidian
+#### Post-stabilization - Secure Obsidian routes
 
-- El conector interpreta notas como rutas relativas al vault canónico y añade
-  `.md` cuando la lectura no trae extensión.
-- La descendencia se verifica sobre rutas resueltas con `Path.relative_to()`;
-  no se usan prefijos de texto. Se conservan backups y bloqueos internos.
-- Las regresiones cubren rutas válidas, traversal, absolutas, vaults con
-  prefijos engañosos y symlinks externos cuando el sistema los soporta.
+- The connector interprets notes as paths related to the canonical vault and adds
+`.md` when reading does not bring extension.
+- The offspring are verified on routes resolved with `Path.relative_to()`;
+text prefixes are not used. Internal backups and locks are retained.
+- The regressions cover valid routes, traversal, absolute, valts with
+misleading prefixes and external symlinks when the system supports them.
 
-### Fase 12 - Supervisión y health de workers
+### Phase 12 - Supervision and health of workers
 
-- **Estado:** completada en `codex/17-worker-supervision`.
-- **Objetivo:** workers reiniciables, cancelables y con health snapshot sin tumbar JARVIS.
-- **Archivos previstos:** nuevo supervisor en `services/`, browser/vision como
-  pilotos, `main.py`, tests de fault injection.
-- **Riesgo:** alto.
-- **Dependencias:** lifecycle y eventos tipados.
-- **Criterio de aceptación:** start/cancel/close idempotentes, restart acotado,
-  sin threads/procesos huérfanos y estado de health observable.
-- **Pruebas:** worker muerto/bloqueado, backoff, doble start, shutdown y cleanup.
-- **Rollback:** adaptador que conserve el lifecycle actual por worker.
-- **Evidencia de rama:** `WorkerSupervisor` ofrece fases y snapshots
-  inmutables, eventos sanitizados, monitor, backoff y presupuesto. Un cleanup
-  fallido desactiva restart para impedir duplicados. Browser cierra
-  Playwright+loop+thread; visión cancela la tarea raíz y espera su thread. Los
-  tests usan fakes/event loops y no inician browser, cámara, audio, red ni
-  Gemini. El baseline local aprobó 369 tests y 104 subtests.
+- **Status:** completed in `codex/17-worker-supervision`.
+- **Objective:** re-initiable, re-cancellable workers with health snapshots without toppling JARVIS.
+- **Intended files:** new supervisor in `services/`, browser/vision as
+pilots, `main.py`, fail-injection tests.
+- **Risk:** high.
+- **Dependencies:** lifecycle and typed events.
+- **Criteria of acceptance:** start/cancel/close idepotent, restart limited,
+without threads/orphan processes and observable health status.
+- **Tests:** Dead/locked worker, backoff, double start, shutdown and cleanup.
+- **Rollback:** adapter that retains the current lifecycle by worker.
+- **Branch evidence:** `WorkerSupervisor` offers phases and snapshots
+immutable, sanitized events, monitor, backoff and budget. A cleanup
+failed disable subtract to prevent duplicates. Browser closes
+Playwright+loop+thread; vision cancels the root task and waits for your thread.
+tests use fakes/event loops and do not start browser, camera, audio, network or
+Gemini. The local baseline approved 369 tests and 104 subtests.
 
-### Fase 13 - Contratos y contención de agentes
+### Phase 13 - Contracts and containment of agents
 
-- **Estado:** completada en `codex/18-agent-containment`.
-- **Objetivo:** `AgentTask`/`AgentResult`, presupuesto, workspace y allowlist;
-  ningún agente evita `ToolRegistry`/`PermissionPolicy`.
-- **Archivos previstos:** `actions/dev_agent.py`, `memory/script_memory.py`,
-  contratos/supervisor de agentes y tests.
-- **Riesgo:** alto.
-- **Dependencias:** Fase 12, cancelación y policy.
-- **Criterio de aceptación:** sin instalación/comando arbitrario desde salida
-  del modelo; preview/confirmación; presupuesto y evidencia tipados.
-- **Pruebas:** prompt injection, dependencia no permitida, timeout, output
-  excesivo, workspace escape y rollback parcial.
-- **Rollback:** mantener el agente heredado bloqueado detrás de policy.
-- **Evidencia de rama:** `services/agents.py` define `AgentTask`,
-  `AgentBudget`, `AgentResult` y `AgentSupervisor`; resuelve el workspace y
-  cada destino antes de escribir, limita archivos/bytes/tiempo/salida, rechaza
-  overwrite, traversal, absolutas, symlinks externos, comandos y dependencias
-  del modelo, y revierte únicamente archivos creados por la tarea.
-  `dev_agent` genera una vista previa nueva sin `pip`, `subprocess`, apertura
-  de IDE ni ejecución automática. Las rutinas de `script_memory` conservan
-  catálogo y compatibilidad, pero el código crudo queda bloqueado y ya no
-  reduce policy a `FREE`. La ejecución manual futura exige otra tool call
-  confirmada y un sandbox de sistema operativo; no se presenta `cwd` como
-  aislamiento suficiente.
+- **Status:** completed in `codex/18-agent-containment`.
+- **Objective:** `AgentTask`/`AgentResult`, Budget, Workspace and Allowlist;
+no agent prevents `ToolRegistry`/`PermissionPolicy`.
+- **Intended files:** `actions/dev_agent.py`, `memory/script_memory.py`,
+contracts/supervisor of agents and tests.
+- **Risk:** high.
+- **Dependencies:** Phase 12, cancellation and policy.
+- **Criteria of acceptance:** without arbitrary installation/command from departure
+model; preview/confirmation; tipped budget and evidence.
+- **Tests:** prompt injection, unallowed dependency, timeout, output
+excessive, workspace escape and partial rollback.
+- **Rollback:** keep the inherited agent locked behind policy.
+- **Branch evidence:** `services/agents.py` defines `AgentTask`,
+`AgentBudget`, `AgentResult` and `AgentSupervisor`; solves the workspace and
+each destination before writing, limits files/bytes/time/output, rejects
+overwrite, traversal, absolutes, external symlinks, commands and dependencies
+of the model, and reverses only files created by the task.
+`dev_agent` generates a new preview without `pip`, `subprocess`, opening
+IDE or automatic execution. `script_memory` routines retain
+catalog and compatibility, but the raw code is blocked and no longer
+reduces policy to `FREE`. Future manual execution requires another tool call
+confirmed and operating system sandbox; no `cwd` presented as
+Isolation enough.
 
-### Fase 14 - Decisión QML por benchmark
+### Phase 14 - QML decision by benchmark
 
-- **Estado:** completada en `codex/19-qml-benchmark`; decisión: conservar
-  PyQt Widgets y diferir QML.
-- **Objetivo:** decidir con una prueba aislada si QML reduce complejidad o mejora
-  rendimiento frente a PyQt Widgets.
-- **Archivos previstos:** benchmark/prototipo aislado y documentación; no
-  reemplazar `ui.py` durante la evaluación.
-- **Riesgo:** medio-alto si se adopta; bajo si sólo se mide.
-- **Dependencias:** presenters/workers estables y baseline de UI.
-- **Criterio de aceptación:** decisión documentada con métricas; adopción sólo
-  ante ventaja medible.
-- **Pruebas:** startup, memoria, frame pacing, interacción y packaging.
-- **Rollback:** descartar el prototipo sin tocar la UI productiva.
-- **Evidencia de rama:** cinco procesos aislados por variante, 45 frames por
-  proceso, Qt 6.11/offscreen/software. QML mejoró frame pacing p95 de 16,14 a
-  13,52 ms, pero elevó startup frío de 63,93 a 217,07 ms y RSS incremental de
-  20,62 a 32,74 MiB. Ambos tuvieron 0% jank y la diferencia de interacción no
-  fue material. Los guardrails predefinidos rechazan adopción si una ventaja
-  de al menos 15% introduce regresiones mayores al 10%; el resultado es
-  `defer`. `ui.py` y `ui_mk2/*` no se modificaron.
+- **Status:** completed in `codex/19-qml-benchmark`; decision: to retain
+PyQt Widgets and differ QML.
+- **Objective:** decide with an isolated test whether QML reduces complexity or improves
+performance against PyQt Widgets.
+- **Intended files:**mark/isolated prototype and documentation; no
+replace `ui.py` during evaluation.
+- **Risk:** medium-high if adopted; low if only measured.
+- **Dependencies:** stable and UI baseline presenters/workers.
+- **Criteria of acceptance:** decision documented with metrics; adoption only
+against measurable advantage.
+- **Tests:** startup, memory, frame packaging, interaction and packaging.
+- **Rollback:** discard the prototype without touching the productive UI.
+- **Branch evidence:** five processes isolated by variant, 45 frames by
+process, Qt 6.11/offscreen/software. QML improved frame packaging p95 from 16,14 to
+13.52 ms, but raised cold startup from 63.93 to 217.07 ms and incremental RSS
+20.62 to 32.74 MiB. Both had 0% jank and the interaction difference did not
+was material. Predefined Guardrails refuse adoption if an advantage
+of at least 15% introduces regressions greater than 10%; the result is
+`defer`. `ui.py` and `ui_mk2/*` were not modified.
 
-### Fase 15 - Gate de aceptación global
+### Phase 15 - Global acceptance gate
 
-- **Estado:** completada en `codex/20-global-acceptance`.
-- **Objetivo:** convertir los criterios globales de la sección 15 del PDF en
-  evidencia versionada y fail-closed, sin declarar completas las brechas que
-  todavía son parciales o requieren hardware.
-- **Archivos:** `docs/global_acceptance.*`,
-  `scripts/check_global_acceptance.py`, persistencia de memoria/runtime state,
-  tests y gates de calidad.
-- **Riesgo:** medio; endurece persistencia local y el baseline, sin iniciar
-  audio, cámara, Gemini, dashboard ni cuentas.
-- **Dependencias:** fases 0-14 y su evidencia documental/automatizada.
-- **Criterio de aceptación:** inventario exacto de los 19 criterios; evidencia
-  existente y contenida en el repositorio; cierre estricto bloqueado mientras
-  haya estados no verificados; memoria y runtime state publican documentos
-  validados y durables sin exponer parciales ante fault injection.
-- **Pruebas:** integridad/strict mode del gate, escritura y reemplazo fallidos,
-  recuperación de memoria, detalles no serializables, suite completa y
-  baseline.
-- **Rollback:** revertir el gate no modifica runtime; para memoria conservar
-  primario/backup válidos y restaurar con JARVIS detenido.
-- **Evidencia de rama:** matriz inicial con 6 criterios verificados, 11
-  parciales y 2 manuales. El modo `--require-complete` devuelve código 2 hasta
-  resolver los pendientes. Memoria y runtime state usan temporales del mismo
-  directorio, `flush`/`fsync`, validación previa, `os.replace` y cleanup; la
-  memoria preserva y recupera el último backup válido. El baseline completo
-  aprobó 398 tests, omitió 2 y aprobó 106 subtests.
+- **Status:** completed in `codex/20-global-acceptance`.
+- **Objective:** convert the global criteria of section 15 of the PDF to
+evidence reversed and failed-closed, without declaring complete the gaps that
+are still partial or require hardware.
+- **Archives:** `docs/global_acceptance.*`,
+`scripts/check_global_acceptance.py`, memory persistence/runtime state,
+quality tests and cats.
+- **Risk:** medium; harden local persistence and baseline, uninitiated
+audio, camera, Gemini, dashboard or accounts.
+- **Dependencies:** phases 0-14 and its documentary/automated evidence.
+- **Criteria of acceptance:**exact inventory of the 19 criteria; evidence
+existing and contained in the repository; strict lock-down while
+unverified states; memory and runtime state publish documents
+validated and durable without exposing partials to failure injection.
+- **Tests:** integrity/strict mode of failed gate, writing and replacement,
+memory recovery, non-serializable details, complete suite and
+baseline.
+- **Rollback:** reverse gate does not modify runtime; for memory preserve
+valid primary/backup and restore with JARVIS stopped.
+- **Branch evidence:** initial matrix with 6 verified criteria, 11
+partial and 2 manual. `--require-complete` mode returns code 2 up to
+resolve the earrings. Memory and runtime state use temporary of the same
+directory, `flush`/`fsync`, previous validation, `os.replace` and cleanup; the
+memory preserves and recovers the last valid backup.
+passed 398 tests, omitted 2 and approved 106 subtests.
 
-### Fase 16 - Control operativo de cambios
+### Phase 16 - Operational change control
 
-- **Estado:** completada en `codex/21-operational-change-control`.
-- **Objetivo:** hacer verificables las 11 instrucciones operativas y las 8
-  preguntas previas a refactorizar de la sección 16 del PDF.
-- **Archivos:** `docs/operational_change_control.*`,
-  `scripts/check_operational_change_control.py`, tests y gates de calidad.
-- **Riesgo:** bajo; sólo añade control documental/CI y no cambia runtime.
-- **Dependencias:** gate global de Fase 15 y evidencia de `ROADMAP.md`.
-- **Criterio de aceptación:** inventario exacto de 19 controles; un registro
-  único y secuencial por fase completada desde la 15; motivo, archivos, riesgos,
-  tests, métricas, rollback y preguntas arquitectónicas obligatorias; rutas
-  sensibles/externas bloqueadas; resultados y Obsidian cerrados antes del
-  estado completado.
-- **Pruebas:** inventario incompleto, fase ausente, path sensible/externo,
-  resultado pendiente, Obsidian pendiente, cambio destructivo sin controles y
-  abstracción sin beneficio permitido.
-- **Rollback:** retirar la llamada del baseline y revertir contrato/script/test;
-  no hay migración de datos ni cambio productivo.
-- **Evidencia de rama:** 7 tests dirigidos, Ruff limpio, mypy sin errores en 16
-  módulos y baseline con 405 tests aprobados, 2 omitidos y 106 subtests.
-  `AGENTS.md`, `git status` y la nota externa siguen siendo verificaciones
-  humanas explícitas: el gate no afirma observar lo que CI no puede demostrar.
+- **Status:** completed in `codex/21-operational-change-control`.
+- **Objective:** make the 11 operational instructions and 8 operational instructions verifiable
+questions prior to refactoring from section 16 of the PDF.
+- **Archives:** `docs/operational_change_control.*`,
+`scripts/check_operational_change_control.py`, quality tests and cats.
+- **Riesgo:** low; only adds documentary/CI control and does not change runtime.
+- **Dependencies:** Phase 15 global gate and `ROADMAP.md` evidence.
+- **Criteria of acceptance:**exact inventory of 19 controls; one record
+single and sequential phase completed since 15; motive, files, risks,
+mandatory tests, metrics, rollback and architectural questions; routes
+blocked; results and obsidian closed before
+status completed.
+- **Tests:** incomplete inventory, absent phase, sensitive/external path,
+result pending, Obsidian pending, destructive change without controls and
+abstraction without benefit allowed.
+- **Rollback:** withdraw the call from the baseline and reverse contract/script/test;
+There is no data migration or productive change.
+- **Branch evidence:** 7 guided tests, clean Ruff, mypy error-free in 16
+modules and baseline with 405 approved tests, 2 omitted and 106 subtests.
+`AGENTS.md`, `git status` and the external note remain verifications
+explicit human beings: the gate does not claim to observe what IC cannot prove.
 
-### Fase 17 - Cierre metodológico, alcance y límites
+### Phase 17 - Methodological closure, scope and limits
 
-- **Estado:** completada en `codex/22-audit-closure`; cierre del recorrido del
-  PDF con riesgos abiertos.
-- **Objetivo:** preservar las fuentes y límites de la sección 17 y bloquear una
-  declaración global completa mientras falte evidencia.
-- **Archivos:** `docs/audit_closure.*`, `scripts/check_audit_closure.py`, tests,
-  control operativo y gates de calidad.
-- **Riesgo:** bajo; cambio documental/CI sin efecto productivo.
-- **Dependencias:** matriz global de Fase 15 y control operativo de Fase 16.
-- **Criterio de aceptación:** inventario exacto de 8 grupos de fuentes y 5
-  límites; rutas contenidas y existentes; resumen sincronizado con aceptación
-  global; `verified_complete` rechazado mientras haya criterios abiertos.
-- **Pruebas:** grupo/límite ausente, ruta externa/inexistente, resumen
-  desactualizado y cierre completo falso.
-- **Rollback:** retirar el gate del baseline y revertir sus artefactos; no hay
-  migración de datos ni cambio de runtime.
-- **Evidencia de rama:** 12 tests dirigidos entre cierre/control operativo,
-  Ruff limpio, mypy sin errores en 17 módulos y baseline con 410 tests
-  aprobados, 2 omitidos y 106 subtests. El recorrido del PDF queda cerrado como
-  `closed_with_open_risks`: 6 criterios globales verificados y 13 aún abiertos.
+- **Status:** completed in `codex/22-audit-closure`; route closure
+PDF with open risks.
+- **Objective:** to preserve the sources and limits of section 17 and to block one
+global statement completes as long as evidence is lacking.
+- **Files:** `docs/audit_closure.*`, `scripts/check_audit_closure.py`, tests,
+operational control and quality gates.
+- **Risk:** low; documentary/CI change with no productive effect.
+- **Dependencies:** Global Phase 15 matrix and Phase 16 operational control.
+- **Criteria of acceptance:**exact inventory of 8 source groups and 5
+boundaries; contained and existing paths; synchronised summary with acceptance
+Global; `verified_complete` rejected while open criteria are in place.
+- **Tests:** absent group/limit, external/non-existent route, summary
+outdated and complete false closure.
+- **Rollback:** remove the gate from the baseline and reverse their artifacts; there is no
+data migration and runtime change.
+- **Branch evidence:** 12 tests conducted between closure/operational control,
+Clean Ruff, error-free mypy in 17 modules and baseline with 410 tests
+Approved, 2 omitted and 106 subtests. The PDF tour is closed as
+`closed_with_open_risks`: 6 verified global criteria and 13 still open.
 
-## Baseline y presupuestos iniciales
+## Baseline and initial budgets
 
-Los siguientes valores del PDF son objetivos provisionales, no resultados medidos:
+The following PDF values are provisional targets, not measured results:
 
-| Métrica | Objetivo inicial | Estado |
+| Metric | Initial objective | State |
 | --- | --- | --- |
-| Wake -> UI visible | < 500 ms | pendiente hardware |
-| ESC -> audio detenido | < 150 ms | pendiente medición |
-| Tool local simple | < 300 ms | pendiente benchmark |
-| Reconexión recuperable | < 5 s | pendiente fault injection |
-| Shutdown limpio | < 3 s | pendiente observación de recursos |
+| Wake -> Visible UI | < 500 ms | hardware pending |
+| ESC -> audio stopped | < 150 ms | measurement harness |
+| Simple local tool | < 300 ms | Benchmark pending |
+| Recoverable reconnection | < 5 s | failure-injection harness |
+| Clean Shutdown | < 3 s | Pending observation of resources |
 
-### Medición incremental de wake - 2026-07-30
+### Incremental Wake Measurement - 2026-07-30
 
-- Baseline local de carga secuencial: OpenWakeWord ~439 ms más Vosk ~1.498 ms
-  antes de comenzar a escuchar.
-- Después del cambio: OpenWakeWord quedó disponible en ~160 ms en la medición
-  repetida; Vosk terminó en segundo plano a ~1.190 ms sin bloquear la escucha.
-- La recuperación teórica de un stream sin callbacks baja de hasta ~8 s
-  (`5 s + 3 s`) a ~3 s (`2 s + 1 s`).
-- Supervisor y detector fueron reiniciados y quedaron activos sin errores
-  nuevos. La métrica Wake -> UI visible y la tasa acústica de aciertos siguen
-  pendientes de una prueba hablada en el hardware real.
+- Local sequential load base: OpenWakeWord ~439 ms plus Vosk ~1.498 ms
+before you start listening.
+- After the change: OpenWakeWord was available at ~160 ms in measurement
+repeated; Vosk finished in the background at ~1.190 ms without blocking the listening.
+- Theoretical recovery of a stream without callbacks low up to ~8 s
+(`5 s + 3 s`) at ~3 s (`2 s + 1 s`).
+- Supervisor and detector were restarted and left active without errors
+New. Wake -> Visible UI Metric and Acoustic Rate of Hits Continue
+pending a spoken test on the real hardware.
 
-### Corrección incremental de arranque - 2026-07-31
+### Incremental start correction - 2026-07-31
 
-- La validación manual reveló que el proceso podía quedar minimizado y que el
-  saludo no se reintentaba tras una sesión inicial fallida.
-- La UI ahora obtiene el primer frame antes de cargar Gemini, restaura ventanas
-  icónicas con `SW_RESTORE` y reafirma fullscreen sin alterar Pet Mode.
-- El import local de `main` bajó de ~2.241 ms a ~509 ms (aprox. 77%). La prueba
-  Qt offscreen confirmó superficie `main`, visible, fullscreen y no minimizada.
-- El saludo sólo se marca enviado después de terminar su reproducción; audio
-  descartado por reconexión conserva el saludo pendiente.
-- Suite completa: `231 passed, 1 skipped, 41 subtests passed`.
-- Supervisor y detector wake reiniciados; ambos quedaron activos y habilitados.
-- Pendiente manual: medir Wake -> primer frame y confirmar saludo audible,
-  foco y fullscreen en el hardware real.
+- Manual validation revealed that the process could be minimized and that the
+greeting was not retrying after an initial failed session.
+- The UI now gets the first frame before loading Gemini, restores windows
+iconic with `SW_RESTORE` and reaffirms fullscreen unaltered Pet Mode.
+- Local import of `main` dropped from ~2,241 ms to ~509 ms (approx. 77%).
+Qt offscreen confirmed `main` surface, visible, fullscreen and not minimized.
+- The greeting is only marked sent after completion of its playback; audio
+discarded by reconnection retains the greeting pending.
+- Complete suite: `231 passed, 1 skipped, 41 subtests passed`.
+- Monitor and wake detector restarted; both remained active and enabled.
+- Manual Earrings: measure Wake -> first frame and confirm audible greeting,
+focus and fullscreen on real hardware.
 
-### Preparación de publicación no comercial - 2026-07-31
+### Preparation of non-commercial publication - 2026-07-31
 
-- Completados: atribución al commit exacto de Mark XLVIII, `NOTICE.md`, alcance
-  CC BY-NC, disclaimer de no afiliación, placeholder OAuth inequívoco,
-  exclusión de `/output/` y checklist de seguridad.
-- Se agregaron pruebas para conservar estos requisitos y el escaneo actual no
-  detectó secretos versionados.
-- Verificación completa: `236 passed, 1 skipped, 48 subtests passed`.
-- La visibilidad sigue privada y no hubo commit, push ni reescritura de
-  historial.
-- Pendiente antes de declarar publicación jurídicamente lista: decidir la
-  compatibilidad de PyQt6 GPLv3/comercial. Esta preparación no modifica PyQt6.
-- Integración local posterior: los cambios fueron portados sobre el `main`
-  moderno sin retirar sus 55 commits de arquitectura. La suite integrada quedó
-  en `434 passed, 3 skipped, 131 subtests passed`; el puntero local de `main`
-  se actualizó por fast-forward. No hubo push ni cambio de visibilidad.
+- Completed: attribution to the exact commit of Mark XLVIII, `NOTICE.md`, scope
+CC BY-NC, disclaimer of non-affiliation, placeholder OAuth unambiguous,
+exclusion of `/output/` and security checklist.
+- Tests were added to preserve these requirements and the current scan did not
+He's picked up some versioned secrets.
+- Complete verification: `236 passed, 1 skipped, 48 subtests passed`.
+- The visibility remains private and there was no commit, push or rewrite of
+History.
+- Pending before declaring publication legally ready: to decide on
+PyQt6 GPLv3/commercial compatibility. This preparation does not modify PyQt6.
+- Later local integration: changes were carried over the `main`
+modern without withdrawing its 55 commissions of architecture. The integrated suite remained
+in `434 passed, 3 skipped, 131 subtests passed`; the local `main` pointer
+was updated by fast-forward. There was no push or change of visibility.
 
-## Quick wins previos al primer sprint
+## Quick wins before the first sprint
 
-1. Añadir tests que demuestren el origen remoto perdido.
-2. Marcar `file_processor` y sus operaciones por riesgo real.
-3. Corregir la contradicción de `code_helper write/edit` libre.
-4. Crear la matriz automática de las 37 herramientas.
-5. Separar dependencias opcionales/legacy y documentarlas.
-6. Eliminar sólo el dispatch inalcanzable después de cubrir equivalencia.
-7. Convertir `PermissionStore.save()` a reemplazo atómico.
+1. Add tests that demonstrate the lost remote origin.
+2. Mark `file_processor` and its real risk operations.
+3. Correct the contradiction of `code_helper write/edit` free.
+4. Create the automatic matrix of the 37 tools.
+5. Separate optional/legacy dependencies and document them.
+6. Remove only the unattainable dispatch after covering equivalence.
+7. Convert `PermissionStore.save()` to atomic replacement.
 
-## Siguiente cambio recomendado
+## Next recommended change
 
-Un PR/commit pequeño de seguridad y especificación:
+A small PR/committee for safety and specification:
 
-1. tests de integración que conserven `source=dashboard`;
-2. inventario parametrizado de riesgo/operación para las 37 tools;
-3. corrección de `file_processor` y `code_helper`;
-4. sin cambios en audio, wake, UI visual, modelos ni Gemini Live.
+1. integration tests that retain `source=dashboard`;
+2. Parametrized risk/operation inventory for 37 tools;
+3. correction of `file_processor` and `code_helper`;
+4. no changes in audio, wake, visual UI, models or Gemini Live.
 
-La trazabilidad completa debe comenzar inmediatamente después, sobre esa frontera ya correcta.
+Full traceability must begin immediately afterwards, on that correct border.

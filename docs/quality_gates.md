@@ -1,86 +1,86 @@
-# Calidad incremental y CI
+# Incremental quality and CI
 
-## Objetivo
+## Objective
 
-Incorporar controles reproducibles sin exigir que toda la deuda histórica se
-resuelva en una sola etapa. La superficie sólo crece cuando otro módulo obtiene
-contratos y tipos suficientes.
+Incorporate reproducible controls without requiring that all historical debt be
+solve in a single stage. The surface only grows when another module obtains
+contracts and sufficient types.
 
-## Herramientas
+## Tools
 
-`requirements-dev.txt` declara:
+`requirements-dev.txt` states:
 
-- Ruff para imports, errores de sintaxis, nombres indefinidos y patrones de bug;
-- mypy para contratos tipados;
-- pytest para comportamiento.
+- Ruff for imports, syntax errors, indefinite names and bug patterns;
+- mypy for typed contracts;
+- pytest for behavior.
 
-`pyproject.toml` mantiene la configuración. No se habilitan reglas de
-modernización que fuercen refactors ajenos.
+`pyproject.toml` maintains the configuration. No rules are enabled
+modernization that force external refactors.
 
-## Superficie
+## Scope
 
-`scripts/validate_quality.ps1` entrega a Ruff una lista explícita de módulos
-migrados y sus pruebas. Mypy usaba inicialmente seis módulos productivos;
-Fase 11 amplía la lista a doce con `core.events` y los cinco módulos de owners;
-Fase 12 añade `services.workers` como módulo productivo número trece y Fase 13
-incorpora `services.agents` como contrato productivo número catorce. No se
-inspeccionan `main.py`, `ui.py`, hardware de audio ni actions heredadas hasta
-migrarlas por frontera.
+`scripts/validate_quality.ps1` delivers an explicit list of modules to Ruff
+Mypy initially used six production modules;
+Phase 11 extends the list to twelve with `core.events` and the five owner modules;
+Phase 12 adds `services.workers` as production module number thirteen and Phase 13
+incorporates `services.agents` as production contract number fourteen.
+inspect `main.py`, `ui.py`, audio hardware and legacy actions until
+migrate them one boundary at a time.
 
-El benchmark aislado de Fase 14 y sus tests también pasan por Ruff. No se añade
-a mypy porque es instrumentación reproducible, no un contrato productivo. El
-baseline incluye `benchmarks/` en `compileall`.
+The Phase 14 isolated benchmark and its tests also go through Ruff. Not added
+to mypy because it is reproducible instrumentation, not a productive contract.
+baseline includes `benchmarks/` in `compileall`.
 
-Fase 15 incorpora `scripts/check_global_acceptance.py` a Ruff y mypy, y su
-prueba a Ruff. El baseline ejecuta el gate en modo integridad: exige los 19
-criterios del PDF y evidencia local válida, sin confundir ese control con el
-cierre estricto de brechas manuales o parciales.
+Phase 15 incorporates `scripts/check_global_acceptance.py` to Ruff and mypy, and its
+test Ruff. The baseline executes the gate in integrity mode: it requires the 19
+PDF criteria and valid local evidence, without confusing that control with the
+strict closing of manual or partial gaps.
 
-Fase 16 añade `scripts/check_operational_change_control.py` a Ruff/mypy y su
-prueba a Ruff. El baseline exige los 19 controles operativos y un registro
-estructurado por fase completada desde la 15.
+Phase 16 adds `scripts/check_operational_change_control.py` to Ruff/mypy and its
+Ruff test. The baseline requires all 19 operational controls and a record
+structured by phase completed since the 15th.
 
-Fase 17 añade `scripts/check_audit_closure.py` a Ruff/mypy y su prueba a Ruff.
-El baseline conserva los ocho grupos de fuentes, cinco límites y el estado de
-riesgos abiertos sincronizado con aceptación global.
+Phase 17 adds `scripts/check_audit_closure.py` to Ruff/mypy and its Ruff test.
+The baseline retains the eight groups of sources, five boundaries and the state of
+Open risks synchronized with global acceptance.
 
-Ejecución:
+Implementation:
 
 ```powershell
 .\scripts\validate_quality.ps1 -Python python
 ```
 
-`scripts/validate_baseline.ps1` incorpora el mismo gate antes del escaneo de
-secretos y la suite.
+`scripts/validate_baseline.ps1` incorporates the same gate before scanning
+secrets and the suite.
 
 ## CI
 
-`.github/workflows/quality.yml` se activa para pushes a `main`,
-`codex/**` y pull requests. Usa:
+`.github/workflows/quality.yml` is activated for pushes to `main`,
+`codex/**` and pull requests. Use:
 
-- Windows, la plataforma principal verificada;
+- Windows, the main platform verified;
 - Python 3.12;
-- dependencias versionadas;
-- permisos `contents: read`;
-- timeout de 30 minutos;
-- el baseline reproducible completo.
+- versioned dependencies;
+- `contents: read` permissions;
+- 30-minute timeout;
+- the complete reproducible baseline.
 
-No recibe credenciales, no inicia modos direct/wake y no accede a hardware,
-Gemini ni cuentas.
+It doesn't get credentials, it doesn't start direct/wake modes, and it doesn't access hardware,
+Gemini doesn't even count.
 
-## Expansión
+## Expansion
 
-Para agregar un módulo:
+To add a module:
 
-1. corregirlo y agregar pruebas dentro de una etapa propia;
-2. añadirlo a `$QualityFiles`;
-3. añadirlo a `tool.mypy.files` sólo si su contrato productivo está tipado;
-4. ejecutar el baseline completo;
-5. documentar cualquier regla omitida.
+1. correct it and add evidence within a stage of its own;
+2. add it to `$QualityFiles`;
+3. add it to `tool.mypy.files` only if your productive contract is typed;
+4. execute the complete baseline;
+5. document any omitted rule.
 
 ## Rollback
 
-Retirar temporalmente la llamada del baseline o el workflow no cambia runtime,
-pero elimina una barrera de regresión. Ruff/mypy pueden revertirse quitando sus
-entradas de `requirements-dev.txt`; no generaron formato masivo ni cambios de
+Withdrawing temporarily the call from the baseline or the workflow does not change runtime,
+but removes a regression barrier. Ruff/mypy can be reversed by removing its
+`requirements-dev.txt` entries; did not generate mass formatting or changes in
 interfaces.

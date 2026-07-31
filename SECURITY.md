@@ -1,64 +1,64 @@
-# Seguridad
+# Security
 
-## Reportar una vulnerabilidad
+## Reporting a vulnerability
 
-No publiques credenciales ni detalles explotables en un issue. Si el
-repositorio está alojado en GitHub, utilizá **Security → Report a
-vulnerability** para enviar un reporte privado al mantenedor.
+Do not publish credentials or exploitable details in an issue. If this
+repository is hosted on GitHub, use **Security → Report a vulnerability** to
+send a private report to the maintainer.
 
-## Datos que nunca deben publicarse
+## Data that must never be published
 
-El repositorio excluye deliberadamente:
+The repository deliberately excludes:
 
-- `config/api_keys.json`, archivos `.env` y certificados;
-- clientes OAuth y tokens de servicios externos;
-- configuraciones personales y auditorías de conectores;
-- `memory/long_term.json` y demás memoria personal;
-- logs, capturas, workspaces locales y entornos virtuales;
-- artefactos generados dentro de `output/`;
-- `AGENTS.md`, que contiene instrucciones locales de desarrollo.
+- `config/api_keys.json`, `.env` files, and certificates;
+- OAuth clients and external-service tokens;
+- personal configuration and connector audit data;
+- `memory/long_term.json` and other personal memory;
+- logs, screenshots, local workspaces, and virtual environments;
+- generated artifacts under `output/`;
+- `AGENTS.md`, which contains local development instructions.
 
-Antes de hacer público un fork o una copia, verificá no sólo el árbol actual
-sino también todo el historial de Git. Rotá inmediatamente cualquier
-credencial que haya sido publicada, incluso si luego eliminaste el commit.
+Before making a fork or copy public, inspect both the current tree and the
+entire Git history. Immediately rotate any credential that has ever been
+published, even if the containing commit was later removed.
 
-Los archivos `*.example.json` son plantillas sin secretos y sí pueden
-versionarse.
+`*.example.json` files are secret-free templates and may be committed.
 
-## Chequeo preventivo
+## Preventive scan
 
-Ejecutá antes de cada commit:
+Run this command before every commit:
 
 ```powershell
 python scripts/check_secrets.py --repo-root .
 ```
 
-El comando revisa archivos versionados y usa el blob del índice para todo
-archivo staged. Falla si encuentra una ruta privada conocida o una credencial
-de alta confianza. Su salida no incluye el valor coincidente.
+The command inspects tracked files and uses the index blob for staged files. It
+fails when it detects a known private path or a high-confidence credential,
+without printing the matched value.
 
-Este control no revisa archivos no versionados ni demuestra que el historial
-completo esté limpio. Si una credencial llegó a un commit o remoto, revocala y
-rotala; eliminar solamente el archivo no es suficiente.
+This check does not inspect untracked files and does not prove that the full
+history is clean. If a credential reached a commit or remote, revoke and rotate
+it; deleting the file alone is not sufficient.
 
-Los eventos generales de runtime usan `StructuredRuntimeLog`: sólo aceptan
-metadata allowlisted, sanitizan mensajes y rotan `logs/runtime.jsonl`. Los
-eventos de tools continúan en `RequestAuditSink` y no aceptan argumentos ni
-cuerpos. Los logs reales permanecen fuera de Git.
+General runtime events use `StructuredRuntimeLog`: it accepts only allowlisted
+metadata, sanitizes messages, and rotates `logs/runtime.jsonl`. Tool events
+remain in `RequestAuditSink` and accept neither arguments nor bodies. Real logs
+remain outside Git.
 
-## Lista mínima antes de cambiar la visibilidad
+## Minimum checklist before changing visibility
 
-1. Ejecutar el escaneo de secretos sobre el árbol y todo el historial.
-2. Confirmar que las plantillas usan únicamente placeholders reconocibles.
-3. Revisar ramas y tags, porque también pasan a ser visibles.
-4. Verificar que `git status` no incluya artefactos personales por agregar.
-5. Confirmar créditos, licencias y avisos de terceros.
-6. Recordar que una copia o fork realizado mientras el repositorio es público
-   no puede retirarse de equipos ajenos volviendo el repositorio a privado.
+1. Scan secrets in the working tree and the entire history.
+2. Confirm that templates contain only recognizable placeholders.
+3. Review branches and tags, because they also become visible.
+4. Confirm that `git status` contains no personal artifacts waiting to be
+   added.
+5. Verify credits, licenses, and third-party notices.
+6. Remember that copies or forks created while the repository is public cannot
+   be removed from other people's systems by making the repository private
+   again.
 
-## Alcance
+## Scope
 
-JARVIS ejecuta acciones locales y puede conectarse con servicios externos.
-Mantené activadas las confirmaciones para operaciones sensibles, aplicá el
-principio de mínimo privilegio y revisá cada integración antes de concederle
-acceso.
+JARVIS performs local actions and can connect to external services. Keep
+confirmations enabled for sensitive operations, apply the principle of least
+privilege, and review each integration before granting access.

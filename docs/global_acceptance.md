@@ -1,58 +1,58 @@
-# Gate de aceptación global
+# Global acceptance gate
 
-Este gate traduce los 19 criterios de la sección 15 del PDF rector a un
-inventario versionado y comprobable. La fuente de datos es
-`docs/global_acceptance.json`; `scripts/check_global_acceptance.py` valida que
-no falte ningún criterio, que los estados sean explícitos y que toda evidencia
-permanezca dentro del repositorio y exista.
+This gate translates the 19 criteria of section 15 of the governing PDF into a
+verified and verifiable inventory. The source of data is
+`docs/global_acceptance.json`; `scripts/check_global_acceptance.py` validates that
+there is no lack of criteria, that states are explicit and that all evidence
+stay inside the repository and exist.
 
-Estados:
+States:
 
-- `verified`: la evidencia automatizada disponible satisface el criterio;
-- `partial`: existe implementación real, pero la cobertura no alcanza toda la
-  superficie declarada;
-- `manual`: hace falta hardware, packaging, observación visual o una medición
-  real que los mocks no pueden demostrar;
-- `blocked`: no puede avanzarse sin una dependencia o decisión externa.
+- `verified`: the available automated evidence meets the criterion;
+- `partial`: Real implementation exists, but coverage does not reach the full
+area declared;
+- `manual`: hardware, packaging, visual observation or measurement required
+real that mocks cannot prove;
+- `blocked`: cannot be advanced without an external dependency or decision.
 
-La validación básica ejecuta el modo de integridad:
+Basic validation executes integrity mode:
 
 ```powershell
 python scripts/check_global_acceptance.py --repo-root .
 ```
 
-Ese modo falla ante inventario incompleto, evidencia inexistente, paths
-externos o un estado incoherente, pero permite estados pendientes. El cierre
-global estricto se consulta por separado:
+That mode fails with incomplete inventory, non-existent evidence, paths
+external or incoherent state, but allows pending states.
+strict overall consultation is carried out separately:
 
 ```powershell
 python scripts/check_global_acceptance.py --repo-root . --require-complete
 ```
 
-Mientras exista un criterio distinto de `verified`, el segundo comando termina
-con código 2. Por diseño, la etapa 15 puede entregar un gate confiable sin
-afirmar que las brechas históricas ya están resueltas.
+As long as there is a criterion other than `verified`, the second command ends
+with code 2. By design, stage 15 can deliver a reliable gate without
+to affirm that the historical gaps are already resolved.
 
-## Resultado inicial
+## Initial result
 
-La persistencia de memoria y `runtime_state` se endureció en esta etapa:
-temporal en el mismo directorio, `flush`/`fsync`, validación antes de publicar,
-`os.replace`, limpieza ante fallos y preservación del último primario válido.
-Memoria recupera desde backup validado; el estado de runtime, por ser
-telemetría de mejor esfuerzo, conserva el último documento completo y nunca
-impide el arranque.
+Memory persistence and `runtime_state` hardened at this stage:
+temporary in the same directory, `flush`/`fsync`, validation before publishing,
+`os.replace`, failure cleaning and preservation of the last valid primary.
+Memory recovers from validated backup; runtime status, to be
+best effort telemetry, retains the last complete document and never
+It stops the start.
 
-Los pendientes principales siguen siendo:
+The main outstanding issues remain:
 
-- envelope central para rutas especiales y migración de tools legacy;
-- ownership completo de dashboard/shutdown y supervisión del resto de workers;
-- propagación/auditoría universal fuera del camino central de tools;
-- migración de proveedores de texto, Live y visión;
-- métricas reales de wake, audio, reconexión y shutdown.
+- central envelope for special routes and migration of tools legacy;
+- complete dashboard/shutdown ownership and supervision of the rest of workers;
+- universal propagation/audit outside the central tool path;
+- migration of text, Live and vision providers;
+- actual wake metrics, audio, reconnection and shutdown.
 
 ## Rollback
 
-Revertir el commit de la etapa restaura los escritores anteriores. Si una
-regresión de memoria obliga a rollback manual, conservar `long_term.json` y
-`long_term.json.bak`, validar ambos como JSON de esquema 2 y restaurar sólo la
-copia válida más reciente con JARVIS detenido.
+Reversing the commit of the stage restores the previous writers.
+memory regression forces manual rollback, preserve `long_term.json` and
+`long_term.json.bak`, validate both as Scheme 2 JSON and restore only the
+most recent valid copy with JARVIS arrested.

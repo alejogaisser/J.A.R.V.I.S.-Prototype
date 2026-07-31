@@ -1,50 +1,50 @@
-# Piloto de verificación de archivos
+# File verification pilot
 
-## Alcance
+## Scope
 
-`file_controller` produce `ToolResult` v2 para tres operaciones sobre archivos
-regulares:
+`file_controller` produces `ToolResult` v2 for three file operations
+regular:
 
 - `create_file`;
 - `copy`;
 - `move`.
 
-Las operaciones de directorios y el resto del controlador mantienen el retorno
-legacy. Esto permite desactivar el piloto volviendo el dispatch a los handlers
-existentes, sin cambiar sus firmas.
+Directory operations and the rest of the controller maintain return
+legacy. This allows to disable the pilot by returning the dispatch to the handlers.
+existing, without changing their signatures.
 
-## Evidencia y estados
+## Evidence and states
 
-El verifier vuelve a abrir el destino después de la operación y captura:
+The verifier reopens the destination after the operation and captures:
 
-- ruta absoluta resuelta;
-- tamaño en bytes;
-- SHA-256 leído desde el filesystem.
+- absolute route resolved;
+- size in bytes;
+- SHA-256 read from the filesystem.
 
-Crear compara el hash observado con el contenido solicitado. Copiar y mover
-comparan tamaño y hash del origen con el destino; mover también exige ausencia
-del origen. Sólo entonces el resultado declara
+Create compares the observed hash to the requested content. Copy and move
+compare the size and hash of the origin with the destination; moving also requires absence
+of origin. Only then does the result declare
 `succeeded/applied/verified`.
 
-Un conflicto de destino se rechaza antes de escribir y queda
-`rejected/not_applied`. Si la operación termina pero la evidencia no puede
-observarse o no coincide, el resultado queda `succeeded` con verificación
-fallida y nunca comunica el efecto como verificado.
+A destiny conflict is rejected before writing and remains
+`rejected/not_applied`. If the operation ends but the evidence cannot
+be observed or not matched, the result remains `succeeded` with verification
+failed and never communicates the effect as verified.
 
-## Rollback declarado
+## Rollback declared
 
-El resultado incluye una receta explícita y marca el rollback como disponible:
+The result includes an explicit recipe and marks rollback as available:
 
-- crear/copiar: enviar el destino a la papelera;
-- mover: mover el destino nuevamente a la ruta de origen.
+- create/copy: send the destination to the wastebasket;
+- move: move the destination back to the source path.
 
-La ejecución automática de esas recetas no forma parte de este piloto. Queda
-pendiente incorporarla detrás de policy y verificar también su resultado.
+The automatic execution of these recipes is not part of this pilot.
+pending to incorporate it behind policy and also verify its result.
 
-## Límites
+## Limits
 
-- No hay verificación recursiva de árboles de directorios.
-- No se garantiza una instantánea atómica si otro proceso modifica un archivo
-  entre la operación y la lectura de evidencia.
-- SHA-256 prueba igualdad de contenido observada, no identidad ni procedencia.
-- El timeout del executor aún no cancela un handler síncrono en ejecución.
+- There is no recursive directory tree verification.
+- An atomic snapshot is not guaranteed if another process modifies a file
+between the operation and the reading of evidence.
+- SHA-256 proves equality of observed content, no identity or provenance.
+- Executor timeout still doesn't cancel a running synchronous handler.

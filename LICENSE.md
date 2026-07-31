@@ -1,47 +1,46 @@
-# Licencia de JARVIS Mark LI
+# JARVIS Mark LI License
 
-## Alcance
+## Scope
 
-Este repositorio publica su código fuente para uso personal y no comercial.
-No se presenta como software de código abierto conforme a la definición OSI.
+This repository makes its source code publicly available for personal,
+non-commercial use. It is not represented as open-source software under the
+Open Source Initiative definition.
 
 Copyright © 2026 Alejo Gaisser
-([`@alejogaisser`](https://github.com/alejogaisser), anteriormente
-`@AlejoGaisser07`) sobre sus contribuciones originales y modificaciones.
+([`@alejogaisser`](https://github.com/alejogaisser), formerly
+`@AlejoGaisser07`) for his original contributions and modifications.
 
-En la medida en que los derechos correspondan al mantenedor de este
-repositorio, las modificaciones originales de JARVIS Mark LI se distribuyen
-bajo la licencia
-[Creative Commons Atribución-NoComercial 4.0 Internacional](https://creativecommons.org/licenses/by-nc/4.0/legalcode).
+To the extent that the repository maintainer owns the relevant rights, the
+original modifications made for JARVIS Mark LI are licensed under the
+[Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/legalcode).
 
-En términos simples, podés copiar, compartir y adaptar esas contribuciones
-siempre que:
+In plain language, you may copy, share, and adapt those contributions provided
+that you:
 
-- reconozcas la autoría y señales los cambios realizados;
-- incluyas un enlace a la licencia;
-- no uses el material con fines comerciales.
+- give appropriate credit and indicate any changes;
+- include a link to the license;
+- do not use the material for commercial purposes.
 
-Este resumen no reemplaza el texto legal enlazado arriba.
+This summary does not replace the legal text linked above.
 
-JARVIS Mark LI deriva de **Mark XLVIII**, creado por
-[FatihMakes](https://github.com/FatihMakes). La versión de referencia es el
+JARVIS Mark LI derives from **Mark XLVIII**, created by
+[FatihMakes](https://github.com/FatihMakes). The reference version is
 [commit `d178f6b`](https://github.com/FatihMakes/Mark-L/commit/d178f6b),
-publicado por su autor para uso personal y no comercial bajo CC BY-NC 4.0.
-Los derechos y condiciones del proyecto original continúan perteneciendo a
-sus titulares. Esta licencia no concede derechos adicionales sobre material
-de terceros.
+published by its author for personal, non-commercial use under CC BY-NC 4.0.
+Rights and conditions attached to the original project remain with their
+respective owners. This license grants no additional rights over third-party
+material.
 
-Los componentes y modelos de terceros conservan sus propias licencias,
-detalladas en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-La atribución consolidada y la descripción de cambios están en
-[NOTICE.md](NOTICE.md).
+Third-party components and models retain their own licenses, as detailed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Consolidated attribution and
+a description of modifications are available in [NOTICE.md](NOTICE.md).
 
-## Marcas y afiliación
+## Trademarks and affiliation
 
-Este es un proyecto independiente. No está afiliado, patrocinado ni aprobado
-por Marvel Entertainment, Marvel Studios, The Walt Disney Company ni por los
-titulares de las marcas asociadas a JARVIS o Iron Man. Las marcas, nombres y
-personajes de terceros pertenecen a sus respectivos titulares.
+This is an independent project. It is not affiliated with, sponsored by, or
+endorsed by Marvel Entertainment, Marvel Studios, The Walt Disney Company, or
+any owner of trademarks associated with JARVIS or Iron Man. Third-party
+trademarks, names, and characters belong to their respective owners.
 
-EL SOFTWARE SE ENTREGA “TAL CUAL”, SIN GARANTÍAS EXPRESAS O IMPLÍCITAS, EN LA
-MÁXIMA MEDIDA PERMITIDA POR LA LEY APLICABLE.
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT EXPRESS OR IMPLIED WARRANTIES, TO
+THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW.
