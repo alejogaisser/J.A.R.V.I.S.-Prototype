@@ -818,3 +818,138 @@ README. The cloning command uses the current canonical URL.
   full compilation, launcher help, repository quality gate, secret scan and
   `git diff --check` passed.
   One external `google.genai` deprecation warning remains unchanged.
+
+## Verified correction - 2026-07-31 - Graceful Gemini Live rotation
+
+- **Root cause:** the wake detector was healthy, receiving audio and approving
+the phrase, while Gemini sessions repeatedly ended with WebSocket 1008. The
+server had first sent `GoAway`, but `main.py` only displayed it and left every
+infinite TaskGroup worker running until the server aborted the connection.
+- **Correction:** `SessionService` owns a deduplicated rotation request and
+counter for the current transport. The receive path saves the resumption
+checkpoint first, raises a typed internal signal, closes the TaskGroup and SDK
+session, and reconnects with zero intentional backoff. Expected rotations no
+longer produce crash tracebacks.
+- **Safety and scope:** no battery gate exists and the 20% charge was unrelated.
+No microphone threshold, device, credentials, model, tool policy or external
+account behavior changed. Tests do not start a real Live or hardware session.
+- **Verification:** `460 passed, 2 skipped, 137 subtests passed`; `pip check`,
+full compilation, launcher help, Ruff, mypy, the secret scan and
+`git diff --check` passed. The one `google-genai` Python 3.17 deprecation
+warning is pre-existing.
+- **Risk:** correctness is verified against the observed protocol order and
+mocked owner transitions; a real server rotation still requires manual Windows
+confirmation. Rollback removes the rotation signal, owner fields and tests; no
+persistent data migration is involved.
+
+## Verified correction - 2026-07-31 - Complete farewell playback before exit
+
+- **Root cause:** the lifecycle treated an empty asyncio queue as completed
+speaker playback. PortAudio can still hold submitted buffers after the final
+`stream.write()`, while a fixed 250 ms thread delay called `os._exit`. The
+independent 12-second fallback could also finish shutdown after farewell audio
+had started but before playback drained.
+- **Correction:** the existing `LifecycleService` now owns separate evidence for
+farewell reception, queue drain and device drain. Starting farewell audio moves
+the emergency deadline to 45 seconds; normal completion still happens as soon
+as the queue drains. Finalization uses blocking `RawOutputStream.stop()`, closes
+the device, records drain evidence, publishes `off` and exits in that order.
+- **Compatibility:** the existing shutdown tool, wording, request correlation,
+GoAway rotation, wake supervision, playback interruption and UI paths remain in
+place. No parallel lifecycle or audio abstraction was introduced.
+- **Verification:** `462 passed, 2 skipped, 137 subtests passed`; `pip check`,
+full compilation, launcher help, Ruff, mypy, the secret scan and
+`git diff --check` passed. The existing `google-genai` Python 3.17 deprecation
+warning is unchanged.
+- **Risk and rollback:** hardware timing is not exercised by automated tests;
+the installed sounddevice contract states that `stop()` waits for pending
+buffers. The 45-second bound handles a stuck device. Rollback restores the
+single deadline and fixed 250 ms delay; no data migration is involved.
+
+## Verified correction - 2026-07-31 - Study first-open readiness and extended wake phrase
+
+- **Root causes:** Study executed `runJavaScript()` and selected its WebEngine
+  view without evidence that the hidden startup page had finished loading. A
+  later manual reopen worked because the page was ready by then. Separately,
+  the dedicated neural detector could approve the short `Hey Jarvis` prefix by
+  itself, leaving the observed false-positive surface unchanged.
+- **Correction:** the existing Study owner now holds explicit loading, ready and
+  failed states, defers artifact rendering, exposes a non-blank local loading
+  surface and retries failures. The shared central-navigation method validates
+  its stack postcondition before returning success.
+- **Wake policy:** the active/default phrase is `Hey Jarvis wake up`.
+  OpenWakeWord arms a bounded verifier but cannot activate the extended mode by
+  itself. Vosk must provide the exact `wake up` word sequence with sufficient
+  confidence, recent voiced audio and an unlocked Windows session; an unrelated
+  final result or timeout clears the state. Exact full-phrase Vosk recognition
+  is also accepted. Legacy short-phrase configuration remains compatible.
+- **Scope and discrepancies:** current code remains the source of truth. Older
+  historical notes describe both adding and later removing the suffix; this
+  entry records the user-requested final state without rewriting that history.
+  No parallel UI/audio owner was added, and prior GoAway and farewell fixes were
+  not modified.
+- **Verification:** directed tests passed (`67` and final behavioral `55`);
+  full suite `467 passed, 2 skipped, 137 subtests passed`; full compilation and
+  `pip check` passed. Real microphone false-positive rate and first-open monitor
+  rendering remain manual checks. Rollback restores the prior defaults and
+  direct WebEngine render; no data migration is involved.
+
+### Follow-up finding - extended wake confirmation ordering
+
+- **Confirmed code defect:** `listen_for_openwakeword()` passed a Vosk final to
+  the suffix verifier before calling `observe_neural()` for the same audio
+  block. A valid coincident final therefore saw an unarmed verifier. The exact
+  equality check also lost valid continuous/segmented output when Vosk rendered
+  the OOV name through an allowed alias.
+- **Correction:** neural evidence is committed first; exact `wake up` must be
+  the consecutive tail of the confident Vosk final. Prefix-only Jarvis aliases
+  retain the already bounded window, unrelated finals cancel it, and the closed
+  grammar now contains the corresponding extended alias phrases.
+- **Model decision:** Gemini is unnecessary for this defect and would couple an
+  always-on local wake boundary to network availability, API/session lifecycle,
+  latency and external audio processing. The existing offline owners remain.
+- **Runtime evidence:** the active listener had started before the corrected
+  file timestamp, so it was still executing old code. Only the status-owned wake
+  PID was terminated; the existing supervisor replaced it and published a new
+  PID in `listening` state with `Hey Jarvis Wake Up`. No other process was
+  targeted. Full verification: `469 passed, 2 skipped, 137 subtests passed`;
+  dependency and secret checks plus `git diff --check` passed.
+- **Second runtime correction:** twenty physical attempts produced no new
+  approval while the listener remained healthy. Complete confident extended
+  Vosk phrases now survive late endpointing independently of the neural timer;
+  only suffix-only recognition still requires an armed neural prefix. The
+  segmented bound is five seconds. The status-owned listener alone was reloaded
+  and returned to `listening`; Gemini and all other owners remain unchanged.
+- **Root-cause acceptance evidence:** with a clean diagnostic process tree, the
+  microphone delivered real speech, OpenWakeWord reached `0.331` over `0.080`,
+  Vosk produced the exact four-word category at confidence `1.000`, and the
+  detector approved. The launcher started the app, found its main window and
+  `jarvis_status` published `on`; the process remained responsive. Therefore
+  Gemini, battery and application bootstrap are excluded for this incident.
+  Temporary diagnostics were removed and the normal hidden supervisor restored
+  while the launched app remained open.
+
+## Verified correction - 2026-08-01 - Vosk endpoint starvation
+
+- **Root cause:** the extended detector treated Vosk final output as mandatory.
+  Under continuous ambient audio, Vosk can preserve the correct phrase only as
+  a partial hypothesis and postpone its endpoint indefinitely. The code logged
+  but categorically ignored that evidence, leaving an armed phrase stuck until
+  timeout. A second availability mismatch allowed `listening` before mandatory
+  Vosk had loaded.
+- **Correction:** `StablePartialWakeConfirmation` requires the exact suffix for
+  three unchanged blocks plus an armed neural prefix, recent voice and unlocked
+  session. Any mismatch resets state. Confident final/full-phrase paths remain
+  unchanged. Extended mode now waits for Vosk readiness; legacy mode does not.
+- **Runtime evidence:** the clean active listener publishes `vosk_ready=true`
+  and `verification_stage=waiting_prefix` with current heartbeats. No audio or
+  transcript is placed in runtime state.
+- **Scope:** only wake confirmation/readiness and tests changed in this pass.
+  Microphone selection, thresholds, application launch, GoAway rotation,
+  farewell drain, Study, permissions, providers and Gemini remain intact.
+- **Verification:** `51` directed wake tests and `472 passed, 2 skipped, 137
+  subtests passed` globally; compilation and `pip check` passed. Physical phrase
+  acceptance on the final listener remains the last user observation.
+- The initial `listening` publication now includes the same readiness fields as
+  its heartbeat, including after microphone-stall recovery. Final runtime state:
+  new listener, `vosk_ready=true`, `verification_stage=waiting_prefix`.

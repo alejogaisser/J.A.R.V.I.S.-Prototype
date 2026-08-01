@@ -13,17 +13,19 @@ import threading
 import time
 import unicodedata
 from collections.abc import Callable
+from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from ctypes import wintypes
 from typing import Any
 
 import numpy as np
 import psutil
 import sounddevice as sd
-from vosk import KaldiRecognizer, Model as VoskModel, SetLogLevel
-from jarvis_launcher import load_config
+from vosk import KaldiRecognizer, SetLogLevel
+from vosk import Model as VoskModel
+
 from core.runtime_state import update_runtime_state
+from jarvis_launcher import load_config
 
 try:
     from openwakeword.model import Model as OpenWakeWordModel
@@ -68,14 +70,23 @@ STREAM_STALL_TIMEOUT = 2.0
 MIC_RETRY_DELAY = 1.0
 STATUS_HEARTBEAT_INTERVAL = 15.0
 VOSK_FOLLOWUP_WINDOW = 4.0
+EXTENDED_WAKE_CONFIRMATION_WINDOW = 5.0
+STABLE_PARTIAL_CONFIRMATION_HITS = 3
+REQUIRED_VOSK_LOAD_TIMEOUT = 15.0
 APP_STARTUP_GRACE = 15.0
 
-WAKE_PHRASES = ("hey jarvis",)
+NEURAL_WAKE_PHRASE = "hey jarvis"
+EXTENDED_WAKE_PHRASE = "hey jarvis wake up"
+EXTENDED_WAKE_SUFFIX = ("wake", "up")
+WAKE_PHRASES = (EXTENDED_WAKE_PHRASE,)
 VOSK_WAKE_ALIASES = (
     "hey service",
     "hey harvest",
     "hey travis",
     "hey charles",
+)
+VOSK_EXTENDED_WAKE_ALIASES = tuple(
+    f"{alias} wake up" for alias in VOSK_WAKE_ALIASES
 )
 
 # Oculta los mensajes internos de Vosk.
@@ -163,7 +174,7 @@ def apply_wake_config() -> None:
     global INPUT_SAMPLE_RATE, INPUT_CHANNELS, INPUT_DOWNSAMPLE_FACTOR
     global OPENWAKEWORD_THRESHOLD
     config = load_config()
-    phrases = config.get("phrases", ["hey jarvis"])
+    phrases = config.get("phrases", [EXTENDED_WAKE_PHRASE])
     if not isinstance(phrases, list) or not all(isinstance(p, str) for p in phrases):
         raise ValueError("'phrases' must be a list of strings")
     normalized = tuple(" ".join(p.lower().split()) for p in phrases if p.strip())
@@ -761,6 +772,13 @@ def result_matches_vosk_wake_alias(payload: str) -> bool:
     return bool(recognized) and recognized in expected
 
 
+def result_matches_vosk_extended_alias(payload: str) -> bool:
+    """Match a complete four-word phrase when Vosk substitutes ``Jarvis``."""
+    recognized = result_words(payload)
+    expected = {tuple(phrase.split()) for phrase in VOSK_EXTENDED_WAKE_ALIASES}
+    return bool(recognized) and recognized in expected
+
+
 def windows_session_available() -> bool:
     """Do not wake while Windows is locked (common when a laptop lid is closed)."""
     if platform.system() != "Windows":
@@ -908,6 +926,136 @@ def openwakeword_candidate_approved(
     )
 
 
+class WakePhraseVerifier:
+    """Require a bounded spoken suffix after the bundled neural prefix."""
+
+    def __init__(
+        self,
+        phrases: tuple[str, ...],
+        duration: float = EXTENDED_WAKE_CONFIRMATION_WINDOW,
+    ) -> None:
+        self.phrases = phrases
+        self.duration = float(duration)
+        self.armed_until = 0.0
+
+    @property
+    def requires_suffix(self) -> bool:
+        return self.phrases == (EXTENDED_WAKE_PHRASE,)
+
+    def observe_neural(self, *, approved: bool, now: float | None = None) -> bool:
+        if not approved:
+            return False
+        if not self.requires_suffix:
+            return True
+        observed_at = time.monotonic() if now is None else now
+        self.armed_until = observed_at + self.duration
+        return False
+
+    def is_armed(self, *, now: float | None = None) -> bool:
+        """Return bounded prefix state and clear it after expiry."""
+        if not self.requires_suffix:
+            return False
+        observed_at = time.monotonic() if now is None else now
+        if observed_at > self.armed_until:
+            self.armed_until = 0.0
+            return False
+        return self.armed_until > 0.0
+
+    def observe_vosk_suffix(
+        self,
+        payload: str,
+        confidence: float,
+        has_recent_voice: bool,
+        session_available: bool,
+        *,
+        now: float | None = None,
+    ) -> bool:
+        if not self.requires_suffix:
+            return False
+        observed_at = time.monotonic() if now is None else now
+        recognized_words = result_words(payload)
+        ends_with_suffix = recognized_words[-len(EXTENDED_WAKE_SUFFIX):] == (
+            EXTENDED_WAKE_SUFFIX
+        )
+        approved = (
+            observed_at <= self.armed_until
+            and ends_with_suffix
+            and confidence >= MIN_WAKE_CONFIDENCE
+            and has_recent_voice
+            and session_available
+        )
+        expected_prefixes = {
+            tuple(NEURAL_WAKE_PHRASE.split()),
+            *(tuple(alias.split()) for alias in VOSK_WAKE_ALIASES),
+        }
+        if approved or observed_at > self.armed_until or (
+            recognized_words
+            and not ends_with_suffix
+            and recognized_words not in expected_prefixes
+        ):
+            self.armed_until = 0.0
+        return approved
+
+
+class StablePartialWakeConfirmation:
+    """Confirm a suffix that Vosk keeps partial under continuous ambient noise."""
+
+    def __init__(self, required_hits: int = STABLE_PARTIAL_CONFIRMATION_HITS) -> None:
+        if required_hits < 2:
+            raise ValueError("Partial wake confirmation requires at least two hits")
+        self.required_hits = int(required_hits)
+        self._candidate: tuple[str, ...] = ()
+        self._hits = 0
+
+    def reset(self) -> None:
+        self._candidate = ()
+        self._hits = 0
+
+    def observe(
+        self,
+        text: str,
+        *,
+        prefix_armed: bool,
+        has_recent_voice: bool,
+        session_available: bool,
+    ) -> bool:
+        words = tuple(" ".join(text.lower().split()).split())
+        eligible = (
+            prefix_armed
+            and has_recent_voice
+            and session_available
+            and words[-len(EXTENDED_WAKE_SUFFIX):] == EXTENDED_WAKE_SUFFIX
+        )
+        if not eligible:
+            self.reset()
+            return False
+        if words == self._candidate:
+            self._hits += 1
+        else:
+            self._candidate = words
+            self._hits = 1
+        if self._hits < self.required_hits:
+            return False
+        self.reset()
+        return True
+
+
+def supports_neural_wake_phrase() -> bool:
+    """The bundled model recognizes the shared prefix of these phrases."""
+    return WAKE_PHRASES in {
+        (NEURAL_WAKE_PHRASE,),
+        (EXTENDED_WAKE_PHRASE,),
+    }
+
+
+def requires_vosk_confirmation() -> bool:
+    return WAKE_PHRASES == (EXTENDED_WAKE_PHRASE,)
+
+
+def wake_phrase_label() -> str:
+    return " / ".join(phrase.title() for phrase in WAKE_PHRASES)
+
+
 def create_openwakeword_model():
     """Load the dedicated Hey Jarvis detector and its local ONNX features."""
     if OpenWakeWordModel is None:
@@ -940,6 +1088,8 @@ def listen_for_openwakeword(
     fallback_recognizer = None
     fallback_partial = ""
     fallback_sequence = VoskWakeSequence()
+    phrase_verifier = WakePhraseVerifier(WAKE_PHRASES)
+    partial_confirmation = StablePartialWakeConfirmation()
     def ensure_fallback_recognizer() -> None:
         nonlocal fallback_recognizer
         if fallback_recognizer is not None:
@@ -955,7 +1105,14 @@ def listen_for_openwakeword(
         # "east" for "hey".  ``[unk]`` is essential: unrelated speech can still
         # be rejected instead of being forced into the configured phrase.
         fallback_grammar = json.dumps(
-            ["hey", *WAKE_PHRASES, *VOSK_WAKE_ALIASES, "[unk]"],
+            [
+                "hey",
+                "wake up",
+                *WAKE_PHRASES,
+                *VOSK_WAKE_ALIASES,
+                *VOSK_EXTENDED_WAKE_ALIASES,
+                "[unk]",
+            ],
             ensure_ascii=False,
         )
         fallback_recognizer = KaldiRecognizer(
@@ -966,14 +1123,21 @@ def listen_for_openwakeword(
         fallback_recognizer.SetWords(True)
 
     ensure_fallback_recognizer()
-    print("[WakeWord] Estado: Dormido. Frase requerida: Hey Jarvis")
+    phrase_label = wake_phrase_label()
+    print(f"[WakeWord] Estado: Dormido. Frase requerida: {phrase_label}")
     print_wake_diagnostic(
-        "OpenWakeWord decide la activación; Vosk sólo transcribe para diagnóstico. "
+        "OpenWakeWord detecta el prefijo y Vosk verifica la frase completa. "
         f"Score mínimo={OPENWAKEWORD_THRESHOLD:.3f}, "
         f"RMS absoluto mínimo={MIN_WAKE_RMS}.",
         force=True,
     )
-    update_runtime_state("wake_word", "listening", phrase="Hey Jarvis")
+    update_runtime_state(
+        "wake_word",
+        "listening",
+        phrase=phrase_label,
+        vosk_ready=fallback_recognizer is not None,
+        verification_stage="waiting_prefix",
+    )
     _audio_last_callback = time.monotonic()
     last_status_heartbeat = _audio_last_callback
 
@@ -1013,8 +1177,17 @@ def listen_for_openwakeword(
             has_voice = voice_gate.observe(rms, score > 0.05)
             has_recent_voice = recent_voice.observe(has_voice)
             session_available = windows_session_available()
+            neural_candidate = openwakeword_candidate_approved(
+                has_recent_voice=has_recent_voice,
+                score=score,
+                session_available=session_available,
+            )
+            neural_approved = phrase_verifier.observe_neural(
+                approved=neural_candidate
+            )
 
             vosk_approved = False
+            partial_approved = False
             if fallback_recognizer is not None:
                 if fallback_recognizer.AcceptWaveform(audio_data):
                     fallback_result = fallback_recognizer.Result()
@@ -1027,19 +1200,40 @@ def listen_for_openwakeword(
                             f"(referencia mínima fallback={MIN_WAKE_CONFIDENCE:.3f}).",
                             force=True,
                         )
-                    vosk_approved = (
+                    exact_phrase_approved = (
                         has_recent_voice
-                        and (
-                            (
-                                contains_wake_phrase(fallback_text)
-                                and result_matches_wake_phrase(fallback_result)
-                            )
-                            or result_matches_vosk_wake_alias(fallback_result)
-                        )
+                        and contains_wake_phrase(fallback_text)
+                        and result_matches_wake_phrase(fallback_result)
                         and fallback_confidence >= MIN_WAKE_CONFIDENCE
                         and session_available
                     )
-                    if fallback_text:
+                    suffix_approved = phrase_verifier.observe_vosk_suffix(
+                        fallback_result,
+                        fallback_confidence,
+                        has_recent_voice,
+                        session_available,
+                    )
+                    legacy_alias_approved = (
+                        not phrase_verifier.requires_suffix
+                        and has_recent_voice
+                        and result_matches_vosk_wake_alias(fallback_result)
+                        and fallback_confidence >= MIN_WAKE_CONFIDENCE
+                        and session_available
+                    )
+                    extended_alias_approved = (
+                        phrase_verifier.requires_suffix
+                        and has_recent_voice
+                        and result_matches_vosk_extended_alias(fallback_result)
+                        and fallback_confidence >= MIN_WAKE_CONFIDENCE
+                        and session_available
+                    )
+                    vosk_approved = (
+                        exact_phrase_approved
+                        or suffix_approved
+                        or legacy_alias_approved
+                        or extended_alias_approved
+                    )
+                    if fallback_text and not phrase_verifier.requires_suffix:
                         vosk_approved = vosk_approved or fallback_sequence.observe(
                             fallback_text,
                             fallback_confidence,
@@ -1047,9 +1241,16 @@ def listen_for_openwakeword(
                             session_available,
                         )
                     fallback_partial = ""
+                    partial_confirmation.reset()
                 else:
                     partial = extract_text(
                         fallback_recognizer.PartialResult(), field="partial"
+                    )
+                    partial_approved = partial_confirmation.observe(
+                        partial,
+                        prefix_armed=phrase_verifier.is_armed(),
+                        has_recent_voice=has_recent_voice,
+                        session_available=session_available,
                     )
                     if partial and partial != fallback_partial:
                         fallback_partial = partial
@@ -1063,11 +1264,17 @@ def listen_for_openwakeword(
                 update_runtime_state(
                     "wake_word",
                     "listening",
-                    phrase="Hey Jarvis",
+                    phrase=phrase_label,
                     rms=round(rms),
                     input_device=INPUT_DEVICE,
                     input_sample_rate=INPUT_SAMPLE_RATE,
                     input_channels=INPUT_CHANNELS,
+                    vosk_ready=fallback_recognizer is not None,
+                    verification_stage=(
+                        "suffix_armed"
+                        if phrase_verifier.is_armed()
+                        else "waiting_prefix"
+                    ),
                 )
                 last_status_heartbeat = now
 
@@ -1080,13 +1287,9 @@ def listen_for_openwakeword(
                 f"sesión Windows={'SÍ' if session_available else 'NO'}"
             )
 
-            if openwakeword_candidate_approved(
-                has_recent_voice=has_recent_voice,
-                score=score,
-                session_available=session_available,
-            ):
+            if neural_approved:
                 print(
-                    f"[WakeWord] Hey Jarvis detectado — APROBADO: "
+                    f"[WakeWord] {phrase_label} detectado — APROBADO: "
                     f"score={score:.3f}/"
                     f"{OPENWAKEWORD_THRESHOLD:.3f}, RMS={rms:.0f}/"
                     f"{voice_gate.threshold:.0f}, voz reciente=SÍ."
@@ -1094,10 +1297,13 @@ def listen_for_openwakeword(
                 model.reset()
                 clear_audio_queue()
                 return True
-            if fallback_sequence.neural_followup(
-                score,
-                has_recent_voice,
-                session_available,
+            if (
+                not phrase_verifier.requires_suffix
+                and fallback_sequence.neural_followup(
+                    score,
+                    has_recent_voice,
+                    session_available,
+                )
             ):
                 print(
                     "[WakeWord] Hey Jarvis detectado — APROBADO por "
@@ -1108,7 +1314,15 @@ def listen_for_openwakeword(
                 return True
             if vosk_approved:
                 print(
-                    "[WakeWord] Hey Jarvis detectado — APROBADO por respaldo Vosk."
+                    f"[WakeWord] {phrase_label} detectado — APROBADO por respaldo Vosk."
+                )
+                model.reset()
+                clear_audio_queue()
+                return True
+            if partial_approved:
+                print(
+                    f"[WakeWord] {phrase_label} detectado — APROBADO por "
+                    "confirmación parcial estable."
                 )
                 model.reset()
                 clear_audio_queue()
@@ -1260,17 +1474,29 @@ def main() -> None:
         )
 
     wake_model = create_openwakeword_model()
-    if wake_model is not None and WAKE_PHRASES == ("hey jarvis",):
+    if wake_model is not None and supports_neural_wake_phrase():
         model = wake_model
         fallback_vosk_model = None
         if MODEL_PATH.exists():
             if DIAGNOSTICS_ENABLED:
                 print("[WakeDiag] Preparando Vosk en segundo plano...")
-            fallback_vosk_model = AsyncVoskFallback(MODEL_PATH).start()
+            fallback_loader = AsyncVoskFallback(MODEL_PATH).start()
+            if requires_vosk_confirmation():
+                if not fallback_loader.wait(timeout=REQUIRED_VOSK_LOAD_TIMEOUT):
+                    raise RuntimeError(
+                        "Vosk did not become ready for extended wake confirmation"
+                    )
+                fallback_vosk_model = fallback_loader.model_if_ready()
+                if fallback_vosk_model is None:
+                    raise RuntimeError(
+                        "Vosk failed to load for extended wake confirmation"
+                    )
+            else:
+                fallback_vosk_model = fallback_loader
         listen = lambda active_model: listen_for_openwakeword(
             active_model, fallback_vosk_model
         )
-        print("[WakeWord] Detector local Hey Jarvis cargado.")
+        print(f"[WakeWord] Detector local {wake_phrase_label()} cargado.")
     else:
         if not MODEL_PATH.exists():
             raise FileNotFoundError(

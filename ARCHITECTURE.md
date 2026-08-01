@@ -505,3 +505,81 @@ declares fully accepted: 13 global criteria remain partial or
 Manuals.
 - No changes were made to runtime, Gemini, audio, UI, tools or adapters.
 It only makes the scope verifiable and prevents its limits from disappearing.
+
+### 2026-07-31 - Live session GoAway correction
+
+- Runtime evidence showed that wake detection and the initial Gemini connection
+worked, but the server repeatedly closed sessions with WebSocket 1008 after
+JARVIS ignored a preceding `GoAway` deadline.
+- `SessionService` remains the single session owner and now records one rotation
+request per current transport. A stale transport cannot rotate a newer session.
+- `_receive_audio()` stores any resumption update before acting on `GoAway`, then
+raises a typed internal control signal. Exiting the TaskGroup cancels sibling
+audio/monitor tasks and the SDK context closes the WebSocket before reconnecting
+immediately with the latest safe checkpoint.
+- The correction does not change wake thresholds, microphone selection, Gemini
+model selection, tool policy or user data. Automated verification uses fakes and
+does not open Gemini, audio, camera, dashboard or accounts.
+
+### 2026-07-31 - Farewell audio drain correction
+
+- The prior shutdown path correctly waited for Gemini `turn_complete` and an
+empty application queue, but then used a fixed 250 ms delay before `os._exit`.
+That was not evidence that PortAudio had emitted its pending device buffers and
+could truncate the last syllables of the ending message.
+- `LifecycleService` now distinguishes farewell reception, application-queue
+drain and device drain. The first audio chunk replaces the 12-second no-response
+deadline with a separate 45-second emergency completion deadline, so the initial
+timeout cannot interrupt a farewell already in progress.
+- Finalization reserves the idempotent shutdown transition, calls
+`RawOutputStream.stop()` (which waits for pending buffers), closes the stream,
+records device-drain evidence and only then publishes `jarvis=off` and exits.
+- Scope is limited to the existing audio/lifecycle owners and tests. Wake,
+Gemini session rotation, tool policy, UI navigation, accounts and microphone
+selection are unchanged. Hardware playback remains a manual verification.
+
+### 2026-07-31 - Verified internal workspace opening and extended wake phrase
+
+- `StudyWorkspace` remains the single owner of Study presentation. It now owns
+  the WebEngine readiness state, shows a local loading/error surface, defers
+  artifact JavaScript until `loadFinished` succeeds and retries a failed load.
+- Central workspace navigation now verifies the requested stack index before
+  reporting success. Memory, Geo and Study continue through the same existing
+  composition and Qt-thread boundary.
+- The default wake phrase is `Hey Jarvis wake up`. The bundled OpenWakeWord
+  model detects the `Hey Jarvis` prefix, but that prefix only arms a three-second
+  verifier; exact, confident Vosk `wake up` evidence completes activation.
+  A mismatched final phrase, timeout, low confidence, missing voice evidence or
+  locked Windows session fails closed.
+- The legacy `Hey Jarvis` configuration remains supported explicitly. No new
+  audio, UI, session or lifecycle owner was introduced.
+
+#### Same-day confirmation-order correction
+
+- Neural evidence is now applied to `WakePhraseVerifier` before the Vosk final
+  from the same PCM block is evaluated. This prevents a valid suffix from being
+  discarded one iteration before the verifier becomes armed.
+- Vosk may segment the utterance or transcribe the out-of-vocabulary name as an
+  existing acoustic alias. The verifier therefore accepts a confident final
+  whose last consecutive tokens are exactly `wake up`, while the neural prefix
+  evidence remains mandatory. Expected prefix-only finals keep the bounded
+  window; unrelated finals still cancel it.
+- Gemini was not introduced into wake detection: the defect was local and the
+  offline two-stage owners can resolve it without network/session dependency.
+- A complete confident four-word Vosk result (including the bounded acoustic
+  aliases for the OOV name) is valid evidence even if endpointing closes after
+  the neural window. Segmented suffix-only confirmation remains neural-gated,
+  with a five-second bound.
+
+### 2026-08-01 - Wake confirmation state-machine completion
+
+- The extended phrase has two explicit confirmation paths owned by the same
+  verifier: a confident Vosk final, or a neural-armed partial whose exact
+  `wake up` suffix remains unchanged for three consecutive 80 ms blocks.
+- Stable partial confirmation exists because continuous ambient sound can keep
+  Vosk from emitting an endpoint indefinitely. It cannot activate without the
+  neural prefix, recent voiced audio and an unlocked Windows session.
+- Extended wake readiness now includes Vosk availability. The listener waits up
+  to 15 seconds for its required local model before publishing `listening` and
+  heartbeats expose only `vosk_ready` and a non-transcript verification stage.
+  Legacy short-phrase startup remains asynchronous.

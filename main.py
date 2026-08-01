@@ -111,6 +111,10 @@ from core.security import (
     safe_tool_args,
 )
 from services.runtime import RuntimeServices
+from services.session import (
+    LiveSessionRotationRequested,
+    contains_live_session_rotation,
+)
 from core.events import DashboardConnected, EventBus, RuntimeEvent
 from core.runtime_state import update_runtime_state
 from core.request_audit import RequestAuditSink
@@ -2301,6 +2305,13 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         self.ui.write_log(
                             f"NET: Server requested a graceful reconnect{detail}."
                         )
+                        if self._runtime.on_transport_go_away(self.session):
+                            # End the TaskGroup so the SDK context closes the
+                            # WebSocket before Gemini's GoAway deadline. The
+                            # latest resumable handle was stored just above.
+                            raise LiveSessionRotationRequested(
+                                "Gemini requested Live session rotation"
+                            )
 
                     if response.data:
                         # Stale frames captured just before playback can otherwise
@@ -2402,6 +2413,8 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         )
                     if turn_completed:
                         self._reset_input_source()
+        except LiveSessionRotationRequested:
+            raise
         except Exception as e:
             print(f"[JARVIS] ❌ Recv: {e}")
             traceback.print_exc()
@@ -2469,25 +2482,43 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 stream.close(ignore_errors=True)
 
     def _finish_shutdown_after_audio(self) -> None:
-        """Exit once, only after Gemini's farewell has drained from playback."""
+        """Exit once, after PortAudio has played every submitted farewell buffer."""
         if not self._runtime.lifecycle.begin_finish():
             return
-        update_runtime_state("jarvis", "off", reason="voice_shutdown")
-        self.ui.write_log("SYS: Farewell complete. Shutting down JARVIS.")
 
         def _exit_after_device_flush():
             import os
-            time.sleep(0.25)
+            # RawOutputStream.stop(), unlike abort(), blocks until PortAudio has
+            # played all pending device buffers. Queue-empty alone is not proof
+            # that the speaker has emitted the final syllables.
+            with self._output_stream_lock:
+                stream = self._output_stream
+                if stream is not None:
+                    try:
+                        stream.stop(ignore_errors=True)
+                    finally:
+                        stream.close(ignore_errors=True)
+                        self._output_stream = None
+            self._runtime.lifecycle.observe_device_drained()
+            update_runtime_state("jarvis", "off", reason="voice_shutdown")
+            self.ui.write_log("SYS: Farewell complete. Shutting down JARVIS.")
             os._exit(0)
 
         threading.Thread(target=_exit_after_device_flush, daemon=True).start()
 
     async def _shutdown_fallback_timeout(self) -> None:
-        """Guarantee an explicit shutdown even if Gemini produces no farewell audio."""
-        await asyncio.sleep(12)
-        if self._runtime.lifecycle.ready_to_finish():
-            self.ui.write_log("SYS: Farewell audio timed out; completing shutdown.")
-            self._finish_shutdown_after_audio()
+        """Guarantee shutdown without cutting off an in-progress farewell."""
+        while True:
+            deadline = self._runtime.lifecycle.active_deadline()
+            if deadline is None:
+                return
+            await asyncio.sleep(max(0.0, deadline - time.monotonic()))
+            if self._runtime.lifecycle.ready_to_finish():
+                self.ui.write_log(
+                    "SYS: Farewell deadline reached; completing shutdown."
+                )
+                self._finish_shutdown_after_audio()
+                return
 
     # ── Morning briefing ────────────────────────────────────────────────────────
 
@@ -2767,12 +2798,19 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 # externally, which `except Exception` would miss, letting the
                 # exception escape the while-loop and causing asyncio.run() to
                 # start shutdown — resulting in "executor after shutdown" errors).
+                rotation_requested = contains_live_session_rotation(e)
                 err_str = str(e)
-                print(f"[JARVIS] Error ({type(e).__name__}): {e}")
-                traceback.print_exc()
+                if rotation_requested:
+                    print("[JARVIS] Rotating Live session after server GoAway.")
+                    self._conn_backoff = 0
+                else:
+                    print(f"[JARVIS] Error ({type(e).__name__}): {e}")
+                    traceback.print_exc()
 
                 # Invalid API key — stop hammering the API, prompt re-configuration
-                if "API key not valid" in err_str or "1007" in err_str:
+                if not rotation_requested and (
+                    "API key not valid" in err_str or "1007" in err_str
+                ):
                     self.ui.write_log("ERR: API key invalid — please re-enter your key.")
                     self.ui.set_state("SLEEPING")
                     self.ui.prompt_reconfig()
@@ -2787,11 +2825,13 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     continue
 
                 # Network / timeout errors — log clearly and back off
-                is_net_err = any(k in err_str for k in (
+                is_net_err = not rotation_requested and any(k in err_str for k in (
                     "TimeoutError", "timed out", "getaddrinfo", "CancelledError",
                     "ConnectionRefusedError", "OSError", "Cannot connect",
                 ))
-                if is_net_err:
+                if rotation_requested:
+                    pass
+                elif is_net_err:
                     _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 60)
                     self._conn_backoff = _conn_backoff
                     self.ui.write_log(

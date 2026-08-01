@@ -193,6 +193,19 @@ old task; camera applies backpressure; shutdown is idempotent and preserves
 `main.py` retains existing transport and protocol,
 The post-merge baseline `49e0677` approved 283
 tests and 104 subtests.
+- **Correction 2026-07-31:** `SessionService` now owns Gemini `GoAway`
+rotation state and metrics. The receive task preserves the latest resumption
+checkpoint, closes the current TaskGroup/WebSocket before the server deadline
+and reconnects immediately. Stale or duplicate rotation requests are ignored.
+Rollback: remove the rotation signal and owner fields to restore the previous
+passive `GoAway` logging behavior.
+- **Correction 2026-07-31:** farewell shutdown now distinguishes the application
+audio queue, PortAudio's pending device buffers and the emergency deadline.
+Once farewell audio starts, the initial 12-second no-response timeout cannot
+cut it off; `RawOutputStream.stop()` proves pending buffers played before the
+runtime publishes `off` and exits. A separate 45-second completion deadline
+prevents a permanently stalled device from hanging shutdown. Rollback: restore
+the single deadline and fixed post-queue sleep.
 
 ### Phase 8 - UI boundary
 
@@ -546,3 +559,68 @@ Full traceability must begin immediately afterwards, on that correct border.
 - **Remaining risk:** monitor false wakes and repeat the acoustic/latency matrix
   with other voices, rooms and microphones. Rollback restores the prior capture
   profile, threshold and eager initialization; no state migration.
+
+## Maintenance correction - 2026-07-31 - Study readiness and false-wake reduction
+
+- **Status:** implemented and automatically verified; physical voice/monitor
+  confirmation remains pending after the detector is restarted.
+- **Study:** the first opening has an explicit loading/error state and artifacts
+  wait for WebEngine readiness instead of being sent to an uninitialized page.
+  Failed loads retry through the existing workspace. Central views verify the
+  selected stack index before their tool call reports success.
+- **Wake:** defaults and local configuration now use `Hey Jarvis wake up`.
+  `Hey Jarvis` is a neural candidate, not activation: exact `wake up` tokens,
+  confidence, recent voice and an unlocked session must all confirm within
+  three seconds. Unrelated final speech cancels the pending candidate.
+- **Compatibility:** an explicitly configured legacy `Hey Jarvis` keeps its
+  former hybrid behavior. GoAway rotation, farewell drain, capture calibration,
+  tool policy and providers were preserved.
+- **Evidence:** directed suites `67 passed` and `55 passed`; full baseline `467
+  passed, 2 skipped, 137 subtests passed`; compilation and dependency checks
+  passed. Rollback restores the former phrase/default and direct Study render;
+  no persistent-data migration is needed.
+
+### Follow-up - confirmation was lost inside the local detector
+
+- **Status:** code defect corrected; Gemini migration is not warranted.
+- The listener previously evaluated Vosk before arming neural evidence from the
+  same audio block. It also rejected full/segmented hypotheses such as
+  `hey service wake up`, despite the correct exact suffix.
+- Neural state is now recorded first. The closed grammar includes full acoustic
+  alias variants, prefix-only aliases preserve the three-second window, and a
+  final is accepted only when its last two tokens are exactly `wake up` under
+  the existing confidence, voice and Windows-session guards.
+- Rollback reverts only this ordering/tail recognition and its tests. No model,
+  threshold, hardware, Gemini session or persistent state changes are involved.
+- **Verification:** `48 passed` for the wake suite, `123 passed` plus 20 subtests
+  for the directed regression, and `469 passed, 2 skipped, 137 subtests passed`
+  globally. The stale listener was replaced by its supervisor and the new PID
+  returned to `listening` with the extended phrase.
+- After repeated physical failures, runtime evidence isolated late Vosk
+  endpointing: complete four-word/alias results no longer depend on the neural
+  timer, while suffix-only results remain gated. The segmented window is five
+  seconds. The listener was reloaded again and returned to `listening`.
+- **Physical acceptance:** a clean diagnostic supervisor captured real voiced
+  audio, neural score `0.331`, an exact four-word Vosk final at confidence
+  `1.000`, approval and the launch transition. The resulting application
+  published `on`, its main window was found and its process remained responsive.
+  Diagnostic mode was then removed without closing that application; the normal
+  hidden supervisor is active for the next lifecycle.
+
+## Final wake reliability pass - 2026-08-01
+
+- **Root cause:** the hybrid path required a Vosk final, but continuous ambient
+  sound can retain a correct phrase as `partial` without ever crossing an
+  endpoint. All partials were intentionally ignored, so the confirmation could
+  remain stuck even after correct neural and speech evidence.
+- **Correction:** one bounded state machine accepts either the existing
+  confident-final routes or an exact `wake up` partial stable across three
+  consecutive blocks, only while the neural prefix is armed with recent voice
+  and Windows unlocked. Noise, changed text, expiry or lock resets it.
+- **Readiness:** extended mode waits for mandatory Vosk load before publishing
+  `listening`; heartbeat now reports `vosk_ready` and `verification_stage`
+  without transcript content. The active listener confirmed both fields.
+- **Verification:** wake suite `51 passed`; full suite `472 passed, 2 skipped,
+  137 subtests passed`; compilation and dependency checks passed. Rollback
+  removes stable-partial confirmation/readiness gating and its tests; no model,
+  threshold, UI, Gemini, lifecycle or persistent-data change is required.

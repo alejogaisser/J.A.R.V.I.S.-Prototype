@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "phrases": [
-    "hey jarvis"
+    "hey jarvis wake up"
   ],
   "model_path": "models/vosk-model-small-en-us-0.15",
   "min_wake_rms": 45,

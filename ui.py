@@ -3094,6 +3094,9 @@ class MainWindow(QMainWindow):
             self._animate_side_panel(False)
         self._active_v1_panel = header
         self._hud_cam_stack.setCurrentIndex(index)
+        if self._hud_cam_stack.currentIndex() != index:
+            raise RuntimeError(f"The {header} workspace did not become active.")
+        self._hud_cam_stack.currentWidget().update()
         self._set_v1_button_state(header)
         self._set_header_tab(header)
 
@@ -3105,8 +3108,8 @@ class MainWindow(QMainWindow):
         self._show_central_workspace(3, "geo")
 
     def show_study_workspace(self) -> None:
+        self._study_workspace.prepare_for_display()
         self._show_central_workspace(4, "study")
-        self._study_workspace.restore_latest()
 
     def _locate_geo_query(self, query: str) -> None:
         def resolve() -> None:
