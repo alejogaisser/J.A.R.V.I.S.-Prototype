@@ -3,10 +3,16 @@ from __future__ import annotations
 
 import json
 
-from PyQt6.QtCore import QUrl
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 _HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>JARVIS Study</title>
 <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
@@ -58,27 +64,83 @@ class StudyWorkspace(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.latest_artifact: dict | None = None
-        root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
-        bar = QHBoxLayout(); bar.setContentsMargins(18, 8, 18, 8)
+        self._page_ready = False
+        self._load_failed = False
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        bar = QHBoxLayout()
+        bar.setContentsMargins(18, 8, 18, 8)
         label = QLabel("STUDY / LOCAL SCIENTIFIC CORE")
         label.setStyleSheet("color:#77eaff;font-family:Consolas;font-size:10px;letter-spacing:2px")
         self.pending = QLabel("READY")
         self.pending.setStyleSheet("color:#55ffbd;font-family:Consolas;font-size:9px")
         reload_button = QPushButton("RESTORE LAST")
         reload_button.clicked.connect(self.restore_latest)
-        bar.addWidget(label); bar.addStretch(); bar.addWidget(self.pending); bar.addWidget(reload_button)
+        bar.addWidget(label)
+        bar.addStretch()
+        bar.addWidget(self.pending)
+        bar.addWidget(reload_button)
         root.addLayout(bar)
-        self.view = QWebEngineView(); root.addWidget(self.view, 1)
-        self.view.loadFinished.connect(lambda _ok: self.restore_latest())
+        self._content = QStackedWidget()
+        self._loading = QLabel("INITIALIZING STUDY CORE...")
+        self._loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._loading.setStyleSheet(
+            "color:#55dfff;background:#02070c;font-family:Consolas;"
+            "font-size:12px;letter-spacing:3px"
+        )
+        self.view = QWebEngineView()
+        self._content.addWidget(self._loading)
+        self._content.addWidget(self.view)
+        root.addWidget(self._content, 1)
+        self.view.loadFinished.connect(self._handle_load_finished)
         self.view.setHtml(_HTML, QUrl("https://jarvis.local/study"))
 
     def set_artifact(self, artifact: dict, pending: bool = False) -> None:
         self.latest_artifact = dict(artifact)
         self.pending.setText("RESULT WAITING" if pending else "LIVE RESULT")
+        if not self._page_ready:
+            return
+        self._render_latest()
+
+    def prepare_for_display(self) -> None:
+        """Expose a deterministic local state while WebEngine initializes."""
+        self._content.setCurrentWidget(self.view if self._page_ready else self._loading)
+        if self._load_failed:
+            self._start_page_load()
+        if self._page_ready:
+            self.restore_latest()
+
+    def _handle_load_finished(self, loaded: bool) -> None:
+        self._page_ready = bool(loaded)
+        self._load_failed = not loaded
+        if not self._page_ready:
+            self._loading.setText("STUDY CORE FAILED TO LOAD / PRESS RESTORE LAST")
+            self.pending.setText("LOAD ERROR")
+            self._content.setCurrentWidget(self._loading)
+            return
+        self._content.setCurrentWidget(self.view)
+        self.pending.setText("LIVE RESULT" if self.latest_artifact else "READY")
+        self._render_latest()
+
+    def _start_page_load(self) -> None:
+        self._load_failed = False
+        self._loading.setText("INITIALIZING STUDY CORE...")
+        self.pending.setText("LOADING")
+        self._content.setCurrentWidget(self._loading)
+        self.view.setHtml(_HTML, QUrl("https://jarvis.local/study"))
+
+    def _render_latest(self) -> None:
+        if not self._page_ready or not self.latest_artifact:
+            return
         self.view.page().runJavaScript(
             f"renderArtifact({json.dumps(self.latest_artifact, ensure_ascii=False)})"
         )
 
     def restore_latest(self) -> None:
-        if self.latest_artifact:
-            self.set_artifact(self.latest_artifact, pending=False)
+        if not self._page_ready:
+            if self._load_failed:
+                self._start_page_load()
+            return
+        self.pending.setText("LIVE RESULT" if self.latest_artifact else "READY")
+        self._render_latest()

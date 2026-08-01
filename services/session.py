@@ -17,6 +17,21 @@ from core.events import (
 from core.live_session import LiveSessionState
 
 
+class LiveSessionRotationRequested(RuntimeError):
+    """Internal control signal used to close a Live transport after GoAway."""
+
+
+def contains_live_session_rotation(error: BaseException) -> bool:
+    """Return whether an exception, including a TaskGroup, requests rotation."""
+    if isinstance(error, LiveSessionRotationRequested):
+        return True
+    nested = getattr(error, "exceptions", ())
+    return any(
+        isinstance(item, BaseException) and contains_live_session_rotation(item)
+        for item in nested
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class SessionSnapshot:
     connected: bool
@@ -26,6 +41,8 @@ class SessionSnapshot:
     connected_at: float | None
     can_resume: bool
     resumption_updates: int
+    rotation_requested: bool
+    rotations: int
 
 
 @dataclass(slots=True)
@@ -36,6 +53,8 @@ class SessionService:
     connections: int = 0
     reconnects: int = 0
     connected_at: float | None = None
+    rotation_requested: bool = False
+    rotations: int = 0
     events: EventPublisher = field(default_factory=NullEventPublisher, repr=False)
     _lock: RLock = field(default_factory=RLock, repr=False)
 
@@ -58,6 +77,7 @@ class SessionService:
             self.connections += 1
             self.reconnects = max(0, self.connections - 1)
             self.connected_at = observed_at
+            self.rotation_requested = False
             outcome = "online" if self.connections == 1 else "restored"
             event = SessionStateChanged(
                 header=EventHeader.create(observed_at=observed_at),
@@ -69,6 +89,15 @@ class SessionService:
             )
         publish_safely(self.events, event)
         return outcome
+
+    def request_rotation(self, transport: Any) -> bool:
+        """Record one server-requested rotation for the current transport."""
+        with self._lock:
+            if self.transport is not transport or self.rotation_requested:
+                return False
+            self.rotation_requested = True
+            self.rotations += 1
+            return True
 
     def unbind(self, transport: Any | None = None) -> bool:
         with self._lock:
@@ -99,4 +128,6 @@ class SessionService:
                 connected_at=self.connected_at,
                 can_resume=self.resumption.can_resume,
                 resumption_updates=self.resumption.updates_seen,
+                rotation_requested=self.rotation_requested,
+                rotations=self.rotations,
             )

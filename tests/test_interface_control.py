@@ -8,7 +8,7 @@ import pytest
 
 from main import TOOL_DECLARATIONS
 from ui import JarvisUI, MainWindow
-
+from ui_mk2.study import StudyWorkspace
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -155,6 +155,44 @@ def test_study_auto_opens_only_when_main_app_is_already_visible():
     ui.show_study_result({"title": "Queued"}, automatic=True)
     assert pet_signal.request["automatic"] is True
     assert pet_signal.request["surface_mode"] == "pet"
+
+
+def test_study_workspace_defers_render_until_web_page_is_ready():
+    rendered = []
+    pending = SimpleNamespace(setText=lambda value: None)
+    workspace = SimpleNamespace(
+        latest_artifact=None,
+        _page_ready=False,
+        pending=pending,
+        _render_latest=lambda: rendered.append("rendered"),
+    )
+
+    StudyWorkspace.set_artifact(workspace, {"title": "Deferred"})
+    assert workspace.latest_artifact == {"title": "Deferred"}
+    assert rendered == []
+
+    workspace._page_ready = True
+    StudyWorkspace.set_artifact(workspace, {"title": "Ready"})
+    assert rendered == ["rendered"]
+
+
+def test_internal_workspace_opening_verifies_the_stack_postcondition():
+    stack = SimpleNamespace(
+        setCurrentIndex=lambda _index: None,
+        currentIndex=lambda: 0,
+    )
+    surface = SimpleNamespace(
+        hud=SimpleNamespace(camera_active=False),
+        _content_panel=SimpleNamespace(isVisible=lambda: False),
+        _right_panel=SimpleNamespace(isVisible=lambda: False),
+        _active_v1_panel=None,
+        _hud_cam_stack=stack,
+        _set_v1_button_state=lambda _header: None,
+        _set_header_tab=lambda _header: None,
+    )
+
+    with pytest.raises(RuntimeError, match="study workspace did not become active"):
+        MainWindow._show_central_workspace(surface, 4, "study")
 
 
 def test_prompt_routes_jarvis_ui_orders_without_mouse_simulation():

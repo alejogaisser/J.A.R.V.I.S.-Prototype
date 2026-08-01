@@ -267,7 +267,7 @@ def supervise_wake_detector(
 def load_config() -> dict:
     defaults = {
         "enabled": True,
-        "phrases": ["hey jarvis"],
+        "phrases": ["hey jarvis wake up"],
         "model_path": "models/vosk-model-small-en-us-0.15",
         "min_wake_rms": 45,
         "min_confidence": 0.65,

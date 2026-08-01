@@ -1,5 +1,5 @@
-import json
 import ast
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,7 +16,7 @@ class LauncherConfigTests(unittest.TestCase):
             with patch.object(jarvis_launcher, "CONFIG_FILE", path):
                 config = jarvis_launcher.load_config()
         self.assertTrue(config["enabled"])
-        self.assertEqual(config["phrases"], ["hey jarvis"])
+        self.assertEqual(config["phrases"], ["hey jarvis wake up"])
         self.assertEqual(config["min_wake_rms"], 45)
         self.assertEqual(config["min_confidence"], 0.65)
         self.assertEqual(config["wake_threshold"], 0.08)
@@ -100,17 +100,15 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertIn('hey_jarvis_v0.1.onnx', source)
         self.assertIn("listen_for_openwakeword", source)
         self.assertIn("score >= OPENWAKEWORD_THRESHOLD", source)
-        self.assertIn('WAKE_PHRASES == ("hey jarvis",)', source)
-        self.assertIn("Hey Jarvis detectado", source)
-        self.assertNotIn("esperando wake up", source)
+        self.assertIn("supports_neural_wake_phrase()", source)
+        self.assertIn("WakePhraseVerifier", source)
         self.assertIn("openwakeword==0.6.0", requirements)
 
-    def test_hey_jarvis_does_not_require_an_extra_tail(self):
+    def test_default_wake_phrase_requires_the_extra_tail(self):
         source = Path("wake_word.py").read_text(encoding="utf-8")
         config = Path("config/wake_word.example.json").read_text(encoding="utf-8")
-        self.assertIn('WAKE_PHRASES = ("hey jarvis",)', source)
-        self.assertIn('"hey jarvis"', config)
-        self.assertNotIn('"hey jarvis wake up"', config)
+        self.assertIn('EXTENDED_WAKE_PHRASE = "hey jarvis wake up"', source)
+        self.assertIn('"hey jarvis wake up"', config)
 
     def test_hidden_wake_failures_are_logged(self):
         source = Path("jarvis_launcher.py").read_text(encoding="utf-8")
@@ -419,6 +417,181 @@ class LauncherConfigTests(unittest.TestCase):
                 session_available=False,
             ))
 
+    def test_extended_phrase_rejects_neural_prefix_without_spoken_suffix(self):
+        verifier = wake_word.WakePhraseVerifier(
+            (wake_word.EXTENDED_WAKE_PHRASE,), duration=3.0
+        )
+
+        self.assertFalse(verifier.observe_neural(approved=True, now=10.0))
+        self.assertGreater(verifier.armed_until, 10.0)
+
+    def test_extended_phrase_accepts_exact_suffix_only_inside_armed_window(self):
+        verifier = wake_word.WakePhraseVerifier(
+            (wake_word.EXTENDED_WAKE_PHRASE,), duration=3.0
+        )
+        suffix = json.dumps({
+            "text": "wake up",
+            "result": [
+                {"word": "wake", "conf": 0.9},
+                {"word": "up", "conf": 0.9},
+            ],
+        })
+
+        self.assertFalse(verifier.observe_vosk_suffix(
+            suffix, 0.9, True, True, now=9.0
+        ))
+        self.assertFalse(verifier.observe_neural(approved=True, now=10.0))
+        self.assertTrue(verifier.observe_vosk_suffix(
+            suffix, 0.9, True, True, now=12.0
+        ))
+
+        self.assertFalse(verifier.observe_neural(approved=True, now=20.0))
+        self.assertFalse(verifier.observe_vosk_suffix(
+            suffix, 0.9, True, True, now=23.1
+        ))
+
+    def test_extended_phrase_accepts_suffix_after_vosk_jarvis_alias(self):
+        self.assertIn(
+            "hey service wake up",
+            wake_word.VOSK_EXTENDED_WAKE_ALIASES,
+        )
+        verifier = wake_word.WakePhraseVerifier(
+            (wake_word.EXTENDED_WAKE_PHRASE,), duration=3.0
+        )
+        full_alias = json.dumps({
+            "text": "hey service wake up",
+            "result": [
+                {"word": "hey", "conf": 0.9},
+                {"word": "service", "conf": 0.9},
+                {"word": "wake", "conf": 0.9},
+                {"word": "up", "conf": 0.9},
+            ],
+        })
+        self.assertTrue(wake_word.result_matches_vosk_extended_alias(full_alias))
+
+        verifier.observe_neural(approved=True, now=10.0)
+        self.assertTrue(verifier.observe_vosk_suffix(
+            full_alias, 0.9, True, True, now=10.0
+        ))
+
+        prefix_alias = json.dumps({
+            "text": "hey service",
+            "result": [
+                {"word": "hey", "conf": 0.9},
+                {"word": "service", "conf": 0.9},
+            ],
+        })
+        suffix = json.dumps({
+            "text": "wake up",
+            "result": [
+                {"word": "wake", "conf": 0.9},
+                {"word": "up", "conf": 0.9},
+            ],
+        })
+        verifier.observe_neural(approved=True, now=20.0)
+        self.assertFalse(verifier.observe_vosk_suffix(
+            prefix_alias, 0.9, True, True, now=20.5
+        ))
+        self.assertGreater(verifier.armed_until, 20.5)
+        self.assertTrue(verifier.observe_vosk_suffix(
+            suffix, 0.9, True, True, now=21.0
+        ))
+
+    def test_neural_candidate_is_observed_before_same_audio_vosk_final(self):
+        source = Path("wake_word.py").read_text(encoding="utf-8")
+        primary = source[
+            source.index("def listen_for_openwakeword"):
+            source.index("def listen_for_wake_word")
+        ]
+
+        arm = primary.index("neural_approved = phrase_verifier.observe_neural")
+        final = primary.index("if fallback_recognizer is not None", arm)
+        assert arm < final
+
+    def test_extended_phrase_rejects_alias_low_confidence_and_locked_session(self):
+        verifier = wake_word.WakePhraseVerifier(
+            (wake_word.EXTENDED_WAKE_PHRASE,), duration=3.0
+        )
+        unrelated = json.dumps({
+            "text": "turn lights",
+            "result": [
+                {"word": "turn", "conf": 0.99},
+                {"word": "lights", "conf": 0.99},
+            ],
+        })
+        suffix = json.dumps({
+            "text": "wake up",
+            "result": [
+                {"word": "wake", "conf": 0.4},
+                {"word": "up", "conf": 0.4},
+            ],
+        })
+
+        verifier.observe_neural(approved=True, now=10.0)
+        self.assertFalse(verifier.observe_vosk_suffix(
+            unrelated, 0.99, True, True, now=11.0
+        ))
+        self.assertEqual(verifier.armed_until, 0.0)
+        verifier.observe_neural(approved=True, now=10.0)
+        self.assertFalse(verifier.observe_vosk_suffix(
+            suffix, 0.4, True, True, now=11.0
+        ))
+        self.assertFalse(verifier.observe_vosk_suffix(
+            suffix, 0.9, True, False, now=11.0
+        ))
+
+    def test_stable_partial_confirmation_requires_armed_exact_suffix(self):
+        confirmation = wake_word.StablePartialWakeConfirmation(required_hits=3)
+
+        self.assertFalse(confirmation.observe(
+            "hey jarvis wake up",
+            prefix_armed=False,
+            has_recent_voice=True,
+            session_available=True,
+        ))
+        self.assertFalse(confirmation.observe(
+            "hey jarvis wake",
+            prefix_armed=True,
+            has_recent_voice=True,
+            session_available=True,
+        ))
+        self.assertFalse(confirmation.observe(
+            "hey jarvis wake up",
+            prefix_armed=True,
+            has_recent_voice=True,
+            session_available=True,
+        ))
+        self.assertFalse(confirmation.observe(
+            "hey jarvis wake up",
+            prefix_armed=True,
+            has_recent_voice=True,
+            session_available=True,
+        ))
+        self.assertTrue(confirmation.observe(
+            "hey jarvis wake up",
+            prefix_armed=True,
+            has_recent_voice=True,
+            session_available=True,
+        ))
+
+    def test_stable_partial_confirmation_resets_on_noise_or_locked_session(self):
+        confirmation = wake_word.StablePartialWakeConfirmation(required_hits=2)
+        eligible = {
+            "prefix_armed": True,
+            "has_recent_voice": True,
+            "session_available": True,
+        }
+
+        self.assertFalse(confirmation.observe("wake up", **eligible))
+        self.assertFalse(confirmation.observe("turn it up", **eligible))
+        self.assertFalse(confirmation.observe("wake up", **eligible))
+        self.assertFalse(confirmation.observe(
+            "wake up",
+            prefix_armed=True,
+            has_recent_voice=True,
+            session_available=False,
+        ))
+
     def test_sustained_voice_cannot_be_learned_as_ambient_noise(self):
         gate = wake_word.AdaptiveVoiceGate(110)
         initial_threshold = gate.threshold
@@ -439,6 +612,7 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertIn("*VOSK_WAKE_ALIASES", primary)
         self.assertIn("result_matches_wake_phrase(fallback_result)", primary)
         self.assertIn("result_matches_vosk_wake_alias(fallback_result)", primary)
+        self.assertIn("result_matches_vosk_extended_alias(fallback_result)", primary)
         self.assertIn("APROBADO por respaldo Vosk", primary)
 
     def test_vosk_fallback_loads_without_blocking_openwakeword_startup(self):
@@ -456,13 +630,22 @@ class LauncherConfigTests(unittest.TestCase):
         main = source[source.index("def main() -> None:"):]
         self.assertIn("AsyncVoskFallback(MODEL_PATH).start()", main)
 
+    def test_extended_phrase_does_not_listen_before_vosk_is_ready(self):
+        source = Path("wake_word.py").read_text(encoding="utf-8")
+        main = source[source.index("def main() -> None:"):]
+
+        self.assertIn("requires_vosk_confirmation()", main)
+        self.assertIn("fallback_loader.wait(timeout=REQUIRED_VOSK_LOAD_TIMEOUT)", main)
+        self.assertIn("Vosk failed to load for extended wake confirmation", main)
+
     def test_hybrid_vosk_grammar_can_arm_on_hey_and_ignores_empty_finals(self):
         source = Path("wake_word.py").read_text(encoding="utf-8")
         primary = source[
             source.index("def listen_for_openwakeword"):
             source.index("def listen_for_wake_word")
         ]
-        self.assertIn('["hey", *WAKE_PHRASES, *VOSK_WAKE_ALIASES, "[unk]"]', primary)
+        self.assertIn("*VOSK_EXTENDED_WAKE_ALIASES", primary)
+        self.assertIn('"wake up"', primary)
         self.assertIn("if fallback_text:", primary)
 
     def test_stalled_microphone_recovers_with_short_bounded_delay(self):
@@ -475,6 +658,8 @@ class LauncherConfigTests(unittest.TestCase):
         self.assertIn("STREAM_STALL_TIMEOUT", source)
         self.assertIn("STATUS_HEARTBEAT_INTERVAL", source)
         self.assertIn('reset_detector_state(model, "recuperación del micrófono")', source)
+        self.assertIn('verification_stage="waiting_prefix"', source)
+        self.assertIn("vosk_ready=fallback_recognizer is not None", source)
 
     def test_oov_jarvis_requires_confident_hey_then_unknown_word(self):
         sequence = wake_word.VoskWakeSequence(duration=4.0)

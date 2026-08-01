@@ -225,6 +225,29 @@ class AudioVisionRegressionTests(unittest.TestCase):
         self.assertIn("_shutdown_fallback_timeout", source)
         self.assertIn("self._finish_shutdown_after_audio()", source)
         self.assertNotIn('self.speak("Goodbye, sir.")', source)
+
+        finish = source[
+            source.index("    def _finish_shutdown_after_audio"):
+            source.index("    async def _shutdown_fallback_timeout")
+        ]
+        self.assertIn("stream.stop(ignore_errors=True)", finish)
+        self.assertLess(finish.index("stream.stop("), finish.index("os._exit(0)"))
+        self.assertLess(
+            finish.index("stream.stop("),
+            finish.index("observe_device_drained()"),
+        )
+        self.assertLess(
+            finish.index("observe_device_drained()"),
+            finish.index('update_runtime_state("jarvis", "off"'),
+        )
+        self.assertNotIn("time.sleep(0.25)", finish)
+
+        fallback = source[
+            source.index("    async def _shutdown_fallback_timeout"):
+            source.index("# Morning briefing")
+        ]
+        self.assertIn("active_deadline()", fallback)
+        self.assertIn("deadline - time.monotonic()", fallback)
     def test_vision_uses_fallback_model_after_503(self):
         calls = []
 

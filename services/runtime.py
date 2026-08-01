@@ -49,6 +49,9 @@ class RuntimeServices:
     def on_transport_disconnected(self, transport: Any | None = None) -> bool:
         return self.session.unbind(transport)
 
+    def on_transport_go_away(self, transport: Any) -> bool:
+        return self.session.request_rotation(transport)
+
     def snapshot(self) -> RuntimeSnapshot:
         return RuntimeSnapshot(
             session=self.session.snapshot(),

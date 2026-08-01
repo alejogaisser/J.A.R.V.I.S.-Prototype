@@ -4,6 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from services.runtime import RuntimeServices
+from services.session import (
+    LiveSessionRotationRequested,
+    contains_live_session_rotation,
+)
 
 
 class SessionServiceTests(unittest.TestCase):
@@ -81,6 +85,46 @@ class SessionServiceTests(unittest.TestCase):
         self.assertFalse(services.on_transport_disconnected(old))
         self.assertIs(services.session.transport, new)
 
+    def test_go_away_rotates_current_transport_once_and_resets_on_bind(self):
+        services = RuntimeServices()
+        first = object()
+        stale = object()
+        services.on_transport_connected(first)
+
+        self.assertFalse(services.on_transport_go_away(stale))
+        self.assertTrue(services.on_transport_go_away(first))
+        self.assertFalse(services.on_transport_go_away(first))
+        snapshot = services.session.snapshot()
+        self.assertTrue(snapshot.rotation_requested)
+        self.assertEqual(snapshot.rotations, 1)
+
+        services.on_transport_disconnected(first)
+        services.on_transport_connected(object())
+        self.assertFalse(services.session.snapshot().rotation_requested)
+        self.assertEqual(services.session.snapshot().rotations, 1)
+
+    def test_task_group_rotation_signal_is_recognized(self):
+        signal = LiveSessionRotationRequested("rotate")
+
+        self.assertTrue(contains_live_session_rotation(signal))
+        self.assertTrue(contains_live_session_rotation(
+            ExceptionGroup("task group", [RuntimeError("other"), signal])
+        ))
+        self.assertFalse(contains_live_session_rotation(RuntimeError("other")))
+
+    def test_receive_path_closes_transport_when_go_away_arrives(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        receive = source[
+            source.index("    async def _receive_audio"):
+            source.index("    async def _play_audio")
+        ]
+
+        self.assertLess(
+            receive.index("observe_resumption_update"),
+            receive.index("on_transport_go_away"),
+        )
+        self.assertIn("raise LiveSessionRotationRequested", receive)
+
 
 class AudioServiceTests(unittest.TestCase):
     def test_interrupt_generation_prevents_stale_release(self):
@@ -138,13 +182,38 @@ class LifecycleServiceTests(unittest.TestCase):
             lifecycle.request_shutdown(now=21.0, fallback_seconds=12.0)
         )
         self.assertFalse(lifecycle.ready_to_finish(now=31.9))
-        lifecycle.observe_farewell_audio()
+        lifecycle.observe_farewell_audio(now=21.0)
         self.assertFalse(lifecycle.ready_to_finish(now=21.0))
         lifecycle.observe_playback_drained()
         self.assertTrue(lifecycle.ready_to_finish(now=21.0))
         self.assertTrue(lifecycle.begin_finish())
         self.assertFalse(lifecycle.begin_finish())
+        lifecycle.observe_device_drained()
+        self.assertTrue(lifecycle.snapshot().device_drained)
         self.assertEqual(lifecycle.shutdown_requests, 1)
+
+    def test_initial_timeout_cannot_cut_off_started_farewell(self):
+        lifecycle = RuntimeServices().lifecycle
+        lifecycle.request_shutdown(now=20.0, fallback_seconds=12.0)
+        lifecycle.observe_farewell_audio(
+            now=31.5,
+            completion_timeout_seconds=45.0,
+        )
+
+        self.assertEqual(lifecycle.active_deadline(), 76.5)
+        self.assertFalse(lifecycle.ready_to_finish(now=32.0))
+        self.assertFalse(lifecycle.ready_to_finish(now=76.49))
+        self.assertTrue(lifecycle.ready_to_finish(now=76.5))
+
+    def test_first_audio_chunk_owns_one_completion_deadline(self):
+        lifecycle = RuntimeServices().lifecycle
+        lifecycle.request_shutdown(now=10.0)
+        lifecycle.observe_farewell_audio(now=11.0)
+        lifecycle.observe_farewell_audio(now=20.0)
+
+        snapshot = lifecycle.snapshot()
+        self.assertEqual(snapshot.farewell_audio_at, 11.0)
+        self.assertEqual(snapshot.completion_deadline, 56.0)
 
     def test_shutdown_deadline_is_a_fallback_without_audio(self):
         lifecycle = RuntimeServices().lifecycle
