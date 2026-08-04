@@ -953,3 +953,55 @@ single deadline and fixed 250 ms delay; no data migration is involved.
 - The initial `listening` publication now includes the same readiness fields as
   its heartbeat, including after microphone-stall recovery. Final runtime state:
   new listener, `vosk_ready=true`, `verification_stage=waiting_prefix`.
+
+## Verified correction - 2026-08-02 - Dormant transition during playback
+
+- **Root cause:** the microphone callback could reach the 12-second idle limit
+  and queue `_close_idle_audio_stream()` immediately before incoming Gemini
+  audio changed the mode to `SPEAKING`. The queued coroutine did not revalidate
+  playback state, so it could send `audio_stream_end` and publish `SLEEPING`
+  from a stale listening decision while JARVIS was speaking.
+- **Correction:** real speaking-mode transitions reset the existing
+  `AudioInactivityWatchdog`. The idle close now fails closed when playback or an
+  interruption is active, or when the watchdog no longer owns a sleeping
+  transition. It rechecks after the awaited transport send so a concurrent
+  playback start cannot be overwritten visually.
+- **Scope:** no threshold, device, Gemini session, playback queue, wake word,
+  interruption behavior or UI state vocabulary changed. No parallel audio or
+  lifecycle owner was introduced.
+- **Verification:** directed audio/lifecycle/security tests passed (`73 passed,
+  20 subtests passed`). In the project `.venv`, dependency validation, full
+  compilation, launcher help, `git diff --check` and the complete suite passed
+  (`473 passed, 2 skipped, 137 subtests passed`). Hardware playback remains a
+  manual observation. Rollback removes the transition reset, the two
+  stale-close guards and their regression test; no data migration is involved.
+
+## Verified correction - 2026-08-02 - Confirmation completion and isolation
+
+- **Root cause:** `VoiceConfirmationGate` accepted natural approval prefixes
+  but denial mostly required exact strings. A complete response such as “no, no
+  quiero poner el recordatorio” therefore left the action pending. Confirmation
+  was also evaluated on provisional transcription fragments, and only approved
+  actions had immediate model-retry suppression. Subsequent tool calls received
+  the generic pending marker, allowing Gemini to repeat the question or confuse
+  it with an unrelated visual request.
+- **Correction:** denial now recognizes bounded natural prefixes/fragments and
+  wins safely over mixed wording. Voice decisions occur once at
+  `turn_complete`; UI/dashboard text remains immediate because it is already a
+  completed message. Denial consumes all pending references and stores a
+  ten-second exact-action tombstone so an automatic retry cannot restage or
+  execute it. Approval continues to execute exactly once and accepts natural
+  wording such as “sí, hacelo ya”.
+- **Prompt/tool isolation:** the fixed “Confirm action?” wording was removed.
+  Gemini receives one natural yes/no instruction and must wait. `screen_process`
+  remains read-only/free for local input, and its declaration now forbids calls
+  inferred from confirmations, assistant suggestions or unrelated dialogue.
+- **Scope and rollback:** no reminder, screenshot, camera, Gemini, permission
+  minimum or external action was executed during validation. Rollback removes
+  natural-denial matching, completed-turn gating, denial replay suppression and
+  the visual-request constraint; no persistent-data migration is involved.
+- **Verification:** directed confirmation/security/permission/origin tests pass
+  (`99 passed, 92 subtests passed`). In the project `.venv`, dependency checks,
+  full compilation, launcher help, `git diff --check` and the complete suite
+  pass (`476 passed, 2 skipped, 143 subtests passed`). The existing
+  `google-genai` Python 3.17 deprecation warning is unchanged.

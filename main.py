@@ -345,6 +345,9 @@ TOOL_DECLARATIONS = [
             "Captures the screen or webcam image and lets you analyze it. "
             "MUST be called when user asks what is on screen, what you see, "
             "look at camera, analyze my screen, etc. "
+            "Only call it when the user's latest completed request explicitly asks "
+            "for visual inspection. Never infer a visual request from a pending "
+            "confirmation, an assistant suggestion, or unrelated conversation. "
             "You have NO visual ability without this tool. "
             "After the image is captured it is sent directly to you — describe what you see and answer the user's question. "
             "When using camera: the live view stays open until user says close it or calls close_camera."
@@ -1009,6 +1012,7 @@ class JarvisLive:
         self._pending_confirmation_context: RequestContext | None = None
         self._confirmation_execution_scheduled = False
         self._confirmed_replay_cache: dict[str, tuple[float, dict]] = {}
+        self._denied_replay_cache: dict[str, float] = {}
         self._active_input_source = self._default_source()
         self._input_source_locked = False
         handlers = {
@@ -1281,6 +1285,8 @@ class JarvisLive:
         *,
         final: bool = True,
     ) -> bool:
+        if final:
+            self._clear_denied_actions_for_source(source)
         gate = getattr(self, "_upfront_approval_gate", None)
         return bool(gate and gate.observe_request(text, source, final=final))
 
@@ -1323,6 +1329,43 @@ class JarvisLive:
         entry = cache.get(self._confirmation_cache_key(name, args, source))
         return dict(entry[1]) if entry is not None else None
 
+    def _remember_denied_action(self, fc, source: InputSource) -> None:
+        """Suppress an immediate model retry of the exact action the user denied."""
+        cache = getattr(self, "_denied_replay_cache", None)
+        if cache is None:
+            cache = {}
+            self._denied_replay_cache = cache
+        key = self._confirmation_cache_key(
+            fc.name,
+            dict(fc.args or {}),
+            source,
+        )
+        cache[key] = time.monotonic() + 10.0
+
+    def _recently_denied_action(
+        self,
+        name: str,
+        args: dict,
+        source: InputSource,
+    ) -> bool:
+        cache = getattr(self, "_denied_replay_cache", None)
+        if not cache:
+            return False
+        now = time.monotonic()
+        expired = [key for key, deadline in cache.items() if deadline <= now]
+        for key in expired:
+            cache.pop(key, None)
+        return self._confirmation_cache_key(name, args, source) in cache
+
+    def _clear_denied_actions_for_source(self, source: InputSource) -> None:
+        """A new completed user turn may intentionally request the action again."""
+        cache = getattr(self, "_denied_replay_cache", None)
+        if not cache:
+            return
+        prefix = f"{source.value}:"
+        for key in [key for key in cache if key.startswith(prefix)]:
+            cache.pop(key, None)
+
     def _handle_confirmation_text(self, text: str) -> bool:
         """Observe an explicit voice/text yes or no for the pending action."""
         decision = self._confirmation_gate.observe(text)
@@ -1336,10 +1379,13 @@ class JarvisLive:
             return True
         if decision == "denied":
             pending_fc = self._pending_confirmation_fc
+            pending_source = self._pending_confirmation_source
             pending_context = getattr(self, "_pending_confirmation_context", None)
             self._pending_confirmation_fc = None
             self._pending_confirmation_source = None
             self._pending_confirmation_context = None
+            if pending_fc is not None and pending_source is not None:
+                self._remember_denied_action(pending_fc, pending_source)
             if pending_fc is not None and pending_context is not None:
                 self._audit_request(
                     pending_context,
@@ -1401,7 +1447,13 @@ class JarvisLive:
 
     def set_speaking(self, value: bool):
         with self._speaking_lock:
+            changed = self._is_speaking != value
             self._is_speaking = value
+        if changed:
+            # Speaking is not microphone inactivity. Invalidate a pending idle
+            # transition when playback starts, and give the user a complete
+            # listening window when playback finishes.
+            self._runtime.audio.watchdog.reset()
         if value:
             self.ui.set_state("SPEAKING")
         elif self.ui.microphone_enabled:
@@ -1601,6 +1653,30 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     outcome="duplicate_suppressed",
                     duration_ms=(time.monotonic() - request_started_at) * 1000,
                 )
+            if self._recently_denied_action(name, args, execution_source):
+                self._audit_request(
+                    request_context,
+                    "confirmation",
+                    name,
+                    outcome="denied_duplicate_suppressed",
+                )
+                return self._function_response(
+                    fc,
+                    request_context,
+                    {
+                        "result": (
+                            "[CONFIRMATION_DENIED] The user already denied this exact "
+                            "action. Do not request it or call it again unless the user "
+                            "makes a new explicit request. Continue the conversation normally."
+                        ),
+                        "success": False,
+                        "error": "confirmation_denied",
+                        "duplicate_suppressed": True,
+                    },
+                    completed=True,
+                    outcome="denied_duplicate_suppressed",
+                    duration_ms=(time.monotonic() - request_started_at) * 1000,
+                )
 
         if name in {"file_processor", "code_helper", "dev_agent", "desktop_control", "computer_control"}:
             from actions.file_controller import _is_protected_path
@@ -1654,8 +1730,9 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 fc,
                 request_context,
                 {"result": (
-                    "[VOICE_CONFIRMATION_ALREADY_PENDING] Wait for the user's yes or no. "
-                    "Do not call this or another tool again."
+                    "[VOICE_CONFIRMATION_ALREADY_PENDING] One action is already awaiting "
+                    "the user's completed yes or no. Do not call tools and do not ask "
+                    "again; wait for that response."
                 )},
                 completed=True,
                 outcome="blocked",
@@ -1777,7 +1854,6 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     outcome="requested",
                 )
                 self.ui.write_log(f"SECURITY DETAIL: {detail.replace(chr(10), ' | ')}")
-                question = "Confirm action?"
                 self.ui.write_log(f"SECURITY: Awaiting spoken approval for {name}.")
                 if self.ui.microphone_enabled:
                     self.ui.set_state("LISTENING")
@@ -1785,7 +1861,12 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     fc,
                     request_context,
                     {
-                        "result": f'[VOICE_CONFIRMATION_REQUIRED] Say exactly "{question}" Then wait.'
+                        "result": (
+                            f"[VOICE_CONFIRMATION_REQUIRED] Ask once, briefly and naturally: "
+                            f"{title} The user may answer with a natural yes/do it or "
+                            "no/cancel; never demand fixed wording or say 'confirm action'. "
+                            "Then wait without calling another tool."
+                        )
                     },
                     outcome="confirmation_required",
                 )
@@ -2270,8 +2351,22 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
         """End a muted/idle input stream while preserving the Live session."""
         if not self.session or not self.ui.microphone_enabled:
             return
+        with self._speaking_lock:
+            jarvis_speaking = self._is_speaking
+        if (
+            jarvis_speaking
+            or self._runtime.audio.interrupted
+            or not self._runtime.audio.watchdog.sleeping
+        ):
+            return
         try:
             await self.session.send_realtime_input(audio_stream_end=True)
+            # Playback may have begun while the transport call yielded. Never
+            # let that stale idle decision overwrite the speaking state.
+            with self._speaking_lock:
+                jarvis_speaking = self._is_speaking
+            if jarvis_speaking or not self._runtime.audio.watchdog.sleeping:
+                return
             self.ui.set_state("SLEEPING")
             self.ui.write_log(
                 "AUDIO: No voice for 12 seconds; sleeping until voice returns."
@@ -2355,10 +2450,9 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                             if txt:
                                 in_buf.append(txt)
                                 self._last_user_speech = time.monotonic()
-                                if not self._handle_confirmation_text(txt):
-                                    self._observe_upfront_approval(
-                                        txt, self._active_input_source, final=False
-                                    )
+                                # Transcription updates are provisional. Acting
+                                # on an early "no" or "sí" can invert the user's
+                                # completed phrase. Decide once at turn_complete.
 
                         if sc.turn_complete:
                             turn_completed = True

@@ -112,6 +112,10 @@ It is pending if the sitting is interrupted.
 - `LiveSessionState` retains the latest safe summable handle.
 - The `JarvisLive.run()` loop reconnects with backoff.
 - `AudioInactivityWatchdog` can only close the remote audio stream and reopen it when it detects voice.
+- Playback transitions reset the inactivity window. A queued idle close must
+  verify that playback is still inactive and the watchdog still owns a sleeping
+  transition both before sending `audio_stream_end` and before publishing the
+  visual `SLEEPING` state.
 - The local stream is recreated by PortAudio errors or stopped callbacks.
 
 ### Shutdown
@@ -231,6 +235,11 @@ Current flow problems:
 free writing or execution by default.
 - Phase 2 correlates normal and special routes with a `request_id` and records
 only metadata listed in a sink that fails without interrupting execution.
+- Voice confirmation is decided once from the completed user turn. Approval
+and denial atomically consume the pending action; a short fingerprint tombstone
+suppresses immediate model retries after denial, while confirmed results retain
+their existing replay protection. Read-only screen inspection remains free for
+trusted local/wake input and cannot be inferred from unrelated dialogue.
 - `ToolExecutor` delivers `CancellationToken` only to handlers who accept it,
 allows you to mark them by `request_id` and wait cleanup during a grace
 A non-cooperative legacy handler can still continue after

@@ -85,6 +85,9 @@ describe the current repository scope rather than a reliability guarantee.
 
 ## Installation
 
+For a complete Windows walkthrough in Spanish, including first-run checks and
+troubleshooting, see [TUTORIAL.md](TUTORIAL.md).
+
 Clone the repository and enter its directory:
 
 ```powershell

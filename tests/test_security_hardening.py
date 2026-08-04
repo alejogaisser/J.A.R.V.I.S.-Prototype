@@ -97,7 +97,13 @@ class VoiceConfirmationTests(unittest.TestCase):
         self.assertFalse(self._stage())
 
     def test_natural_spoken_yes_is_accepted(self):
-        for phrase in ("Sí, claro", "si dale", "Yes, go ahead", "confirmo la acción"):
+        for phrase in (
+            "Sí, claro",
+            "si dale",
+            "sí, hacelo ya",
+            "Yes, go ahead",
+            "confirmo la acción",
+        ):
             with self.subTest(phrase=phrase):
                 self.gate.clear()
                 self.assertFalse(self._stage())
@@ -105,7 +111,9 @@ class VoiceConfirmationTests(unittest.TestCase):
 
     def test_approval_phrase_with_denial_is_not_accepted(self):
         self.assertFalse(self._stage())
-        self.assertIsNone(self.gate.observe("sí pero no lo hagas"))
+        self.assertEqual(self.gate.observe("sí pero no lo hagas"), "denied")
+        self.assertFalse(self.gate.has_pending)
+        self.assertFalse(self._stage())
         self.assertEqual(self.gate.observe("Sí, por favor"), "approved")
         self.assertTrue(self._stage())
         self.assertFalse(self._stage())
@@ -117,10 +125,18 @@ class VoiceConfirmationTests(unittest.TestCase):
         self.assertFalse(self._stage(other))
 
     def test_spoken_no_cancels_the_pending_action(self):
-        self.assertFalse(self._stage())
-        self.assertEqual(self.gate.observe("no gracias"), "denied")
-        self.assertFalse(self.gate.has_pending)
-        self.assertFalse(self._stage())
+        for phrase in (
+            "no gracias",
+            "no, no quiero poner el recordatorio",
+            "mejor no lo hagas",
+            "dejalo para después",
+            "cancel it please",
+        ):
+            with self.subTest(phrase=phrase):
+                self.gate.clear()
+                self.assertFalse(self._stage())
+                self.assertEqual(self.gate.observe(phrase), "denied")
+                self.assertFalse(self.gate.has_pending)
 
     def test_approval_expires(self):
         self.assertFalse(self._stage())
@@ -350,6 +366,29 @@ class AudioVisionRegressionTests(unittest.TestCase):
         self.assertNotIn("self.session = None", reset)
         self.assertIn("microphone callback stalled", source)
 
+    def test_idle_microphone_cannot_overwrite_active_playback_state(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        speaking = source[
+            source.index("    def set_speaking"):
+            source.index("    def interrupt", source.index("    def set_speaking"))
+        ]
+        idle_close = source[
+            source.index("    async def _close_idle_audio_stream"):
+            source.index("    async def _receive_audio")
+        ]
+
+        self.assertIn("changed = self._is_speaking != value", speaking)
+        self.assertIn("self._runtime.audio.watchdog.reset()", speaking)
+        self.assertGreaterEqual(
+            idle_close.count("jarvis_speaking = self._is_speaking"),
+            2,
+        )
+        self.assertIn("not self._runtime.audio.watchdog.sleeping", idle_close)
+        self.assertLess(
+            idle_close.rindex("jarvis_speaking"),
+            idle_close.index('self.ui.set_state("SLEEPING")'),
+        )
+
     def test_heavy_actions_load_after_ui_construction(self):
         source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn("def _load_action_dependencies()", source)
@@ -491,12 +530,26 @@ class FileAndDesktopRegressionTests(unittest.TestCase):
         self.assertIn('if confirmed not in ("yes", "true", "1", "confirm")', settings)
         self.assertIn("result.returncode != 0", settings)
 
-    def test_spoken_confirmation_is_short(self):
+    def test_spoken_confirmation_uses_natural_yes_or_no(self):
         source = Path("main.py").read_text(encoding="utf-8")
-        self.assertIn('question = "Confirm action?"', source)
-        self.assertNotIn('question = "Confirm action? Yes or no."', source)
-        self.assertIn("[VOICE_CONFIRMATION_REQUIRED] Say exactly", source)
+        self.assertNotIn('question = "Confirm action?"', source)
+        self.assertNotIn("[VOICE_CONFIRMATION_REQUIRED] Say exactly", source)
+        self.assertIn("Ask once, briefly and naturally", source)
+        self.assertIn("natural yes/do it or", source)
         self.assertNotIn("The application will execute the action automatically", source)
+
+    def test_confirmation_waits_for_completed_transcription(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        receive = source[
+            source.index("    async def _receive_audio"):
+            source.index("    async def _play_audio")
+        ]
+        provisional = receive[
+            receive.index("if sc.input_transcription"):
+            receive.index("if sc.turn_complete")
+        ]
+        self.assertNotIn("_handle_confirmation_text", provisional)
+        self.assertIn("_handle_confirmation_text(full_in)", receive)
 
     def test_visual_mouse_prefers_uia_before_image_grounding(self):
         source = Path("actions/computer_control.py").read_text(encoding="utf-8")
@@ -520,7 +573,8 @@ class FileAndDesktopRegressionTests(unittest.TestCase):
         main_source = Path("main.py").read_text(encoding="utf-8")
         self.assertIn('"name": "permission_manager"', main_source)
         self.assertIn("immutable minimum", main_source)
-        self.assertIn('question = "Confirm action?"', main_source)
+        self.assertIn("[VOICE_CONFIRMATION_REQUIRED]", main_source)
+        self.assertIn("Ask once, briefly and naturally", main_source)
 
 
 class DashboardCryptoTests(unittest.TestCase):
