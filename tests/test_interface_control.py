@@ -157,6 +157,19 @@ def test_study_auto_opens_only_when_main_app_is_already_visible():
     assert pet_signal.request["surface_mode"] == "pet"
 
 
+def test_study_tool_requests_markdown_and_delimited_latex_from_the_existing_model():
+    declaration = next(
+        item for item in TOOL_DECLARATIONS if item["name"] == "study_engine"
+    )
+    description = declaration["description"]
+    steps_help = declaration["parameters"]["properties"]["steps"]["description"]
+
+    assert "Markdown" in description
+    assert "LaTeX" in description
+    assert "\\(...\\)" in steps_help
+    assert "\\[...\\]" in steps_help
+
+
 def test_study_workspace_defers_render_until_web_page_is_ready():
     rendered = []
     pending = SimpleNamespace(setText=lambda value: None)
@@ -174,6 +187,27 @@ def test_study_workspace_defers_render_until_web_page_is_ready():
     workspace._page_ready = True
     StudyWorkspace.set_artifact(workspace, {"title": "Ready"})
     assert rendered == ["rendered"]
+
+
+def test_study_dispatches_markdown_artifact_to_the_loaded_page_without_mutation():
+    scripts = []
+    page = SimpleNamespace(runJavaScript=scripts.append)
+    artifact = {
+        "result": r"**Verified:** \(\frac{2}{3}x^4\)",
+        "steps": ["2x^4 * 3"],
+    }
+    workspace = SimpleNamespace(
+        _page_ready=True,
+        latest_artifact=artifact,
+        view=SimpleNamespace(page=lambda: page),
+    )
+
+    StudyWorkspace._render_latest(workspace)
+
+    assert len(scripts) == 1
+    assert scripts[0].startswith("renderArtifact(")
+    assert "**Verified:**" in scripts[0]
+    assert "2x^4 * 3" in scripts[0]
 
 
 def test_internal_workspace_opening_verifies_the_stack_postcondition():

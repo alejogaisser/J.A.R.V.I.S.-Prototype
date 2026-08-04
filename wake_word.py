@@ -15,6 +15,7 @@ import unicodedata
 from collections.abc import Callable
 from ctypes import wintypes
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ import sounddevice as sd
 from vosk import KaldiRecognizer, SetLogLevel
 from vosk import Model as VoskModel
 
-from core.runtime_state import update_runtime_state
+from core.runtime_state import ActivationStateOwner, update_runtime_state
 from jarvis_launcher import load_config
 
 try:
@@ -60,6 +61,7 @@ INPUT_SAMPLE_RATE = SAMPLE_RATE
 INPUT_CHANNELS = 1
 INPUT_DOWNSAMPLE_FACTOR = 1
 MIN_WAKE_CONFIDENCE = 0.65
+NEURAL_VOSK_MIN_CONFIDENCE = 0.50
 OPENWAKEWORD_THRESHOLD = 0.08
 WAKE_AUDIO_WINDOW = 3.0
 OPENWAKEWORD_FOLLOWUP_THRESHOLD = 0.05
@@ -500,11 +502,44 @@ def jarvis_is_running() -> bool:
     return get_running_jarvis_pid() is not None
 
 
-def wait_until_jarvis_closes() -> None:
-    """Espera hasta que no quede ninguna instancia de main.py."""
-    update_runtime_state("wake_word", "paused", reason="jarvis_on")
-    while jarvis_is_running():
+def publish_wake_state(
+    activation: ActivationStateOwner,
+    state: str,
+    **details: Any,
+) -> None:
+    """Publish detector health together with the authoritative activation."""
+    snapshot = activation.snapshot()
+    activation_details: dict[str, Any] = {
+        "activation_state": snapshot.phase.value,
+        "activation_generation": snapshot.generation,
+        "activation_reason": snapshot.reason,
+    }
+    if snapshot.target_pid is not None:
+        activation_details["target_pid"] = snapshot.target_pid
+    update_runtime_state(
+        "wake_word",
+        state,
+        **details,
+        **activation_details,
+    )
+
+
+def wait_until_jarvis_closes(activation: ActivationStateOwner) -> None:
+    """Wait for every normal, voice, crash, or manual process close."""
+    running_pid = get_running_jarvis_pid()
+    if running_pid is not None:
+        activation.reconcile(
+            running=True,
+            target_pid=running_pid,
+            reason="jarvis_observed",
+        )
+    publish_wake_state(activation, "paused", reason="jarvis_on")
+    while get_running_jarvis_pid() is not None:
         time.sleep(1)
+    activation.request_close(reason="process_exit_observed")
+    publish_wake_state(activation, "paused", reason="jarvis_closing")
+    activation.mark_closed(reason="process_exited")
+    publish_wake_state(activation, "restarting", reason="jarvis_closed")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -651,7 +686,7 @@ def bring_process_window_to_front(
 # APERTURA DE JARVIS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def launch_jarvis() -> None:
+def launch_jarvis(activation: ActivationStateOwner) -> None:
     """
     Abre JARVIS, muestra su ventana al frente y espera hasta que se cierre.
 
@@ -661,11 +696,17 @@ def launch_jarvis() -> None:
     running_pid = get_running_jarvis_pid()
 
     if running_pid is not None:
+        activation.reconcile(
+            running=True,
+            target_pid=running_pid,
+            reason="already_running",
+        )
+        publish_wake_state(activation, "paused", reason="jarvis_on")
         print("[WakeWord] JARVIS ya está abierto.")
         bring_process_window_to_front(running_pid)
 
         print("[WakeWord] Esperando a que se cierre...")
-        wait_until_jarvis_closes()
+        wait_until_jarvis_closes(activation)
         return
 
     pythonw = Path(sys.executable).with_name("pythonw.exe")
@@ -676,7 +717,7 @@ def launch_jarvis() -> None:
         executable = Path(sys.executable)
 
     print("[WakeWord] Estado: Abriendo. Iniciando JARVIS...")
-    update_runtime_state("wake_word", "paused", reason="launching_jarvis")
+    publish_wake_state(activation, "paused", reason="launching_jarvis")
 
     creation_flags = 0
 
@@ -697,6 +738,9 @@ def launch_jarvis() -> None:
             env=main_env,
         )
 
+    activation.mark_open(target_pid=process.pid)
+    publish_wake_state(activation, "paused", reason="jarvis_started")
+
     print(f"[WakeWord] Estado: En sesión. PID: {process.pid}")
 
     # Wake startup now follows the same base surface as a direct launch. Pet
@@ -707,7 +751,13 @@ def launch_jarvis() -> None:
     print("[WakeWord] Esperando a que se cierre...")
 
     # El detector queda pausado hasta que JARVIS termine.
-    return_code = process.wait()
+    try:
+        return_code = process.wait()
+    finally:
+        activation.request_close(reason="process_wait_completed")
+        publish_wake_state(activation, "paused", reason="jarvis_closing")
+        activation.mark_closed(reason="process_exited")
+        publish_wake_state(activation, "restarting", reason="jarvis_closed")
 
     if return_code:
         print(f"[WakeWord] Estado: Error. JARVIS terminó con código {return_code}.")
@@ -912,6 +962,72 @@ class VoskWakeSequence:
         return approved
 
 
+class VoskExtendedWakeSequence:
+    """Confirm exact Vosk finals for ``hey`` -> ``wake`` -> ``up``.
+
+    Some microphones and accents make Vosk finalize each word independently.
+    Keeping this state separate from the activation lifecycle lets that valid
+    segmentation through without weakening the neural or general fallback
+    thresholds.
+    """
+
+    def __init__(self, duration: float = EXTENDED_WAKE_CONFIRMATION_WINDOW) -> None:
+        self.duration = float(duration)
+        self.armed_until = 0.0
+        self._stage = "waiting_hey"
+
+    def reset(self) -> None:
+        self.armed_until = 0.0
+        self._stage = "waiting_hey"
+
+    def is_armed(self, *, now: float | None = None) -> bool:
+        observed_at = time.monotonic() if now is None else now
+        if observed_at > self.armed_until:
+            self.reset()
+            return False
+        return self._stage != "waiting_hey"
+
+    def observe(
+        self,
+        text: str,
+        confidence: float,
+        has_recent_voice: bool,
+        session_available: bool,
+        *,
+        now: float | None = None,
+    ) -> bool:
+        observed_at = time.monotonic() if now is None else now
+        normalized = " ".join(text.lower().split())
+        eligible = (
+            confidence >= MIN_WAKE_CONFIDENCE
+            and has_recent_voice
+            and session_available
+        )
+        if not eligible:
+            self.reset()
+            return False
+
+        if normalized == "hey":
+            self.armed_until = observed_at + self.duration
+            self._stage = "waiting_wake"
+            return False
+
+        if not self.is_armed(now=observed_at):
+            return False
+
+        if self._stage == "waiting_wake" and normalized == "wake":
+            self._stage = "waiting_up"
+            return False
+
+        approved = (
+            normalized == "wake up" and self._stage == "waiting_wake"
+        ) or (
+            normalized == "up" and self._stage == "waiting_up"
+        )
+        self.reset()
+        return approved
+
+
 def openwakeword_candidate_approved(
     *,
     has_recent_voice: bool,
@@ -980,7 +1096,7 @@ class WakePhraseVerifier:
         approved = (
             observed_at <= self.armed_until
             and ends_with_suffix
-            and confidence >= MIN_WAKE_CONFIDENCE
+            and confidence >= NEURAL_VOSK_MIN_CONFIDENCE
             and has_recent_voice
             and session_available
         )
@@ -1020,11 +1136,16 @@ class StablePartialWakeConfirmation:
         session_available: bool,
     ) -> bool:
         words = tuple(" ".join(text.lower().split()).split())
+        complete_phrases = {
+            tuple(EXTENDED_WAKE_PHRASE.split()),
+            *(tuple(alias.split()) for alias in VOSK_EXTENDED_WAKE_ALIASES),
+        }
+        complete_phrase = words in complete_phrases
         eligible = (
-            prefix_armed
-            and has_recent_voice
+            has_recent_voice
             and session_available
             and words[-len(EXTENDED_WAKE_SUFFIX):] == EXTENDED_WAKE_SUFFIX
+            and (prefix_armed or complete_phrase)
         )
         if not eligible:
             self.reset()
@@ -1079,6 +1200,7 @@ def create_openwakeword_model():
 def listen_for_openwakeword(
     model,
     fallback_vosk_model: VoskModel | AsyncVoskFallback | None = None,
+    activation: ActivationStateOwner | None = None,
 ) -> bool:
     """Activate through OpenWakeWord, with exact Vosk recognition as fallback."""
     global _audio_last_callback
@@ -1088,6 +1210,7 @@ def listen_for_openwakeword(
     fallback_recognizer = None
     fallback_partial = ""
     fallback_sequence = VoskWakeSequence()
+    extended_sequence = VoskExtendedWakeSequence()
     phrase_verifier = WakePhraseVerifier(WAKE_PHRASES)
     partial_confirmation = StablePartialWakeConfirmation()
     def ensure_fallback_recognizer() -> None:
@@ -1107,6 +1230,8 @@ def listen_for_openwakeword(
         fallback_grammar = json.dumps(
             [
                 "hey",
+                "wake",
+                "up",
                 "wake up",
                 *WAKE_PHRASES,
                 *VOSK_WAKE_ALIASES,
@@ -1131,8 +1256,9 @@ def listen_for_openwakeword(
         f"RMS absoluto mínimo={MIN_WAKE_RMS}.",
         force=True,
     )
-    update_runtime_state(
-        "wake_word",
+    activation = activation or ActivationStateOwner()
+    publish_wake_state(
+        activation,
         "listening",
         phrase=phrase_label,
         vosk_ready=fallback_recognizer is not None,
@@ -1162,7 +1288,13 @@ def listen_for_openwakeword(
                     )
                 continue
 
-            if jarvis_is_running():
+            running_pid = get_running_jarvis_pid()
+            if running_pid is not None:
+                activation.reconcile(
+                    running=True,
+                    target_pid=running_pid,
+                    reason="manual_or_external_open",
+                )
                 model.reset()
                 clear_audio_queue()
                 return False
@@ -1187,6 +1319,7 @@ def listen_for_openwakeword(
             )
 
             vosk_approved = False
+            segmented_approved = False
             partial_approved = False
             if fallback_recognizer is not None:
                 if fallback_recognizer.AcceptWaveform(audio_data):
@@ -1227,11 +1360,21 @@ def listen_for_openwakeword(
                         and fallback_confidence >= MIN_WAKE_CONFIDENCE
                         and session_available
                     )
+                    segmented_approved = (
+                        phrase_verifier.requires_suffix
+                        and extended_sequence.observe(
+                            fallback_text,
+                            fallback_confidence,
+                            has_recent_voice,
+                            session_available,
+                        )
+                    )
                     vosk_approved = (
                         exact_phrase_approved
                         or suffix_approved
                         or legacy_alias_approved
                         or extended_alias_approved
+                        or segmented_approved
                     )
                     if fallback_text and not phrase_verifier.requires_suffix:
                         vosk_approved = vosk_approved or fallback_sequence.observe(
@@ -1261,8 +1404,8 @@ def listen_for_openwakeword(
 
             now = time.monotonic()
             if now - last_status_heartbeat >= STATUS_HEARTBEAT_INTERVAL:
-                update_runtime_state(
-                    "wake_word",
+                publish_wake_state(
+                    activation,
                     "listening",
                     phrase=phrase_label,
                     rms=round(rms),
@@ -1271,9 +1414,13 @@ def listen_for_openwakeword(
                     input_channels=INPUT_CHANNELS,
                     vosk_ready=fallback_recognizer is not None,
                     verification_stage=(
-                        "suffix_armed"
-                        if phrase_verifier.is_armed()
-                        else "waiting_prefix"
+                        "vosk_segment_armed"
+                        if extended_sequence.is_armed()
+                        else (
+                            "suffix_armed"
+                            if phrase_verifier.is_armed()
+                            else "waiting_prefix"
+                        )
                     ),
                 )
                 last_status_heartbeat = now
@@ -1345,7 +1492,10 @@ def listen_for_openwakeword(
                 )
 
 
-def listen_for_wake_word(model: VoskModel) -> bool:
+def listen_for_wake_word(
+    model: VoskModel,
+    activation: ActivationStateOwner | None = None,
+) -> bool:
     """
     Abre el micrófono y espera hasta detectar Hey Jarvis.
 
@@ -1367,7 +1517,12 @@ def listen_for_wake_word(model: VoskModel) -> bool:
         f"RMS absoluto mínimo={MIN_WAKE_RMS}.",
         force=True,
     )
-    update_runtime_state("wake_word", "listening", phrases=list(WAKE_PHRASES))
+    activation = activation or ActivationStateOwner()
+    publish_wake_state(
+        activation,
+        "listening",
+        phrases=list(WAKE_PHRASES),
+    )
 
     with sd.RawInputStream(
         device=INPUT_DEVICE,
@@ -1466,6 +1621,7 @@ def main() -> None:
         return
 
     apply_wake_config()
+    activation = ActivationStateOwner()
 
     if not MAIN_FILE.exists():
         raise FileNotFoundError(
@@ -1493,8 +1649,10 @@ def main() -> None:
                     )
             else:
                 fallback_vosk_model = fallback_loader
-        listen = lambda active_model: listen_for_openwakeword(
-            active_model, fallback_vosk_model
+        listen = partial(
+            listen_for_openwakeword,
+            fallback_vosk_model=fallback_vosk_model,
+            activation=activation,
         )
         print(f"[WakeWord] Detector local {wake_phrase_label()} cargado.")
     else:
@@ -1505,15 +1663,17 @@ def main() -> None:
             )
         print("[WakeWord] OpenWakeWord no disponible; usando Vosk como respaldo.")
         model = VoskModel(str(MODEL_PATH))
-        listen = listen_for_wake_word
+        listen = partial(
+            listen_for_wake_word,
+            activation=activation,
+        )
 
     while True:
         try:
             if jarvis_is_running():
                 print("[WakeWord] Estado: En sesión. Detector pausado y micrófono liberado.")
-                wait_until_jarvis_closes()
+                wait_until_jarvis_closes(activation)
                 print("[WakeWord] JARVIS se cerró. Reactivando la palabra de inicio...")
-                update_runtime_state("wake_word", "restarting", reason="jarvis_closed")
                 reset_detector_state(model, "JARVIS se cerró")
                 time.sleep(1)
                 continue
@@ -1521,11 +1681,30 @@ def main() -> None:
             detected = listen(model)
 
             if detected:
+                if not activation.request_open(reason="wake_phrase_approved"):
+                    continue
+                publish_wake_state(
+                    activation,
+                    "activating",
+                    reason="wake_phrase_approved",
+                )
                 print("[WakeWord] Estado: Activando. Frase detectada.")
 
                 # listen_for_wake_word ya cerró RawInputStream,
                 # por lo que el micrófono está libre.
-                launch_jarvis()
+                try:
+                    launch_jarvis(activation)
+                finally:
+                    running_pid = get_running_jarvis_pid()
+                    activation.reconcile(
+                        running=running_pid is not None,
+                        target_pid=running_pid,
+                        reason=(
+                            "process_still_running"
+                            if running_pid is not None
+                            else "launch_cycle_finished"
+                        ),
+                    )
 
                 reset_detector_state(model, "regreso de la sesión")
                 time.sleep(1)
@@ -1537,7 +1716,11 @@ def main() -> None:
         except (sd.PortAudioError, AudioStreamStalled) as error:
             print(f"[WakeWord] Error de micrófono: {error}")
             print(f"[WakeWord] Reintentando en {MIC_RETRY_DELAY:.0f} segundo...")
-            update_runtime_state("wake_word", "retrying", error="microphone")
+            publish_wake_state(
+                activation,
+                "retrying",
+                error="microphone",
+            )
             apply_wake_config()
             reset_detector_state(model, "recuperación del micrófono")
             time.sleep(MIC_RETRY_DELAY)
@@ -1548,8 +1731,16 @@ def main() -> None:
                 f"{type(error).__name__}: {error}"
             )
             print("[WakeWord] Reintentando en 3 segundos...")
-            update_runtime_state(
-                "wake_word", "retrying", error=type(error).__name__
+            running_pid = get_running_jarvis_pid()
+            activation.reconcile(
+                running=running_pid is not None,
+                target_pid=running_pid,
+                reason="unexpected_error_recovery",
+            )
+            publish_wake_state(
+                activation,
+                "retrying",
+                error=type(error).__name__,
             )
             time.sleep(3)
 

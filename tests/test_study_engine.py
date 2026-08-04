@@ -138,6 +138,22 @@ def test_study_plots_and_anatomy_have_dependency_free_local_renderers():
     assert "DRAG TO ROTATE  ·  WHEEL TO ZOOM  ·  LOCAL RENDERER" in source
 
 
+def test_study_rich_text_renderer_is_local_safe_and_used_for_every_text_field():
+    source = Path("ui_mk2/study.py").read_text(encoding="utf-8")
+
+    assert "function renderMarkdown" in source
+    assert "function renderMath" in source
+    assert "window.renderMarkdown=renderMarkdown" in source
+    assert "renderMarkdown(by('problem')" in source
+    assert "renderMarkdown(by('result')" in source
+    assert "renderMarkdown(t,s)" in source
+    assert "renderMarkdown(d,n)" in source
+    assert "t.textContent=s" not in source
+    assert "d.innerHTML=s" not in source
+    assert "cdn.jsdelivr.net/npm/marked" not in source
+    assert "cdn.jsdelivr.net/npm/katex" not in source
+
+
 def test_unsafe_math_is_rejected_without_fake_success():
     result = study_engine({"action": "plot2d", "expression": "__import__('os')"})
     assert result["success"] is False

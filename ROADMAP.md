@@ -655,3 +655,74 @@ Full traceability must begin immediately afterwards, on that correct border.
   inspection.
 - **Rollback:** revert these confirmation state/prompt changes and regressions;
   no configuration or persistent-data migration is involved.
+
+## Maintenance correction - 2026-08-04 - Readable Study mathematics
+
+- **Status:** implemented and automatically verified (`31` directed tests;
+  full suite `479 passed, 2 skipped, 143 subtests passed`).
+- **Objective:** make step-by-step Study solutions readable without changing
+  exercise solving, providers, artifact structure or workspace navigation.
+- **Implementation:** local safe Markdown rendering plus native MathML for
+  delimited LaTeX; legacy caret exponents and `*` multiplication receive a
+  presentation-only fallback. Gemini's existing Study tool description now
+  requests compact Markdown and delimited LaTeX, without an extra API call.
+- **Risk:** visual typography still requires observation on the target Windows
+  display; automated tests validate dispatch, renderer coverage and safety but
+  do not claim a hardware/GPU visual check.
+- **Rollback:** remove the rich renderer/styles and restore the prior
+  `textContent` assignments and tool description. No data migration is needed.
+
+## Maintenance correction - 2026-08-04 - Reliable wake activation lifecycle
+
+- **Status:** implemented and verified with automated tests plus an authorized
+  physical microphone activation.
+- **Observed split:** the running detector was healthy, receiving 48 kHz stereo
+  audio with Vosk ready and no active JARVIS process. Historical sanitized
+  event counts prove the launch handoff has executed; the current rejection
+  surface was the phrase confirmation before `Popen`.
+- **Correction:** stable exact full-phrase partials no longer depend on a neural
+  prefix that may arrive late or be missed. Neural + Vosk evidence accepts a
+  moderate `0.50` Vosk confidence; Vosk-only activation remains at `0.65` and
+  suffix-only recognition still requires the neural prefix. The wake-only Vosk
+  grammar now retains separately finalized `wake` and `up` tokens, with an
+  exact ordered five-second sequence that resets on mismatch or failed guards.
+- **Lifecycle:** the existing runtime-state module now owns generation-based
+  `closed/opening/open/closing` transitions and reconciles the actual process
+  after voice/manual closes, normal exits, crashes and fresh OS startup.
+- **Verification:** seven new regressions failed before their implementations;
+  directed sequence validation passes (`3 tests`) and wake/runtime validation
+  passes (`65 tests`). The full suite passes (`489 passed, 2 skipped, 143
+  subtests`). In the authorized hardware check, voiced RMS peaked at `3458`,
+  the stable-partial route approved once, one JARVIS process launched, no audio
+  error occurred, and the restored supervisor observed `paused/open` with the
+  real target PID. Dependencies, compilation and launcher help pass.
+- **Rollback:** remove the activation owner/wrapper, restore boolean handoff and
+  prior confirmation floors. No persisted-data migration is involved.
+
+## Maintenance correction - 2026-08-04 - Gemini Live stall recovery
+
+- **Status:** implemented and automatically verified; the next JARVIS launch
+  loads the correction. Live provider recovery remains a runtime observation.
+- **Observed cause:** sanitized runtime evidence showed three disconnect/connect
+  cycles in twenty minutes, repeated nested Live/WebSocket failures, `429`
+  quota/rate-limit responses and some `504` responses, with no microphone
+  errors. `THINKING` was the connection-loop state, not evidence that a user
+  request was still being processed.
+- **Correction:** nested status extraction plus a single bounded reconnect
+  policy prevents retry storms. Setup times out at 15 seconds; `429` attempts
+  wait 5/10/20/30 seconds; a recognized turn without server progress for 30
+  seconds closes and recreates only the Live session after one second. Tool
+  execution pauses the turn watchdog and no user request is replayed.
+- **Verification:** baseline session/audio/security validation was `74 tests,
+  26 subtests`; five regressions failed before implementation. Final directed
+  validation is `79 tests, 26 subtests`; full validation is `495 passed, 2
+  skipped, 143 subtests passed`. Compilation, directed Ruff and diff checks
+  pass. The external `google-genai` Python 3.17 deprecation warning remains.
+- **CI follow-up:** GitHub's Python 3.12 baseline exposed one strict mypy error
+  while converting an `Any | None` provider status. Explicit integer/numeric
+  string narrowing fixes the typed boundary and ignores booleans or arbitrary
+  objects. The exact `scripts/validate_baseline.ps1` workflow now passes.
+- **Risk and rollback:** a genuine provider/quota outage still cannot be solved
+  locally, but it now fails visibly and without self-amplification. Rollback
+  removes the turn watchdog/bounded connect and restores the prior reconnect
+  loop; there is no data migration.

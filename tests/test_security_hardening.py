@@ -254,7 +254,7 @@ class AudioVisionRegressionTests(unittest.TestCase):
         )
         self.assertLess(
             finish.index("observe_device_drained()"),
-            finish.index('update_runtime_state("jarvis", "off"'),
+            finish.index("update_runtime_state("),
         )
         self.assertNotIn("time.sleep(0.25)", finish)
 

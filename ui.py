@@ -2398,7 +2398,12 @@ class MainWindow(QMainWindow):
         """Closing the main window must release the process and wake-word mic."""
         if hasattr(self, "_cam_stop"):
             self._cam_stop.set()
-        update_runtime_state("jarvis", "off", reason="window_closed")
+        update_runtime_state(
+            "jarvis",
+            "off",
+            reason="window_closed",
+            activation_state="closed",
+        )
         event.accept()
         QApplication.quit()
 

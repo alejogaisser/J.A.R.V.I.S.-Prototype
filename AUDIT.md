@@ -1005,3 +1005,126 @@ single deadline and fixed 250 ms delay; no data migration is involved.
   full compilation, launcher help, `git diff --check` and the complete suite
   pass (`476 passed, 2 skipped, 143 subtests passed`). The existing
   `google-genai` Python 3.17 deprecation warning is unchanged.
+
+## Verified correction - 2026-08-04 - Study Markdown and mathematical typography
+
+- **Observed cause:** Study already received structured solution fields, but
+  `ui_mk2/study.py` assigned every value with `textContent`. Markdown and LaTeX
+  were therefore displayed literally, and legacy expressions such as
+  `2x^4 * 3` remained visually dense.
+- **Correction:** the existing Study page now renders a compact Markdown subset
+  and converts delimited LaTeX into dependency-free native MathML. Problem,
+  result, every step and every note pass through the same renderer. A local
+  fallback formats caret exponents and multiplication in older plain text.
+- **Safety and scope:** DOM nodes are constructed explicitly and untrusted text
+  remains `textContent`; no model HTML is accepted. `StudyArtifact`, providers,
+  Qt signals, readiness state, storage and exercise execution are unchanged.
+  The existing Gemini tool declaration supplies formatting guidance, so no
+  second Gemini request, API, secret or network dependency was introduced.
+- **Verification:** the pre-change directed baseline was `28 passed`; the two
+  new regressions failed before implementation. Final directed validation is
+  `31 passed`; dependency check and full compilation pass; the complete suite
+  passes (`479 passed, 2 skipped, 143 subtests passed`). The pre-existing
+  `google-genai` Python 3.17 deprecation warning remains. Qt WebEngine offscreen
+  visual execution is not claimed as hardware evidence; target-display visual
+  observation remains manual.
+- **Risk and rollback:** the supported Markdown/LaTeX subset intentionally
+  favors educational formulas over full CommonMark/TeX. Rollback restores the
+  former plain `textContent` renderer and tool description; no persistent data
+  migration is involved.
+
+## Verified correction - 2026-08-04 - Wake true-positive and activation flow
+
+- **Runtime evidence before change:** the hidden detector was alive and
+  heartbeating as `listening`; Vosk was ready, the selected endpoint delivered
+  native 48 kHz stereo audio and JARVIS was `off`. Sanitized event aggregation
+  showed successful historical launch attempts and no recent PortAudio warning.
+  This excludes a dead supervisor and makes pre-launch confirmation the primary
+  current defect; the launch path was still audited independently.
+- **Confirmed acceptance defects:** `StablePartialWakeConfirmation` rejected a
+  stable complete `hey jarvis wake up` unless OpenWakeWord had first armed the
+  prefix. The dual-engine final path also required the same `0.65` Vosk floor
+  as Vosk alone, so neural corroboration did not reduce false rejection.
+- **Correction:** a complete exact extended phrase or known acoustic alias may
+  confirm after three stable partial observations with real recent voice and an
+  unlocked Windows session. `wake up` alone remains neural-gated. A neural-armed
+  exact suffix accepts Vosk confidence `>=0.50`; uncorroborated finals remain at
+  `>=0.65`. RMS `45` and neural score `0.08` were not lowered because current
+  evidence did not show audio interruption or a voice-floor failure.
+- **Physical diagnosis and segmented-final correction:** the first authorized
+  capture had strong voice (`RMS 292`) and confident Vosk endpoints but only
+  finalized the first token; the neural peak (`0.007`) was below ambient peak
+  (`0.019`), so lowering the neural threshold would increase false positives.
+  The closed grammar omitted standalone `wake` and `up`. Those exact tokens are
+  now retained and an isolated verifier permits only ordered
+  `hey -> wake -> up` or `hey -> wake up` finals within five seconds. Every
+  token still requires confidence `>=0.65`, recent voice and an unlocked
+  session; timeout, mismatch or a failed guard resets the sequence.
+- **Activation lifecycle:** `ActivationStateOwner` extends the existing
+  `core/runtime_state` boundary with locked, generation-based
+  `closed/opening/open/closing` transitions. Wake approval must acquire the
+  `closed -> opening` edge before launch; `open` requires a real child PID;
+  process exit always traverses closing/closed. Manual/direct starts and missing
+  processes reconcile into the same owner, covering window close, voice close,
+  normal exit, crash and the fresh state after PC restart.
+- **Verification:** baseline wake/runtime tests were `55 passed`. Seven new
+  regressions failed before their corresponding implementations and pass
+  afterward. Directed segmented-final validation is `3 passed`; wake/runtime
+  validation is `65 passed`; full validation is `489 passed, 2 skipped, 143
+  subtests passed`, along with `pip check`, full compilation and launcher help.
+  The existing `google-genai` Python 3.17 deprecation warning remains.
+- **Authorized runtime evidence:** the corrected detector published
+  `listening/closed` with Vosk ready. One natural spoken phrase produced one
+  stable-partial approval, transitioned to `open`, and launched one JARVIS
+  process with no audio error. The neural peak was `0.073`, below the unchanged
+  `0.08` threshold, confirming that guarded corroboration—not a loosened neural
+  control—made the true positive succeed. After removing the temporary
+  diagnostic process, the normal supervisor reconciled the live target as
+  `paused/open`; normal close monitoring is restored. This validates the tested
+  endpoint and environment only, not every microphone or acoustic condition.
+- **Rollback:** restore prior wake confirmation and direct boolean handoff,
+  remove activation metadata/tests, and restart only the wake detector. No
+  configuration or persistent-data migration is required.
+
+## Verified correction - 2026-08-04 - Gemini Live reconnect storm and silent turn
+
+- **Evidence:** the microphone path remained healthy and voice woke the local
+  inactivity state. Sanitized runtime events nevertheless showed three Live
+  disconnects and three reconnects in twenty minutes, while the current
+  technical stream contained nested SDK API failures, WebSocket closures,
+  `429` quota/rate-limit markers and `504` responses. The reconnect loop had
+  attempted connections repeatedly and `THINKING` is assigned immediately
+  before each connection attempt. This supports provider/quota plus retry-storm
+  failure, not a wake-word or PortAudio failure.
+- **Defects:** status classification inspected only the outer
+  `BaseExceptionGroup` string, so nested `429/504` causes fell into the generic
+  three-second path. The SDK WebSocket setup and a recognized-but-incomplete
+  turn had no application-owned deadline. A half-open or capacity-limited Live
+  session could therefore oscillate for minutes without a useful UI outcome.
+- **Correction:** `services/session.py` now extracts retry status recursively,
+  owns a stable-session-aware 5/10/20/30-second rate-limit circuit and provides
+  a typed, 15-second bounded Live connect. The same session owner tracks turn
+  progress; 30 seconds without progress rotates the connection in one second.
+  Local tool work suspends that watchdog, `turn_complete` clears it, stale
+  state is cleared on unbind and the user's request is never auto-replayed.
+- **Provider decision:** `models/gemini-3.1-flash-live-preview` remains the
+  configured model because it is the current supported Live model. No blind
+  downgrade or second provider was introduced; quota-wide `429` errors could
+  affect a fallback too and different Live models may have incompatible
+  behavior.
+- **Verification:** the directed pre-change baseline was `74 passed, 26
+  subtests`. Five new regressions failed before implementation and now pass;
+  directed validation is `79 passed, 26 subtests`, and the full suite is `495
+  passed, 2 skipped, 143 subtests passed`. Compilation, targeted Ruff and
+  `git diff --check` pass.
+- **CI follow-up:** the first GitHub baseline correctly rejected
+  `int(candidate)` because SDK status candidates were typed as `Any | None`.
+  The normalization now accepts only non-boolean integers or numeric strings
+  before range validation. A regression covers invalid untyped values. The
+  exact Windows baseline now passes dependency checks, imports, compileall,
+  Ruff, mypy, secret/change-control inventories and the full suite.
+- **Runtime limitation:** hardware/provider recovery is not claimed until a
+  newly launched JARVIS exercises the corrected Live path.
+- **Rollback:** restore direct `client.aio.live.connect`, remove the turn
+  watchdog and `LiveReconnectPolicy`, then reload JARVIS. No persisted state,
+  credentials or conversation data require migration.

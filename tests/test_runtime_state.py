@@ -69,5 +69,44 @@ class RuntimeStatePersistenceTests(unittest.TestCase):
         self.assertEqual(list(runtime_state.STATE_DIR.iterdir()), [])
 
 
+class ActivationStateOwnerTests(unittest.TestCase):
+    def test_owner_serializes_the_complete_open_close_cycle(self):
+        owner = runtime_state.ActivationStateOwner()
+
+        self.assertEqual(
+            owner.snapshot().phase,
+            runtime_state.ActivationPhase.CLOSED,
+        )
+        self.assertTrue(owner.request_open(reason="wake_phrase"))
+        self.assertFalse(owner.request_open(reason="duplicate"))
+        self.assertEqual(
+            owner.snapshot().phase,
+            runtime_state.ActivationPhase.OPENING,
+        )
+
+        owner.mark_open(target_pid=123)
+        self.assertEqual(owner.snapshot().phase, runtime_state.ActivationPhase.OPEN)
+        self.assertEqual(owner.snapshot().target_pid, 123)
+        self.assertTrue(owner.request_close(reason="window_closed"))
+        self.assertEqual(
+            owner.snapshot().phase,
+            runtime_state.ActivationPhase.CLOSING,
+        )
+        owner.mark_closed(reason="process_exited")
+        self.assertEqual(owner.snapshot().phase, runtime_state.ActivationPhase.CLOSED)
+        self.assertIsNone(owner.snapshot().target_pid)
+
+    def test_owner_reconciles_manual_open_crash_and_fresh_boot(self):
+        owner = runtime_state.ActivationStateOwner()
+
+        owner.reconcile(running=True, target_pid=456, reason="manual_open")
+        self.assertEqual(owner.snapshot().phase, runtime_state.ActivationPhase.OPEN)
+        self.assertEqual(owner.snapshot().target_pid, 456)
+
+        owner.reconcile(running=False, reason="process_missing")
+        self.assertEqual(owner.snapshot().phase, runtime_state.ActivationPhase.CLOSED)
+        self.assertTrue(owner.request_open(reason="next_wake"))
+
+
 if __name__ == "__main__":
     unittest.main()
