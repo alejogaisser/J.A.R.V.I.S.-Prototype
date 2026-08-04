@@ -6,6 +6,9 @@ the scope and environment each document explicitly describes.
 
 ## Project overview
 
+- [Installation tutorial](../TUTORIAL.md) - Step-by-step Windows setup, Gemini
+  configuration, first launch, updates, and common troubleshooting in Spanish.
+
 - [Architecture](../ARCHITECTURE.md) — Current runtime boundaries, ownership,
   interaction flows, known structural problems, and the incremental target.
 - [Baseline and validation](baseline.md) — Reproducible setup, validation

@@ -34,6 +34,9 @@ def _jarvis(definition):
     jarvis._pending_confirmation_fc = None
     jarvis._pending_confirmation_source = None
     jarvis._pending_confirmation_context = None
+    jarvis._confirmation_execution_scheduled = False
+    jarvis._confirmed_replay_cache = {}
+    jarvis._denied_replay_cache = {}
     jarvis._active_input_source = InputSource.LOCAL
     jarvis._remote_drive_folders = set()
     jarvis._confirmation_gate = VoiceConfirmationGate()
@@ -42,6 +45,8 @@ def _jarvis(definition):
     jarvis.tool_executor = ToolExecutor(jarvis.tool_registry)
     jarvis.permission_policy = PermissionPolicy()
     jarvis.request_audit = None
+    jarvis._loop = None
+    jarvis.session = None
     return jarvis
 
 
@@ -133,3 +138,63 @@ def test_model_retry_after_confirmed_execution_is_not_executed_twice():
     assert len(calls) == 1
     assert retry.response["duplicate_suppressed"] is True
     assert "VOICE_CONFIRMATION_REQUIRED" not in retry.response["result"]
+
+
+def test_natural_denial_clears_pending_and_suppresses_model_retry():
+    calls = []
+    definition = ToolDefinition(
+        "reminder", "Set reminder", SCHEMA,
+        handler=lambda args: calls.append(args) or "scheduled",
+        risk=RiskLevel.EXTERNAL_EFFECT,
+    )
+    jarvis = _jarvis(definition)
+    fc = SimpleNamespace(
+        name="reminder",
+        args={"action": "set"},
+        id="call-reminder",
+    )
+
+    staged = asyncio.run(jarvis._execute_tool(fc))
+    assert "VOICE_CONFIRMATION_REQUIRED" in staged.response["result"]
+    assert jarvis._handle_confirmation_text(
+        "No, no quiero poner el recordatorio"
+    )
+    assert jarvis._pending_confirmation_fc is None
+
+    retry = asyncio.run(jarvis._execute_tool(SimpleNamespace(
+        name="reminder",
+        args={"action": "set"},
+        id="call-reminder-retry",
+    )))
+
+    assert calls == []
+    assert retry.response["error"] == "confirmation_denied"
+    assert retry.response["duplicate_suppressed"] is True
+    assert "VOICE_CONFIRMATION_REQUIRED" not in retry.response["result"]
+
+    jarvis._observe_upfront_approval(
+        "Ahora sí quiero ese recordatorio",
+        InputSource.LOCAL,
+    )
+    new_request = asyncio.run(jarvis._execute_tool(SimpleNamespace(
+        name="reminder",
+        args={"action": "set"},
+        id="call-reminder-new-request",
+    )))
+    assert "VOICE_CONFIRMATION_REQUIRED" in new_request.response["result"]
+
+
+def test_local_screen_inspection_is_read_only_and_never_prompts():
+    definition = ToolDefinition(
+        "screen_process", "Inspect screen", SCHEMA,
+        handler=None,
+        risk=RiskLevel.READ_ONLY,
+        special=True,
+    )
+    decision = PermissionPolicy().evaluate(
+        definition,
+        {"action": "screen"},
+    )
+
+    assert decision.allowed
+    assert not decision.requires_confirmation

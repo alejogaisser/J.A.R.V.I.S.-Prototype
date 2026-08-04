@@ -624,3 +624,34 @@ Full traceability must begin immediately afterwards, on that correct border.
   137 subtests passed`; compilation and dependency checks passed. Rollback
   removes stable-partial confirmation/readiness gating and its tests; no model,
   threshold, UI, Gemini, lifecycle or persistent-data change is required.
+
+## Maintenance correction - 2026-08-02 - Playback-safe idle watchdog
+
+- **Status:** implemented; directed regression and complete suite verified
+  (`473 passed, 2 skipped, 137 subtests passed`); physical playback observation
+  pending.
+- **Objective:** allow the 12-second dormant transition only while JARVIS is
+  genuinely listening, never while response audio is active.
+- **Implementation:** speaking-mode edges reset the existing watchdog. A queued
+  idle close validates speaking, interruption and watchdog ownership before the
+  transport call and validates speaking/watchdog state again after the await.
+- **Compatibility:** the 12-second threshold, voice RMS gate, automatic wake,
+  Live session continuity, ESC interruption and playback queues are unchanged.
+- **Rollback:** remove the reset and stale-transition guards plus the regression
+  test; no persistent state or configuration migration is required.
+
+## Maintenance correction - 2026-08-02 - Atomic confirmation outcome
+
+- **Status:** implemented and verified: directed regression `99 passed, 92
+  subtests passed`; complete suite `476 passed, 2 skipped, 143 subtests passed`.
+- **Objective:** make one completed natural yes/no consume exactly one pending
+  action immediately, then return to normal conversation without contaminating
+  the next tool call.
+- **Implementation:** completed-turn voice classification, natural denial with
+  denial-first safety, exact-action denial tombstones, existing approval replay
+  protection and one non-prescriptive confirmation prompt.
+- **Vision boundary:** local `screen_process` remains read-only/free but may only
+  be selected when the latest completed user request explicitly asks for visual
+  inspection.
+- **Rollback:** revert these confirmation state/prompt changes and regressions;
+  no configuration or persistent-data migration is involved.

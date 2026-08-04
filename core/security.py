@@ -162,8 +162,18 @@ class VoiceConfirmationGate:
     _DENY = {
         "no", "no thanks", "cancel", "cancel it", "do not", "dont",
         "stop", "deny", "no gracias", "cancela", "cancelar", "no lo hagas",
-        "detente", "rechazo",
+        "detente", "rechazo", "dejalo", "olvidalo", "mejor no",
     }
+    _DENIAL_PREFIXES = (
+        "no ", "cancel ", "cancelalo ", "cancela ", "cancelar ",
+        "dejalo ", "olvidalo ", "mejor no ", "stop ", "deny ",
+        "do not ", "dont ",
+    )
+    _DENIAL_FRAGMENTS = (
+        "no lo hagas", "no quiero", "no hace falta", "prefiero que no",
+        "mejor no", "dejalo", "olvidalo", "cancelalo", "cancel it",
+        "do not do it", "dont do it",
+    )
 
     def __init__(
         self,
@@ -210,7 +220,7 @@ class VoiceConfirmationGate:
         return False
 
     def observe(self, text: str) -> str | None:
-        """Return approved/denied only for an exact, unambiguous response."""
+        """Return approved/denied for a complete, unambiguous natural response."""
         self._expire_if_needed()
         if not self._pending:
             return None
@@ -221,14 +231,21 @@ class VoiceConfirmationGate:
             "si ", "yes ", "confirmo ", "confirm ", "dale ", "claro ",
             "correcto ", "aprobado ", "approved ", "go ahead ",
         )
+        denied = (
+            normalized in self._DENY
+            or normalized.startswith(self._DENIAL_PREFIXES)
+            or any(fragment in normalized for fragment in self._DENIAL_FRAGMENTS)
+        )
+        if denied:
+            # Denial wins over mixed wording. For an effectful action, failing
+            # closed is safer than treating "sí, pero no lo hagas" as approval.
+            self._pending = None
+            return "denied"
         if normalized in self._APPROVE or (
             normalized.startswith(approval_prefixes) and not words.intersection(denial_words)
         ):
             self._pending["approved"] = True
             return "approved"
-        if normalized in self._DENY:
-            self._pending = None
-            return "denied"
         return None
 
     def clear(self) -> None:
