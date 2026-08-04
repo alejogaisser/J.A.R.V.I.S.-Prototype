@@ -363,11 +363,57 @@ class LauncherConfigTests(unittest.TestCase):
     def test_wake_state_is_observable_and_model_resets_after_manual_open(self):
         source = Path("wake_word.py").read_text(encoding="utf-8")
         runtime = Path("core/runtime_state.py").read_text(encoding="utf-8")
-        self.assertIn('update_runtime_state("wake_word", "listening"', source)
-        self.assertIn('update_runtime_state("wake_word", "paused"', source)
+        self.assertIn("def publish_wake_state", source)
+        self.assertIn('"activation_state": snapshot.phase.value', source)
+        self.assertIn('publish_wake_state(activation, "paused"', source)
+        self.assertIn('"listening"', source)
         self.assertIn("model.reset()", source)
         self.assertIn("os.replace(temporary_path, target)", runtime)
         self.assertIn("os.fsync(handle.fileno())", runtime)
+
+    def test_activation_state_transition_owns_launch_and_process_exit(self):
+        source = Path("wake_word.py").read_text(encoding="utf-8")
+        launch = source[
+            source.index("def launch_jarvis"):
+            source.index("# PROCESAMIENTO DE VOZ")
+        ]
+        main_loop = source[source.index("def main() -> None:"):]
+
+        self.assertLess(
+            main_loop.index("activation.request_open"),
+            main_loop.index("launch_jarvis(activation)"),
+        )
+        self.assertLess(launch.index("subprocess.Popen("), launch.index("mark_open("))
+        self.assertLess(launch.index("mark_open("), launch.index("process.wait()"))
+        self.assertLess(launch.index("process.wait()"), launch.index("request_close("))
+        self.assertLess(launch.index("request_close("), launch.index("mark_closed("))
+        self.assertIn("wait_until_jarvis_closes(activation)", launch)
+
+    def test_wake_status_includes_activation_phase_and_generation(self):
+        activation = wake_word.ActivationStateOwner()
+        self.assertTrue(activation.request_open(reason="wake_phrase_approved"))
+
+        with patch.object(wake_word, "update_runtime_state") as update:
+            wake_word.publish_wake_state(
+                activation,
+                "activating",
+                reason="wake_phrase_approved",
+            )
+
+        args = update.call_args.args
+        details = update.call_args.kwargs
+        self.assertEqual(args, ("wake_word", "activating"))
+        self.assertEqual(details["activation_state"], "opening")
+        self.assertEqual(details["activation_generation"], 1)
+        self.assertEqual(details["activation_reason"], "wake_phrase_approved")
+
+    def test_all_main_close_paths_publish_closed_activation(self):
+        main_source = Path("main.py").read_text(encoding="utf-8")
+        ui_source = Path("ui.py").read_text(encoding="utf-8")
+
+        self.assertGreaterEqual(main_source.count('activation_state="closed"'), 2)
+        self.assertIn('activation_state="open"', main_source)
+        self.assertIn('activation_state="closed"', ui_source)
 
     def test_console_diagnostics_show_audio_text_scores_and_thresholds(self):
         launcher = Path("jarvis_launcher.py").read_text(encoding="utf-8")
@@ -573,6 +619,93 @@ class LauncherConfigTests(unittest.TestCase):
             has_recent_voice=True,
             session_available=True,
         ))
+
+    def test_stable_complete_phrase_can_confirm_without_neural_prefix(self):
+        confirmation = wake_word.StablePartialWakeConfirmation(required_hits=2)
+        eligible = {
+            "prefix_armed": False,
+            "has_recent_voice": True,
+            "session_available": True,
+        }
+
+        self.assertFalse(confirmation.observe("hey jarvis wake up", **eligible))
+        self.assertTrue(confirmation.observe("hey jarvis wake up", **eligible))
+
+        confirmation.reset()
+        self.assertFalse(confirmation.observe("wake up", **eligible))
+        self.assertFalse(confirmation.observe("wake up", **eligible))
+
+    def test_neural_and_vosk_suffix_use_a_moderate_combined_confidence_floor(self):
+        verifier = wake_word.WakePhraseVerifier(
+            (wake_word.EXTENDED_WAKE_PHRASE,), duration=3.0
+        )
+        suffix = json.dumps({
+            "text": "wake up",
+            "result": [
+                {"word": "wake", "conf": 0.55},
+                {"word": "up", "conf": 0.55},
+            ],
+        })
+
+        self.assertFalse(verifier.observe_vosk_suffix(
+            suffix, 0.55, True, True, now=9.0
+        ))
+        verifier.observe_neural(approved=True, now=10.0)
+        self.assertTrue(verifier.observe_vosk_suffix(
+            suffix, 0.55, True, True, now=11.0
+        ))
+
+        verifier.observe_neural(approved=True, now=20.0)
+        self.assertFalse(verifier.observe_vosk_suffix(
+            suffix, 0.49, True, True, now=21.0
+        ))
+
+    def test_segmented_extended_sequence_accepts_ordered_confident_finals(self):
+        sequence = wake_word.VoskExtendedWakeSequence(duration=5.0)
+        eligible = {
+            "confidence": 0.9,
+            "has_recent_voice": True,
+            "session_available": True,
+        }
+
+        self.assertFalse(sequence.observe("hey", now=10.0, **eligible))
+        self.assertFalse(sequence.observe("wake", now=11.0, **eligible))
+        self.assertTrue(sequence.observe("up", now=12.0, **eligible))
+
+        self.assertFalse(sequence.observe("hey", now=20.0, **eligible))
+        self.assertTrue(sequence.observe("wake up", now=21.0, **eligible))
+
+    def test_segmented_extended_sequence_rejects_missing_or_stale_prefix(self):
+        sequence = wake_word.VoskExtendedWakeSequence(duration=5.0)
+        eligible = {
+            "confidence": 0.9,
+            "has_recent_voice": True,
+            "session_available": True,
+        }
+
+        self.assertFalse(sequence.observe("wake up", now=10.0, **eligible))
+        self.assertFalse(sequence.observe("hey", now=20.0, **eligible))
+        self.assertFalse(sequence.observe("wake up", now=25.1, **eligible))
+        self.assertFalse(sequence.observe(
+            "hey", confidence=0.4, has_recent_voice=True,
+            session_available=True, now=30.0,
+        ))
+        self.assertFalse(sequence.observe(
+            "hey", confidence=0.9, has_recent_voice=True,
+            session_available=False, now=31.0,
+        ))
+
+    def test_primary_grammar_and_loop_support_segmented_extended_finals(self):
+        source = Path("wake_word.py").read_text(encoding="utf-8")
+        primary = source[
+            source.index("def listen_for_openwakeword"):
+            source.index("def listen_for_wake_word")
+        ]
+
+        self.assertIn('"wake",', primary)
+        self.assertIn('"up",', primary)
+        self.assertIn("VoskExtendedWakeSequence()", primary)
+        self.assertIn("segmented_approved =", primary)
 
     def test_stable_partial_confirmation_resets_on_noise_or_locked_session(self):
         confirmation = wake_word.StablePartialWakeConfirmation(required_hits=2)

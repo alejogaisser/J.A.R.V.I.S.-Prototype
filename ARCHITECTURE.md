@@ -592,3 +592,66 @@ selection are unchanged. Hardware playback remains a manual verification.
   to 15 seconds for its required local model before publishing `listening` and
   heartbeats expose only `vosk_ready` and a non-transcript verification stage.
   Legacy short-phrase startup remains asynchronous.
+
+### 2026-08-04 - Study rich-text presentation boundary
+
+- `StudyWorkspace` remains the single owner of Study presentation. Its embedded
+  local page now converts the existing `problem`, `result`, `steps` and `notes`
+  strings into a safe, compact Markdown subset and native MathML.
+- The renderer creates DOM nodes and assigns untrusted leaves with
+  `textContent`; model-provided text is never inserted through `innerHTML`.
+  Plain legacy expressions such as `2x^4 * 3` receive a typographic exponent
+  and multiplication sign even when they do not contain LaTeX delimiters.
+- The existing `study_engine` tool contract asks the already-connected Gemini
+  model to delimit mathematics as LaTeX. No formatting provider, second model
+  call, dependency, UI owner or Qt-thread path was added.
+- Presentation failure falls back to preserved text data. Study readiness,
+  artifact storage and `renderArtifact(...)` dispatch remain unchanged.
+
+### 2026-08-04 - Wake activation state and corroborated phrase acceptance
+
+- `core.runtime_state.ActivationStateOwner` is the single in-process owner of
+  the wake handoff lifecycle: `closed -> opening -> open -> closing -> closed`.
+  A generation prevents duplicate opens, and immutable snapshots publish the
+  phase beside the detector health state without replacing atomic state files.
+- The owner reconciles against the real `main.py` process. Wake activation,
+  manual/direct opening, voice shutdown, window close, normal exit, crash and a
+  fresh process after OS startup all converge on the same lifecycle.
+- Acoustic confirmation keeps the absolute RMS floor and neural threshold.
+  Neural plus exact Vosk suffix uses a lower corroborated confidence floor of
+  `0.50`; Vosk-only finals retain `0.65`. A stable full extended phrase can
+  confirm without the neural prefix, while `wake up` alone still cannot.
+- The extended Vosk grammar also preserves independently finalized `wake` and
+  `up` tokens. `VoskExtendedWakeSequence` accepts only the ordered
+  `hey -> wake -> up` (or `hey -> wake up`) sequence inside five seconds, with
+  the unchanged `0.65` confidence, recent-voice and unlocked-session guards;
+  mismatch, timeout or ineligible audio resets it.
+- The launch remains the existing `subprocess.Popen`/window handoff. The owner
+  moves to `open` only after a concrete PID exists and to `closed` after the
+  process disappears. No parallel launcher, microphone owner or Gemini route
+  was introduced.
+- An authorized microphone validation exercised the production path from
+  `closed` through approval to `open`. The stable-partial route launched one
+  JARVIS process without audio errors, and the normal supervisor then
+  reconciled the live process as `paused/open`.
+
+### 2026-08-04 - Bounded Gemini Live recovery
+
+- `SessionService` remains the single owner of Live transport and now also owns
+  pending-turn progress. A recognized user turn is cleared by `turn_complete`,
+  refreshed by meaningful server activity and suspended while a local tool is
+  executing, so transport recovery cannot cancel valid tool work.
+- WebSocket setup is locally bounded to 15 seconds. A connected turn with no
+  progress for 30 seconds raises a typed `LiveSessionStalled` signal, closes the
+  existing SDK context through its normal async exit and reconnects after one
+  second. The last request is not replayed automatically because repeating a
+  tool-bearing turn could duplicate an external effect.
+- `LiveReconnectPolicy` recursively inspects `BaseExceptionGroup` leaves. Rate
+  limiting (`429`) uses one bounded 5/10/20/30-second sequence; other transient
+  failures use the same owner with a three-second base. A server GoAway remains
+  an immediate graceful rotation, and a connection stable for 30 seconds
+  resets the failure streak.
+- The microphone stream, wake detector, Gemini model, tool contracts and audio
+  thresholds are unchanged. UI messages distinguish rate limit, provider
+  unavailability, network failure and a stalled turn instead of presenting
+  every retry as unexplained thinking.

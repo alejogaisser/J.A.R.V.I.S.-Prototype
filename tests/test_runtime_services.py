@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
@@ -5,7 +6,10 @@ from types import SimpleNamespace
 
 from services.runtime import RuntimeServices
 from services.session import (
+    LiveReconnectPolicy,
+    LiveSessionConnectTimeout,
     LiveSessionRotationRequested,
+    bounded_live_connect,
     contains_live_session_rotation,
 )
 
@@ -124,6 +128,116 @@ class SessionServiceTests(unittest.TestCase):
             receive.index("on_transport_go_away"),
         )
         self.assertIn("raise LiveSessionRotationRequested", receive)
+
+    def test_nested_rate_limit_errors_use_one_bounded_backoff_owner(self):
+        class RateLimited(RuntimeError):
+            code = 429
+
+        policy = LiveReconnectPolicy(
+            rate_limit_base_seconds=5.0,
+            max_seconds=30.0,
+        )
+        error = ExceptionGroup("live", [RuntimeError("wrapper"), RateLimited()])
+
+        self.assertEqual(policy.delay_for(error, connected_seconds=0.0), 5.0)
+        self.assertEqual(policy.delay_for(error, connected_seconds=1.0), 10.0)
+        self.assertEqual(policy.delay_for(error, connected_seconds=1.0), 20.0)
+        self.assertEqual(policy.delay_for(error, connected_seconds=1.0), 30.0)
+        self.assertEqual(policy.snapshot().last_status_codes, (429,))
+
+        # A genuinely stable session starts a fresh failure streak.
+        self.assertEqual(policy.delay_for(error, connected_seconds=45.0), 5.0)
+
+    def test_rotation_and_stalled_turn_have_fast_controlled_reconnects(self):
+        policy = LiveReconnectPolicy()
+
+        self.assertEqual(
+            policy.delay_for(
+                LiveSessionRotationRequested("rotate"),
+                connected_seconds=2.0,
+            ),
+            0.0,
+        )
+        self.assertEqual(
+            policy.delay_for(
+                RuntimeError("live turn stalled"),
+                connected_seconds=20.0,
+                stalled_turn=True,
+            ),
+            1.0,
+        )
+
+    def test_session_turn_watchdog_ignores_local_tool_work_and_resets(self):
+        services = RuntimeServices()
+        session = services.session
+
+        session.observe_user_activity(now=10.0)
+        self.assertFalse(session.claim_stalled_turn(now=39.9, timeout=30.0))
+        session.begin_local_work()
+        self.assertFalse(session.claim_stalled_turn(now=100.0, timeout=30.0))
+        session.end_local_work(now=100.0)
+        self.assertFalse(session.claim_stalled_turn(now=129.9, timeout=30.0))
+        self.assertTrue(session.claim_stalled_turn(now=130.0, timeout=30.0))
+        self.assertEqual(session.snapshot().stalled_turns, 1)
+
+        session.observe_user_activity(now=200.0)
+        session.observe_remote_activity(now=220.0)
+        self.assertFalse(session.claim_stalled_turn(now=249.9, timeout=30.0))
+        session.complete_turn()
+        self.assertFalse(session.snapshot().turn_pending)
+
+    def test_main_wires_bounded_connect_and_live_turn_watchdog(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        receive = source[
+            source.index("    async def _receive_audio"):
+            source.index("    async def _play_audio")
+        ]
+        run = source[source.index("    async def run(self)"):]
+
+        self.assertIn("bounded_live_connect(", run)
+        self.assertIn("tg.create_task(self._watch_live_turn())", run)
+        self.assertIn("observe_user_activity", receive)
+        self.assertIn("observe_remote_activity", receive)
+        self.assertIn("complete_turn", receive)
+        self.assertIn("begin_local_work", receive)
+        self.assertIn("end_local_work", receive)
+        self.assertIn("expect_remote_activity", receive)
+        self.assertIn("self._live_reconnect.delay_for", run)
+        text_input = source[
+            source.index("    async def _send_text_input"):
+            source.index("    def _on_text_command")
+        ]
+        self.assertIn("_expect_remote_activity", text_input)
+
+
+class BoundedLiveConnectTests(unittest.IsolatedAsyncioTestCase):
+    async def test_connect_setup_is_bounded_and_success_is_closed(self):
+        class SlowContext:
+            async def __aenter__(self):
+                await asyncio.sleep(1.0)
+
+            async def __aexit__(self, *_args):
+                return False
+
+        with self.assertRaises(LiveSessionConnectTimeout):
+            async with bounded_live_connect(SlowContext(), timeout=0.01):
+                self.fail("slow connection must never be yielded")
+
+        class ReadyContext:
+            def __init__(self):
+                self.closed = False
+
+            async def __aenter__(self):
+                return "session"
+
+            async def __aexit__(self, *_args):
+                self.closed = True
+                return False
+
+        ready = ReadyContext()
+        async with bounded_live_connect(ready, timeout=0.1) as session:
+            self.assertEqual(session, "session")
+        self.assertTrue(ready.closed)
 
 
 class AudioServiceTests(unittest.TestCase):

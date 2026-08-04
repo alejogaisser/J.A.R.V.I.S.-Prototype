@@ -112,8 +112,14 @@ from core.security import (
 )
 from services.runtime import RuntimeServices
 from services.session import (
+    LiveReconnectPolicy,
     LiveSessionRotationRequested,
+    LiveSessionStalled,
+    bounded_live_connect,
     contains_live_session_rotation,
+    contains_live_session_stall,
+    live_error_has_marker,
+    live_error_status_codes,
 )
 from core.events import DashboardConnected, EventBus, RuntimeEvent
 from core.runtime_state import update_runtime_state
@@ -205,6 +211,8 @@ def get_base_dir():
 BASE_DIR        = get_base_dir()
 PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
 LIVE_MODEL = "models/gemini-3.1-flash-live-preview"
+LIVE_CONNECT_TIMEOUT = 15.0
+LIVE_TURN_PROGRESS_TIMEOUT = 30.0
 CHANNELS            = 1
 SEND_SAMPLE_RATE    = 16000
 RECEIVE_SAMPLE_RATE = 24000
@@ -859,13 +867,18 @@ TOOL_DECLARATIONS = [
             "schematics, chemistry, physics, medicine, or a structured "
             "science explanation. If the main app is visible Study opens automatically; in Pet Mode or while "
             "minimized the result is stored without opening the app. For a photographed exercise, first use "
-            "screen_process once to transcribe it, then call Study with the structured expression/data."
+            "screen_process once to transcribe it, then call Study with the structured expression/data. "
+            "For present artifacts, write problem, result, steps, and notes as compact Markdown and put every "
+            "mathematical expression in LaTeX delimiters so the local Study renderer can typeset it."
         ),
         "parameters": {"type": "OBJECT", "properties": {
             "action": {"type": "STRING", "description": "status|open|present|simplify|solve|derivative|integral|limit|numeric|matrix|gauss|plot2d|plot3d|free_body|molecule|anatomy|geogebra|wolfram"},
             "subject": {"type": "STRING"}, "title": {"type": "STRING"},
             "problem": {"type": "STRING"}, "query": {"type": "STRING"},
-            "result": {"type": "STRING"}, "steps": {"type": "ARRAY", "items": {"type": "STRING"}},
+            "result": {"type": "STRING"}, "steps": {
+                "type": "ARRAY", "items": {"type": "STRING"},
+                "description": "Ordered Markdown steps; delimit inline math as \\(...\\) and display math as \\[...\\].",
+            },
             "note": {"type": "STRING"}, "expression": {"type": "STRING"},
             "rhs": {"type": "STRING"}, "variable": {"type": "STRING"},
             "order": {"type": "INTEGER"}, "lower": {"type": "STRING"}, "upper": {"type": "STRING"},
@@ -980,6 +993,7 @@ class JarvisLive:
         configure_browser_worker_events(self._events)
         configure_vision_worker_events(self._events)
         self._runtime       = RuntimeServices(events=self._events)
+        self._live_reconnect = LiveReconnectPolicy()
         self.session              = None
         self.audio_in_queue       = None
         self.out_queue            = None
@@ -1206,6 +1220,13 @@ class JarvisLive:
         self._active_input_source = self._default_source()
         self._input_source_locked = False
 
+    def _expect_remote_activity(self) -> None:
+        """Arm turn recovery when the composed runtime owner is available."""
+        runtime = getattr(self, "_runtime", None)
+        session_owner = getattr(runtime, "session", None)
+        if session_owner is not None:
+            session_owner.expect_remote_activity()
+
     def _audit_request(
         self,
         context: RequestContext,
@@ -1266,6 +1287,7 @@ class JarvisLive:
     async def _send_text_input(self, text: str, source: InputSource) -> None:
         self._set_input_source(source, lock=True)
         await self.session.send_realtime_input(text=text)
+        self._expect_remote_activity()
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -2268,6 +2290,9 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             if transition == "sleep":
                 asyncio.create_task(self._close_idle_audio_stream())
             elif transition == "wake":
+                # A real voice wake expects server progress even if Gemini's
+                # transcription stream is the component that has stalled.
+                self._runtime.session.observe_user_activity()
                 self.ui.set_state("LISTENING")
                 self.ui.write_log(
                     "AUDIO: Voice detected; listening stream reinitialized."
@@ -2409,6 +2434,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                             )
 
                     if response.data:
+                        self._runtime.session.observe_remote_activity()
                         # Stale frames captured just before playback can otherwise
                         # reach Gemini as a false interruption of its next phrase.
                         self.set_speaking(True)
@@ -2441,6 +2467,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                             await self._flush_playback("VAD")
 
                         if sc.output_transcription and sc.output_transcription.text:
+                            self._runtime.session.observe_remote_activity()
                             txt = _clean_transcript(sc.output_transcription.text)
                             if txt and txt != (out_buf[-1] if out_buf else ""):
                                 out_buf.append(txt)
@@ -2448,6 +2475,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         if sc.input_transcription and sc.input_transcription.text:
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
+                                self._runtime.session.observe_user_activity()
                                 in_buf.append(txt)
                                 self._last_user_speech = time.monotonic()
                                 # Transcription updates are provisional. Acting
@@ -2455,6 +2483,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                                 # completed phrase. Decide once at turn_complete.
 
                         if sc.turn_complete:
+                            self._runtime.session.complete_turn()
                             turn_completed = True
                             if self._turn_done_event:
                                 self._turn_done_event.set()
@@ -2497,14 +2526,20 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                             out_buf = []
 
                     if response.tool_call:
+                        self._runtime.session.observe_remote_activity()
+                        self._runtime.session.begin_local_work()
                         fn_responses = []
-                        for fc in response.tool_call.function_calls:
-                            print(f"[JARVIS] 📞 {fc.name}")
-                            fr = await self._execute_tool(fc)
-                            fn_responses.append(fr)
-                        await self.session.send_tool_response(
-                            function_responses=fn_responses
-                        )
+                        try:
+                            for fc in response.tool_call.function_calls:
+                                print(f"[JARVIS] 📞 {fc.name}")
+                                fr = await self._execute_tool(fc)
+                                fn_responses.append(fr)
+                            await self.session.send_tool_response(
+                                function_responses=fn_responses
+                            )
+                            self._expect_remote_activity()
+                        finally:
+                            self._runtime.session.end_local_work()
                     if turn_completed:
                         self._reset_input_source()
         except LiveSessionRotationRequested:
@@ -2513,6 +2548,20 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             print(f"[JARVIS] ❌ Recv: {e}")
             traceback.print_exc()
             raise
+
+    async def _watch_live_turn(self) -> None:
+        """Rotate a connected session that stops progressing after user voice."""
+        while True:
+            await asyncio.sleep(1.0)
+            if not self._runtime.session.claim_stalled_turn(
+                timeout=LIVE_TURN_PROGRESS_TIMEOUT
+            ):
+                continue
+            self.ui.write_log(
+                "NET: Gemini stopped responding; recovering the Live session. "
+                "Please repeat the last request if it was not completed."
+            )
+            raise LiveSessionStalled("live turn stalled without server progress")
 
     async def _play_audio(self):
         print("[JARVIS] 🔊 Play started")
@@ -2594,7 +2643,12 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         stream.close(ignore_errors=True)
                         self._output_stream = None
             self._runtime.lifecycle.observe_device_drained()
-            update_runtime_state("jarvis", "off", reason="voice_shutdown")
+            update_runtime_state(
+                "jarvis",
+                "off",
+                reason="voice_shutdown",
+                activation_state="closed",
+            )
             self.ui.write_log("SYS: Farewell complete. Shutting down JARVIS.")
             os._exit(0)
 
@@ -2831,6 +2885,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             self._dashboard = None
             self._dashboard_factory = None
 
+        reconnect_delay = 3.0
         while True:
             try:
                 print("[JARVIS] Connecting...")
@@ -2844,7 +2899,10 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 )
 
                 async with (
-                    client.aio.live.connect(model=LIVE_MODEL, config=config) as session,
+                    bounded_live_connect(
+                        client.aio.live.connect(model=LIVE_MODEL, config=config),
+                        timeout=LIVE_CONNECT_TIMEOUT,
+                    ) as session,
                     asyncio.TaskGroup() as tg,
                 ):
                     self.session          = session
@@ -2871,6 +2929,7 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
                     tg.create_task(self._receive_audio())
+                    tg.create_task(self._watch_live_turn())
                     tg.create_task(self._play_audio())
                     tg.create_task(self._run_system_monitor())
                     tg.create_task(self._run_proactive_mode())
@@ -2893,17 +2952,26 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                 # exception escape the while-loop and causing asyncio.run() to
                 # start shutdown — resulting in "executor after shutdown" errors).
                 rotation_requested = contains_live_session_rotation(e)
-                err_str = str(e)
+                stalled_turn = contains_live_session_stall(e)
+                status_codes = live_error_status_codes(e)
+                session_snapshot = self._runtime.session.snapshot()
+                connected_seconds = (
+                    max(0.0, time.monotonic() - session_snapshot.connected_at)
+                    if session_snapshot.connected_at is not None
+                    else 0.0
+                )
                 if rotation_requested:
                     print("[JARVIS] Rotating Live session after server GoAway.")
-                    self._conn_backoff = 0
                 else:
-                    print(f"[JARVIS] Error ({type(e).__name__}): {e}")
-                    traceback.print_exc()
+                    status_label = ",".join(map(str, status_codes)) or "none"
+                    print(
+                        f"[JARVIS] Live failure ({type(e).__name__}; "
+                        f"status={status_label})."
+                    )
 
                 # Invalid API key — stop hammering the API, prompt re-configuration
                 if not rotation_requested and (
-                    "API key not valid" in err_str or "1007" in err_str
+                    live_error_has_marker(e, ("api key not valid", "1007"))
                 ):
                     self.ui.write_log("ERR: API key invalid — please re-enter your key.")
                     self.ui.set_state("SLEEPING")
@@ -2915,25 +2983,43 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
                         log=self.ui_tools.write_log,
                     )
                     print("[JARVIS] New API key saved — reconnecting...")
-                    _conn_backoff = 3
+                    reconnect_delay = 3.0
                     continue
 
-                # Network / timeout errors — log clearly and back off
-                is_net_err = not rotation_requested and any(k in err_str for k in (
-                    "TimeoutError", "timed out", "getaddrinfo", "CancelledError",
-                    "ConnectionRefusedError", "OSError", "Cannot connect",
+                is_net_err = live_error_has_marker(e, (
+                    "timeouterror", "timed out", "getaddrinfo", "cancellederror",
+                    "connectionrefusederror", "oserror", "cannot connect",
+                    "connectionclosed",
                 ))
-                if rotation_requested:
-                    pass
-                elif is_net_err:
-                    _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 60)
-                    self._conn_backoff = _conn_backoff
+                transient_status = bool(
+                    set(status_codes).intersection({429, 500, 502, 503, 504})
+                )
+                reconnect_delay = self._live_reconnect.delay_for(
+                    e,
+                    connected_seconds=connected_seconds,
+                    stalled_turn=stalled_turn,
+                )
+                if stalled_turn:
                     self.ui.write_log(
-                        f"NET: Bağlantı kurulamadı — {_conn_backoff}s sonra tekrar deneniyor. "
-                        "(VPN gerekiyor olabilir)"
+                        "NET: Live session stalled and was reset; reconnecting now."
                     )
-                else:
-                    self._conn_backoff = 3
+                elif 429 in status_codes:
+                    self.ui.write_log(
+                        "NET: Gemini rate limit reached; backing off for "
+                        f"{reconnect_delay:g}s before retrying."
+                    )
+                elif transient_status:
+                    self.ui.write_log(
+                        "NET: Gemini is temporarily unavailable; retrying in "
+                        f"{reconnect_delay:g}s."
+                    )
+                elif is_net_err:
+                    self.ui.write_log(
+                        "NET: Live connection failed; retrying in "
+                        f"{reconnect_delay:g}s."
+                    )
+                elif not rotation_requested:
+                    traceback.print_exc()
             finally:
                 self._runtime.on_transport_disconnected(self.session)
                 self.session = None
@@ -2945,9 +3031,8 @@ Ignore only audio that contains no intelligible speech, such as steady room nois
             if self._dashboard:
                 await self._dashboard.broadcast({"type": "status", "state": "sleeping"})
 
-            delay = getattr(self, "_conn_backoff", 3)
-            print(f"[JARVIS] Reconnecting in {delay}s...")
-            await asyncio.sleep(delay)
+            print(f"[JARVIS] Reconnecting in {reconnect_delay:g}s...")
+            await asyncio.sleep(reconnect_delay)
 
 def main():
     runtime_log = StructuredRuntimeLog()
@@ -2975,7 +3060,10 @@ def main():
         },
     )
     update_runtime_state(
-        "jarvis", "on", surface="pet" if start_in_pet_mode else "main"
+        "jarvis",
+        "on",
+        surface="pet" if start_in_pet_mode else "main",
+        activation_state="open",
     )
     if start_in_pet_mode:
         ui = JarvisUI("face.png", start_in_pet_mode=True)
@@ -3042,7 +3130,12 @@ def main():
                         "error_code": type(exc).__name__,
                     },
                 )
-        update_runtime_state("jarvis", "off", reason="application_exit")
+        update_runtime_state(
+            "jarvis",
+            "off",
+            reason="application_exit",
+            activation_state="closed",
+        )
         runtime_log.record(
             "application_stopped",
             component="main",
