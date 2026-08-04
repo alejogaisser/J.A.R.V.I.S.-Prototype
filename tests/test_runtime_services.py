@@ -148,6 +148,16 @@ class SessionServiceTests(unittest.TestCase):
         # A genuinely stable session starts a fresh failure streak.
         self.assertEqual(policy.delay_for(error, connected_seconds=45.0), 5.0)
 
+    def test_live_status_extraction_ignores_untyped_non_numeric_codes(self):
+        class InvalidCode(RuntimeError):
+            code = None
+            status_code = object()
+
+        policy = LiveReconnectPolicy()
+        policy.delay_for(InvalidCode("no status"), connected_seconds=0.0)
+
+        self.assertEqual(policy.snapshot().last_status_codes, ())
+
     def test_rotation_and_stalled_turn_have_fast_controlled_reconnects(self):
         policy = LiveReconnectPolicy()
 

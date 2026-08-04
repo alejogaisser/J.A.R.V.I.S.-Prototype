@@ -701,9 +701,8 @@ Full traceability must begin immediately afterwards, on that correct border.
 
 ## Maintenance correction - 2026-08-04 - Gemini Live stall recovery
 
-- **Status:** implemented and automatically verified; loading the new code into
-  the currently running microphone process remains a separate authorized
-  runtime step.
+- **Status:** implemented and automatically verified; the next JARVIS launch
+  loads the correction. Live provider recovery remains a runtime observation.
 - **Observed cause:** sanitized runtime evidence showed three disconnect/connect
   cycles in twenty minutes, repeated nested Live/WebSocket failures, `429`
   quota/rate-limit responses and some `504` responses, with no microphone
@@ -716,9 +715,13 @@ Full traceability must begin immediately afterwards, on that correct border.
   execution pauses the turn watchdog and no user request is replayed.
 - **Verification:** baseline session/audio/security validation was `74 tests,
   26 subtests`; five regressions failed before implementation. Final directed
-  validation is `79 tests, 26 subtests`; full validation is `494 passed, 2
+  validation is `79 tests, 26 subtests`; full validation is `495 passed, 2
   skipped, 143 subtests passed`. Compilation, directed Ruff and diff checks
   pass. The external `google-genai` Python 3.17 deprecation warning remains.
+- **CI follow-up:** GitHub's Python 3.12 baseline exposed one strict mypy error
+  while converting an `Any | None` provider status. Explicit integer/numeric
+  string narrowing fixes the typed boundary and ignores booleans or arbitrary
+  objects. The exact `scripts/validate_baseline.ps1` workflow now passes.
 - **Risk and rollback:** a genuine provider/quota outage still cannot be solved
   locally, but it now fails visibly and without self-amplification. Rollback
   removes the turn watchdog/bounded connect and restores the prior reconnect

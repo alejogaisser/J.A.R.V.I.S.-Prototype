@@ -107,9 +107,13 @@ def live_error_status_codes(error: BaseException) -> tuple[int, ...]:
         if response is not None:
             candidates.append(getattr(response, "status_code", None))
         for candidate in candidates:
-            try:
+            if isinstance(candidate, bool):
+                continue
+            if isinstance(candidate, int):
+                code = candidate
+            elif isinstance(candidate, str) and candidate.isdigit():
                 code = int(candidate)
-            except (TypeError, ValueError):
+            else:
                 continue
             if 400 <= code <= 599:
                 codes.add(code)

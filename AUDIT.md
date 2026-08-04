@@ -1114,10 +1114,17 @@ single deadline and fixed 250 ms delay; no data migration is involved.
   behavior.
 - **Verification:** the directed pre-change baseline was `74 passed, 26
   subtests`. Five new regressions failed before implementation and now pass;
-  directed validation is `79 passed, 26 subtests`, and the full suite is `494
+  directed validation is `79 passed, 26 subtests`, and the full suite is `495
   passed, 2 skipped, 143 subtests passed`. Compilation, targeted Ruff and
-  `git diff --check` pass. Hardware/provider recovery is not claimed until the
-  running JARVIS process is explicitly reloaded with the new code.
+  `git diff --check` pass.
+- **CI follow-up:** the first GitHub baseline correctly rejected
+  `int(candidate)` because SDK status candidates were typed as `Any | None`.
+  The normalization now accepts only non-boolean integers or numeric strings
+  before range validation. A regression covers invalid untyped values. The
+  exact Windows baseline now passes dependency checks, imports, compileall,
+  Ruff, mypy, secret/change-control inventories and the full suite.
+- **Runtime limitation:** hardware/provider recovery is not claimed until a
+  newly launched JARVIS exercises the corrected Live path.
 - **Rollback:** restore direct `client.aio.live.connect`, remove the turn
   watchdog and `LiveReconnectPolicy`, then reload JARVIS. No persisted state,
   credentials or conversation data require migration.
